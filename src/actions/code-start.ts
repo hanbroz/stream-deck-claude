@@ -25,6 +25,7 @@ import {
 import { showFolderPicker } from "../services/folder-picker";
 import { launchClaudeTerminal, validateLaunchFolder } from "../services/terminal-launcher";
 import { renderCodeStartKeyImage } from "../ui/code-start-renderer";
+import { CodeStartLaunchGuard } from "./code-start-launch-guard";
 
 const REFRESH_INTERVAL_MS = 1_000;
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -63,6 +64,7 @@ function configuredBindingId(settings: CodeStartSettings): string | undefined {
 export class CodeStartAction extends SingletonAction<CodeStartSettings> {
   private readonly visibleActions = new Map<string, KeyAction<CodeStartSettings>>();
   private readonly bindingIdsByAction = new Map<string, string>();
+  private readonly launchGuard = new CodeStartLaunchGuard();
   private bindingInitialization: Promise<void> = Promise.resolve();
   private refreshTimer?: NodeJS.Timeout;
 
@@ -111,10 +113,17 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
       return;
     }
 
-    await ev.action.setImage(
-      renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
-    );
+    if (!this.launchGuard.begin(bindingId)) {
+      await ev.action.setImage(
+        renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
+      );
+      return;
+    }
+
     try {
+      await ev.action.setImage(
+        renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
+      );
       await validateLaunchFolder(folder);
       await ensureBridgeInstalled({
         settingsPath: defaultClaudeSettingsPath(),
@@ -146,6 +155,8 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
         renderCodeStartKeyImage(projectName, { kind: "error", activity: "idle" })
       );
       await ev.action.showAlert();
+    } finally {
+      this.launchGuard.end(bindingId);
     }
   }
 
@@ -267,6 +278,12 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
     if (!folder || !bindingId) {
       await actionInstance.setImage(
         renderCodeStartKeyImage(projectName, { kind: "setup", activity: "idle" })
+      );
+      return;
+    }
+    if (this.launchGuard.isLaunching(bindingId)) {
+      await actionInstance.setImage(
+        renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
       );
       return;
     }
