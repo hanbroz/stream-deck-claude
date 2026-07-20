@@ -1,0 +1,76 @@
+{
+  "Name": "Claude",
+  "Version": "0.5.1.0",
+  "Author": "hanbroz",
+  "Actions": [
+    {
+      "Name": "5-Hour Usage",
+      "UUID": "com.hanbroz.claude-usage.five-hour",
+      "Icon": "imgs/actions/five-hour/icon",
+      "Tooltip": "Shows Claude Code five-hour usage and reset countdown.",
+      "UserTitleEnabled": false,
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/actions/five-hour/key",
+          "ShowTitle": false
+        }
+      ]
+    },
+    {
+      "Name": "Weekly Usage",
+      "UUID": "com.hanbroz.claude-usage.weekly",
+      "Icon": "imgs/actions/weekly/icon",
+      "Tooltip": "Shows Claude Code weekly usage and reset countdown.",
+      "UserTitleEnabled": false,
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/actions/weekly/key",
+          "ShowTitle": false
+        }
+      ]
+    },
+    {
+      "Name": "Code Start",
+      "UUID": "com.hanbroz.claude-usage.code-start",
+      "Icon": "imgs/actions/code-start/icon",
+      "Tooltip": "Starts Claude Code in a configured folder and shows that session's context usage.",
+      "PropertyInspectorPath": "ui/code-start.html",
+      "UserTitleEnabled": false,
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/actions/code-start/key",
+          "ShowTitle": false
+        }
+      ]
+    }
+  ],
+  "Category": "Claude",
+  "CategoryIcon": "imgs/plugin/category-icon",
+  "CodePath": "bin/plugin.js",
+  "Description": "Private Stream Deck controls and status displays for Claude.",
+  "Icon": "imgs/plugin/marketplace",
+  "SDKVersion": 3,
+  "Software": {
+    "MinimumVersion": "7.1"
+  },
+  "OS": [
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Nodejs": {
+    "Version": "24",
+    "Debug": "enabled"
+  },
+  "UUID": "com.hanbroz.claude-usage"
+}

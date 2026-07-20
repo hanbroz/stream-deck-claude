@@ -1,0 +1,27 @@
+node_modules/
+dist/
+*.log
+*.map
+
+# Generated Stream Deck runtime bundles
+com.hanbroz.claude-usage.sdPlugin/bin/
+com.hanbroz.claude-usage.sdPlugin/bridge/
+com.hanbroz.claude-usage.sdPlugin/logs/
+*.streamDeckPlugin
+*.StreamDeckProfilesBackup
+*.zip
+
+# Local agent/editor state
+.omc/
+.omx/
+.codex/
+.vscode/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Windows metadata
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
+  <rect width="144" height="144" rx="22" fill="#17130f"/>
+  <rect x="1.5" y="1.5" width="141" height="141" rx="20.5" fill="none" stroke="#40342b" stroke-width="3"/>
+  <text x="72" y="53" text-anchor="middle" fill="#fffaf5" font-family="Arial, sans-serif" font-size="25" font-weight="800">PROJECT</text>
+  <text data-role="context-text" x="72" y="84" text-anchor="middle" fill="#ff6b74" font-family="Arial, sans-serif" font-size="17" font-weight="800">CTX --%</text>
+  <rect data-role="context-track" x="18" y="101" width="108" height="12" rx="6" fill="#493a30"/>
+  <rect data-role="context-fill" x="18" y="101" width="0" height="12" rx="6" fill="#74675e"/>
+</svg>

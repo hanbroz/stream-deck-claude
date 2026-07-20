@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Claude Stream Deck 플러그인 Windows 설치 안내</title>
+    <style>
+      :root { color-scheme: light dark; font-family: "Malgun Gothic", "Segoe UI", sans-serif; }
+      body { max-width: 860px; margin: 0 auto; padding: 36px 22px 60px; line-height: 1.65; }
+      h1 { margin-bottom: 8px; }
+      h2 { margin-top: 34px; padding-bottom: 7px; border-bottom: 1px solid #8885; }
+      code { padding: 2px 5px; border-radius: 4px; background: #8882; }
+      pre { overflow-x: auto; padding: 14px; border-radius: 8px; background: #8882; }
+      .notice { padding: 13px 16px; border-left: 4px solid #d97757; background: #d9775718; }
+      .ok { border-left-color: #38a169; background: #38a16918; }
+      li { margin: 7px 0; }
+      a { color: #d97757; }
+    </style>
+  </head>
+  <body>
+    <h1>Claude Stream Deck 플러그인</h1>
+    <p>Windows 포맷 후 재설치 및 복구 안내서</p>
+
+    <div class="notice ok">
+      <strong>설치 파일:</strong> <code>com.hanbroz.claude-usage.streamDeckPlugin</code><br />
+      이 파일을 더블클릭하면 Stream Deck이 설치 확인 창을 표시합니다. 별도의 MSI 또는 EXE는 필요하지 않습니다.
+    </div>
+
+    <h2>1. 포맷 전에 보관할 파일</h2>
+    <ol>
+      <li>이 ZIP 파일 전체를 USB, NAS 또는 클라우드 저장소에 보관합니다.</li>
+      <li>Stream Deck 앱에서 <strong>설정 → Profiles → 아래쪽 화살표 → Backup All → Create Backup</strong>을 실행해 <code>.StreamDeckProfilesBackup</code> 파일을 별도로 보관합니다.</li>
+      <li>Code Start에서 사용하는 프로젝트 폴더도 백업합니다. 드라이브 문자나 경로가 달라지면 복구 후 버튼 설정에서 새 경로를 지정해야 합니다.</li>
+    </ol>
+    <p class="notice">프로필 백업에는 버튼 배치와 설정이 들어가지만 이 비공개 플러그인의 설치 파일은 포함되지 않습니다. 반드시 두 파일을 모두 보관하십시오.</p>
+
+    <h2>2. Windows 포맷 후 설치 순서</h2>
+    <ol>
+      <li><a href="https://www.elgato.com/downloads">Elgato 공식 사이트</a>에서 Stream Deck을 설치하고 한 번 실행합니다. 이 플러그인은 Stream Deck 7.1 이상이 필요합니다.</li>
+      <li>Windows PowerShell에서 Claude Code를 설치합니다.</li>
+    </ol>
+    <pre><code>winget install Anthropic.ClaudeCode
+claude --version
+claude</code></pre>
+    <p>처음 <code>claude</code>를 실행하면 브라우저 로그인 절차를 완료합니다. Native Windows에서는 Git for Windows 설치를 권장하지만, 없으면 Claude Code가 PowerShell을 사용합니다.</p>
+    <ol start="3">
+      <li><code>com.hanbroz.claude-usage.streamDeckPlugin</code>을 더블클릭하거나 <code>Install.cmd</code>를 실행합니다.</li>
+      <li>Stream Deck의 설치 확인 창에서 설치를 승인합니다.</li>
+      <li>프로필 백업이 있으면 <code>.StreamDeckProfilesBackup</code> 파일을 더블클릭하고 <strong>Restore</strong>를 선택합니다. 기존 프로필을 덮어쓸 수 있으므로 새 설정을 만든 뒤에는 주의하십시오.</li>
+      <li>프로필 백업이 없으면 Claude 그룹의 버튼을 다시 배치하고 Code Start에 프로젝트명과 폴더를 입력합니다.</li>
+      <li>Code Start 버튼을 한 번 누릅니다. 터미널이 열리고 Claude Code가 실행되며 상태 브리지가 자동 설치됩니다.</li>
+    </ol>
+
+    <h2>3. 정상 동작 확인</h2>
+    <ul>
+      <li><strong>Code Start:</strong> 지정한 폴더의 터미널이 열리고 프로젝트명, CTX 값, 막대가 표시됩니다.</li>
+      <li><strong>세션 상태:</strong> 실행 중은 녹색, 답변 대기 중은 파란색, 종료 후에는 빨간색 Closed로 표시됩니다.</li>
+      <li><strong>버튼 이동:</strong> 실행 중 버튼을 다른 칸으로 이동해도 같은 CTX 값이 이어집니다.</li>
+      <li><strong>Usage 버튼:</strong> Claude Code에서 메시지를 한 번 처리한 뒤 5시간 및 7일 사용량이 표시됩니다.</li>
+    </ul>
+
+    <h2>4. 포맷 후 달라지는 항목</h2>
+    <ul>
+      <li>포맷 전 실행 중이던 Claude 프로세스와 CTX 캐시는 복구되지 않습니다. Code Start로 새 세션을 시작하면 다시 표시됩니다.</li>
+      <li>Claude 로그인 정보는 다시 인증해야 합니다.</li>
+      <li>프로젝트 경로가 바뀌었다면 각 Code Start 버튼에서 폴더를 다시 선택하고 Save Settings를 누릅니다.</li>
+    </ul>
+
+    <h2>5. 문제 해결 및 롤백</h2>
+    <ul>
+      <li>플러그인이 보이지 않으면 Stream Deck 앱을 완전히 종료한 뒤 다시 실행합니다.</li>
+      <li>터미널이 열리지 않으면 PowerShell에서 <code>Get-Command claude</code>와 <code>claude --version</code>을 확인합니다.</li>
+      <li>버튼이 STARTING에 머물면 프로젝트 폴더가 존재하는지 확인하고 버튼을 다시 누릅니다.</li>
+      <li>설치 후 문제가 생기면 Stream Deck 설정에서 Claude 플러그인을 제거한 뒤 보관한 이전 버전의 <code>.streamDeckPlugin</code>을 다시 설치합니다.</li>
+    </ul>
+
+    <h2>공식 참고자료</h2>
+    <ul>
+      <li><a href="https://docs.elgato.com/streamdeck/sdk/introduction/distribution/">Elgato 플러그인 패키징과 배포</a></li>
+      <li><a href="https://help.elgato.com/hc/en-us/articles/360048424432-Elgato-Stream-Deck-How-to-Back-Up-and-Restore-Profiles">Stream Deck 프로필 백업과 복원</a></li>
+      <li><a href="https://code.claude.com/docs/en/getting-started">Claude Code Windows 설치</a></li>
+    </ul>
+  </body>
+</html>

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Code Start Settings</title>
+    <style>
+      :root { color-scheme: dark; font-family: Arial, sans-serif; }
+      body { margin: 0; padding: 14px; background: #2d2d2d; color: #efefef; font-size: 13px; }
+      label { display: block; margin-bottom: 7px; font-weight: 700; }
+      .field { margin-bottom: 12px; }
+      .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+      input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #555; border-radius: 4px; padding: 8px; background: #1e1e1e; color: #fff; }
+      button { border: 1px solid #666; border-radius: 4px; padding: 7px 12px; background: #484848; color: #fff; cursor: pointer; }
+      button.primary { width: 100%; margin-top: 9px; background: #D97757; border-color: #e28b6f; font-weight: 700; }
+      button:disabled { opacity: .55; cursor: default; }
+      .help { margin: 10px 0 0; color: #bdbdbd; line-height: 1.4; }
+      #status { min-height: 18px; margin-top: 8px; color: #9dd8b8; }
+      #status.error { color: #ff9aa2; }
+      code { color: #f2c3b2; }
+    </style>
+  </head>
+  <body>
+    <div class="field">
+      <label for="projectName">Project name</label>
+      <input id="projectName" type="text" placeholder="My Project" maxlength="40" spellcheck="false" />
+    </div>
+    <div class="field">
+      <label for="folder">Claude Code folder</label>
+      <div class="row">
+        <input id="folder" type="text" placeholder="D:\Projects\my-project" spellcheck="false" />
+        <button id="browse" type="button">Browse…</button>
+      </div>
+    </div>
+    <button id="save" class="primary" type="button">Save settings</button>
+    <p class="help">The button opens this folder and runs <code>claude --dangerously-skip-permissions</code>.</p>
+    <div id="status" role="status" aria-live="polite"></div>
+
+    <script>
+      (() => {
+        let socket;
+        let context;
+        let action;
+        let settings = {};
+        const projectName = document.getElementById("projectName");
+        const folder = document.getElementById("folder");
+        const browse = document.getElementById("browse");
+        const save = document.getElementById("save");
+        const status = document.getElementById("status");
+
+        const setStatus = (message, isError = false) => {
+          status.textContent = message;
+          status.classList.toggle("error", isError);
+        };
+        const send = (message) => {
+          if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+        };
+        const applySettings = (next) => {
+          settings = next && typeof next === "object" ? next : {};
+          projectName.value = typeof settings.projectName === "string" ? settings.projectName : "";
+          folder.value = typeof settings.folder === "string" ? settings.folder : "";
+        };
+        const collectSettings = () => ({
+          ...settings,
+          projectName: projectName.value.trim(),
+          folder: folder.value.trim()
+        });
+
+        window.connectElgatoStreamDeckSocket = (port, uuid, registerEvent, info, actionInfo) => {
+          context = uuid;
+          const parsed = JSON.parse(actionInfo);
+          action = parsed.action;
+          applySettings(parsed.payload && parsed.payload.settings);
+          socket = new WebSocket(`ws://127.0.0.1:${port}`);
+          socket.addEventListener("open", () => {
+            send({ event: registerEvent, uuid });
+            browse.disabled = false;
+            save.disabled = false;
+          });
+          socket.addEventListener("message", (event) => {
+            const message = JSON.parse(event.data);
+            if (message.event === "didReceiveSettings") {
+              applySettings(message.payload && message.payload.settings);
+            } else if (message.event === "sendToPropertyInspector") {
+              if (typeof message.payload?.folder === "string") {
+                applySettings({
+                  ...settings,
+                  folder: message.payload.folder,
+                  ...(typeof message.payload.projectName === "string"
+                    ? { projectName: message.payload.projectName }
+                    : {})
+                });
+                setStatus("Folder selected and saved.");
+              } else if (typeof message.payload?.error === "string") {
+                setStatus(message.payload.error, true);
+              }
+            }
+          });
+          socket.addEventListener("close", () => {
+            browse.disabled = true;
+            save.disabled = true;
+          });
+        };
+
+        browse.disabled = true;
+        save.disabled = true;
+        browse.addEventListener("click", () => {
+          settings = collectSettings();
+          send({ event: "setSettings", context, payload: settings });
+          setStatus("Opening folder picker…");
+          send({
+            event: "sendToPlugin",
+            action,
+            context,
+            payload: { event: "browseFolder", projectName: settings.projectName }
+          });
+        });
+        save.addEventListener("click", () => {
+          settings = collectSettings();
+          send({ event: "setSettings", context, payload: settings });
+          setStatus("Settings saved.");
+        });
+        for (const input of [projectName, folder]) {
+          input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") save.click();
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>
