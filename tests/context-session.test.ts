@@ -85,17 +85,16 @@ describe("extractContextSessionSnapshot", () => {
 
 describe("extractContextSessionRuntime", () => {
   it.each([
-    [undefined, "running"],
-    ["SessionStart", "running"],
-    ["UserPromptSubmit", "responding"],
-    ["Stop", "running"],
-    ["StopFailure", "running"],
-    ["SessionEnd", "waiting"]
+    ["SessionStart", "idle"],
+    ["UserPromptSubmit", "running"],
+    ["Stop", "idle"],
+    ["StopFailure", "idle"],
+    ["SessionEnd", "ended"]
   ] as const)("maps %s to %s without caching payload content", (hookEventName, activity) => {
     const runtime = extractContextSessionRuntime(
       {
         session_id: "session-abc",
-        ...(hookEventName === undefined ? {} : { hook_event_name: hookEventName }),
+        hook_event_name: hookEventName,
         prompt: "must-not-be-cached",
         last_assistant_message: "must-not-be-cached"
       },
@@ -105,13 +104,64 @@ describe("extractContextSessionRuntime", () => {
     );
 
     expect(runtime).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       actionId: "action-1",
       launchId: "launch-1",
       activity,
       capturedAt: 123
     });
     expect(JSON.stringify(runtime)).not.toContain("must-not-be-cached");
+  });
+
+  it.each([
+    ["permission_prompt", "waiting"],
+    ["elicitation_dialog", "waiting"],
+    ["agent_needs_input", "waiting"],
+    ["idle_prompt", "idle"],
+    ["agent_completed", "idle"],
+    ["elicitation_complete", "running"],
+    ["elicitation_response", "running"]
+  ] as const)("maps Notification %s to %s", (notificationType, activity) => {
+    expect(
+      extractContextSessionRuntime(
+        {
+          session_id: "session-abc",
+          hook_event_name: "Notification",
+          notification_type: notificationType,
+          message: "must-not-be-cached"
+        },
+        "action-1",
+        "launch-1",
+        123
+      )
+    ).toEqual({
+      schemaVersion: 2,
+      actionId: "action-1",
+      launchId: "launch-1",
+      activity,
+      capturedAt: 123
+    });
+  });
+
+  it("does not infer activity from status-line payloads or unrelated notifications", () => {
+    expect(
+      extractContextSessionRuntime(
+        { session_id: "session", context_window: { used_percentage: 10 } },
+        "action",
+        "launch"
+      )
+    ).toBeUndefined();
+    expect(
+      extractContextSessionRuntime(
+        {
+          session_id: "session",
+          hook_event_name: "Notification",
+          notification_type: "auth_success"
+        },
+        "action",
+        "launch"
+      )
+    ).toBeUndefined();
   });
 
   it("ignores unrelated hooks and payloads outside a managed launch", () => {

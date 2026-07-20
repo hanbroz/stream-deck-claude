@@ -164,10 +164,10 @@ describe("context session cache", () => {
 
     await expect(
       loadCodeStartDisplayState(root, "action-legacy", "D:\\Projects\\Demo")
-    ).resolves.toEqual({ kind: "idle", activity: "waiting" });
+    ).resolves.toEqual({ kind: "idle", activity: "idle" });
   });
 
-  it("loads responding and ended activity for the active launch", async () => {
+  it("keeps idle and user-input waits open, and closes only an ended session", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
     await writeActiveLaunch(root, {
       schemaVersion: 2,
@@ -179,16 +179,16 @@ describe("context session cache", () => {
       processId: process.pid
     });
     await writeContextSessionRuntime(root, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       actionId: "action-1",
       launchId: "launch-1",
-      activity: "responding",
+      activity: "waiting",
       capturedAt: 110
     });
 
     await expect(
       loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo")
-    ).resolves.toEqual({ kind: "starting", activity: "responding" });
+    ).resolves.toEqual({ kind: "starting", activity: "waiting" });
 
     await writeFile(
       contextSessionSnapshotPath(root, "action-1", "launch-1"),
@@ -203,18 +203,76 @@ describe("context session cache", () => {
       "utf8"
     );
     await writeContextSessionRuntime(root, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       actionId: "action-1",
       launchId: "launch-1",
-      activity: "waiting",
+      activity: "idle",
       capturedAt: 130
     });
 
     await expect(
       loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo")
-    ).resolves.toEqual({ kind: "closed", activity: "waiting" });
+    ).resolves.toEqual({ kind: "ready", percentage: 23, activity: "idle" });
+    await writeContextSessionRuntime(root, {
+      schemaVersion: 2,
+      actionId: "action-1",
+      launchId: "launch-1",
+      activity: "ended",
+      capturedAt: 140
+    });
+    await expect(
+      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo")
+    ).resolves.toEqual({ kind: "closed", activity: "ended" });
     await expect(readFile(contextSessionRuntimePath(root, "action-1", "launch-1"), "utf8"))
-      .resolves.toContain('"activity": "waiting"');
+      .resolves.toContain('"activity": "ended"');
+  });
+
+  it("migrates legacy runtime meanings without leaving an idle session green", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    await writeActiveLaunch(root, {
+      schemaVersion: 2,
+      actionId: "action-legacy-runtime",
+      launchId: "launch-legacy-runtime",
+      folder: "D:\\Projects\\Demo",
+      startedAt: 100,
+      terminal: "powershell",
+      processId: process.pid
+    });
+    const runtimePath = contextSessionRuntimePath(
+      root,
+      "action-legacy-runtime",
+      "launch-legacy-runtime"
+    );
+    await writeFile(
+      runtimePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        actionId: "action-legacy-runtime",
+        launchId: "launch-legacy-runtime",
+        activity: "running",
+        capturedAt: 110
+      }),
+      "utf8"
+    );
+
+    await expect(
+      loadCodeStartDisplayState(root, "action-legacy-runtime", "D:\\Projects\\Demo")
+    ).resolves.toEqual({ kind: "starting", activity: "idle" });
+
+    await writeFile(
+      runtimePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        actionId: "action-legacy-runtime",
+        launchId: "launch-legacy-runtime",
+        activity: "responding",
+        capturedAt: 120
+      }),
+      "utf8"
+    );
+    await expect(
+      loadCodeStartDisplayState(root, "action-legacy-runtime", "D:\\Projects\\Demo")
+    ).resolves.toEqual({ kind: "starting", activity: "running" });
   });
 
   it("reports Closed when the tracked terminal process is no longer running", async () => {
@@ -231,6 +289,6 @@ describe("context session cache", () => {
 
     await expect(
       loadCodeStartDisplayState(root, "action-closed", "D:\\Projects\\Demo")
-    ).resolves.toEqual({ kind: "closed", activity: "waiting" });
+    ).resolves.toEqual({ kind: "closed", activity: "ended" });
   });
 });

@@ -31,7 +31,7 @@ for (const preview of previews) {
 const codeStartPreviews = [
   { filename: "code-start.svg", activity: "running" },
   { filename: "code-start-waiting.svg", activity: "waiting" },
-  { filename: "code-start-responding.svg", activity: "responding" }
+  { filename: "code-start-idle.svg", activity: "idle" }
 ] as const;
 for (const preview of codeStartPreviews) {
   const state = {
@@ -47,7 +47,7 @@ for (const preview of codeStartPreviews) {
   process.stdout.write(`${preview.filename}: ${JSON.stringify(state)}\n`);
 }
 
-const closedState = { kind: "closed", activity: "waiting" } as const;
+const closedState = { kind: "closed", activity: "ended" } as const;
 await writeFile(
   path.join(outputDir, "code-start-closed.svg"),
   `${renderCodeStartKey("MY PROJECT", closedState)}\n`,

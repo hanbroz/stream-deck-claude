@@ -34,7 +34,7 @@ describe("renderCodeStartKey", () => {
   it.each(["setup", "idle", "starting", "error"] as const)(
     "keeps the same three-element layout for the %s state",
     (kind) => {
-      const svg = renderCodeStartKey("Project A", { kind, activity: "waiting" });
+      const svg = renderCodeStartKey("Project A", { kind, activity: "idle" });
 
       expect(svg).toContain("Project A");
       expect(svg).toContain("CTX --%");
@@ -79,8 +79,8 @@ describe("renderCodeStartKey", () => {
 
   it.each([
     ["running", "#60d3a3"],
-    ["waiting", "#ff6b74"],
-    ["responding", "#70c7ff"]
+    ["idle", "#ff6b74"],
+    ["waiting", "#70c7ff"]
   ] as const)("renders %s CTX text as %s", (activity, color) => {
     const svg = renderCodeStartKey("Project A", {
       kind: "ready",
@@ -96,7 +96,7 @@ describe("renderCodeStartKey", () => {
   it("replaces all context content with Closed after the launched session ends", () => {
     const svg = renderCodeStartKey("Project A", {
       kind: "closed",
-      activity: "waiting"
+      activity: "ended"
     });
 
     expect(svg).toContain(">Project A</text>");

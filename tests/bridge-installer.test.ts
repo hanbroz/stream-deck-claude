@@ -48,6 +48,7 @@ describe("ensureBridgeInstalled", () => {
       "UserPromptSubmit",
       "Stop",
       "StopFailure",
+      "Notification",
       "SessionEnd"
     ]) {
       const commands = settings.hooks[eventName].flatMap((group: { hooks: Array<{ command?: string }> }) =>

@@ -105,14 +105,14 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
     }
     if (!folder) {
       await ev.action.setImage(
-        renderCodeStartKeyImage(projectName, { kind: "setup", activity: "waiting" })
+        renderCodeStartKeyImage(projectName, { kind: "setup", activity: "idle" })
       );
       await ev.action.showAlert();
       return;
     }
 
     await ev.action.setImage(
-      renderCodeStartKeyImage(projectName, { kind: "starting", activity: "waiting" })
+      renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
     );
     try {
       await validateLaunchFolder(folder);
@@ -143,7 +143,7 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
     } catch (error) {
       streamDeck.logger.error("Code Start launch failed.", error);
       await ev.action.setImage(
-        renderCodeStartKeyImage(projectName, { kind: "error", activity: "waiting" })
+        renderCodeStartKeyImage(projectName, { kind: "error", activity: "idle" })
       );
       await ev.action.showAlert();
     }
@@ -266,7 +266,7 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
     const projectName = configuredProjectName(settings);
     if (!folder || !bindingId) {
       await actionInstance.setImage(
-        renderCodeStartKeyImage(projectName, { kind: "setup", activity: "waiting" })
+        renderCodeStartKeyImage(projectName, { kind: "setup", activity: "idle" })
       );
       return;
     }

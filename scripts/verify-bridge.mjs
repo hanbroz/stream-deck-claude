@@ -103,17 +103,34 @@ try {
     hash("binding-1"),
     `${hash("launch-1")}.state.json`
   );
-  const runningState = JSON.parse(await readFile(runtimePath, "utf8"));
-  assert.deepEqual(Object.keys(runningState).sort(), [
+  await assert.rejects(() => readFile(runtimePath, "utf8"), { code: "ENOENT" });
+
+  const startedRun = await runBridge(
+    bridgePath,
+    {
+      session_id: "session-code-start",
+      hook_event_name: "SessionStart"
+    },
+    {
+      CLAUDE_STREAM_DECK_BINDING_ID: "binding-1",
+      CLAUDE_STREAM_DECK_LAUNCH_ID: "launch-1"
+    }
+  );
+  assert.equal(startedRun.code, 0);
+  assert.equal(startedRun.stdout, "");
+  assert.equal(startedRun.stderr, "");
+  const idleState = JSON.parse(await readFile(runtimePath, "utf8"));
+  assert.deepEqual(Object.keys(idleState).sort(), [
     "actionId",
     "activity",
     "capturedAt",
     "launchId",
     "schemaVersion"
   ]);
-  assert.equal(runningState.activity, "running");
+  assert.equal(idleState.schemaVersion, 2);
+  assert.equal(idleState.activity, "idle");
 
-  const respondingRun = await runBridge(
+  const runningRun = await runBridge(
     bridgePath,
     {
       session_id: "session-code-start",
@@ -126,12 +143,41 @@ try {
       CLAUDE_STREAM_DECK_LAUNCH_ID: "launch-1"
     }
   );
-  assert.equal(respondingRun.code, 0);
-  assert.equal(respondingRun.stdout, "");
-  assert.equal(respondingRun.stderr, "");
-  const respondingState = JSON.parse(await readFile(runtimePath, "utf8"));
-  assert.equal(respondingState.activity, "responding");
-  assert.equal(JSON.stringify(respondingState).includes("must-not-be-cached"), false);
+  assert.equal(runningRun.code, 0);
+  assert.equal(runningRun.stdout, "");
+  assert.equal(runningRun.stderr, "");
+  const runningState = JSON.parse(await readFile(runtimePath, "utf8"));
+  assert.equal(runningState.activity, "running");
+  assert.equal(JSON.stringify(runningState).includes("must-not-be-cached"), false);
+
+  const waitingRun = await runBridge(
+    bridgePath,
+    {
+      session_id: "session-code-start",
+      hook_event_name: "Notification",
+      notification_type: "permission_prompt",
+      message: "must-not-be-cached"
+    },
+    {
+      CLAUDE_STREAM_DECK_BINDING_ID: "binding-1",
+      CLAUDE_STREAM_DECK_LAUNCH_ID: "launch-1"
+    }
+  );
+  assert.equal(waitingRun.code, 0);
+  assert.equal(waitingRun.stdout, "");
+  assert.equal(waitingRun.stderr, "");
+  const waitingState = JSON.parse(await readFile(runtimePath, "utf8"));
+  assert.equal(waitingState.activity, "waiting");
+  assert.equal(JSON.stringify(waitingState).includes("must-not-be-cached"), false);
+
+  const statusLineRefresh = await runBridge(bridgePath, firstInput, {
+    CLAUDE_STREAM_DECK_BINDING_ID: "binding-1",
+    CLAUDE_STREAM_DECK_LAUNCH_ID: "launch-1"
+  });
+  assert.equal(statusLineRefresh.code, 0);
+  assert.equal(statusLineRefresh.stdout, "HUD_FORWARD_OK");
+  const stateAfterStatusLine = JSON.parse(await readFile(runtimePath, "utf8"));
+  assert.equal(stateAfterStatusLine.activity, "waiting");
 
   const stoppedRun = await runBridge(
     bridgePath,
@@ -149,8 +195,25 @@ try {
   assert.equal(stoppedRun.code, 0);
   assert.equal(stoppedRun.stdout, "");
   const stoppedState = JSON.parse(await readFile(runtimePath, "utf8"));
-  assert.equal(stoppedState.activity, "running");
+  assert.equal(stoppedState.activity, "idle");
   assert.equal(JSON.stringify(stoppedState).includes("must-not-be-cached"), false);
+
+  const endedRun = await runBridge(
+    bridgePath,
+    {
+      session_id: "session-code-start",
+      hook_event_name: "SessionEnd"
+    },
+    {
+      CLAUDE_STREAM_DECK_BINDING_ID: "binding-1",
+      CLAUDE_STREAM_DECK_LAUNCH_ID: "launch-1"
+    }
+  );
+  assert.equal(endedRun.code, 0);
+  assert.equal(endedRun.stdout, "");
+  assert.equal(endedRun.stderr, "");
+  const endedState = JSON.parse(await readFile(runtimePath, "utf8"));
+  assert.equal(endedState.activity, "ended");
 
   const secondRun = await runBridge(bridgePath, {
     rate_limits: {

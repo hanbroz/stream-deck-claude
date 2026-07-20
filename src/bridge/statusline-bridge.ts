@@ -69,8 +69,7 @@ async function writeRuntimeCache(dataDir: string, payload: unknown): Promise<voi
 async function writeStatusLineCaches(dataDir: string, payload: unknown): Promise<void> {
   await Promise.all([
     writeUsageCache(dataDir, payload),
-    writeContextCache(dataDir, payload),
-    writeRuntimeCache(dataDir, payload)
+    writeContextCache(dataDir, payload)
   ]);
 }
 

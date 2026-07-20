@@ -150,24 +150,48 @@ function parseSnapshot(value: unknown): ContextSessionSnapshot {
 
 function parseRuntime(value: unknown): ContextSessionRuntime {
   const root = asRecord(value);
-  if (
-    root?.schemaVersion !== 1 ||
+  if (!root ||
     typeof root.actionId !== "string" ||
     typeof root.launchId !== "string" ||
-    (root.activity !== "waiting" &&
-      root.activity !== "running" &&
-      root.activity !== "responding") ||
     typeof root.capturedAt !== "number"
   ) {
     throw new Error("Invalid Code Start runtime state");
   }
-  return {
-    schemaVersion: 1,
-    actionId: root.actionId,
-    launchId: root.launchId,
-    activity: root.activity,
-    capturedAt: root.capturedAt
-  };
+  if (
+    root.schemaVersion === 2 &&
+    (root.activity === "idle" ||
+      root.activity === "running" ||
+      root.activity === "waiting" ||
+      root.activity === "ended")
+  ) {
+    return {
+      schemaVersion: 2,
+      actionId: root.actionId,
+      launchId: root.launchId,
+      activity: root.activity,
+      capturedAt: root.capturedAt
+    };
+  }
+  if (
+    root.schemaVersion === 1 &&
+    (root.activity === "waiting" ||
+      root.activity === "running" ||
+      root.activity === "responding")
+  ) {
+    return {
+      schemaVersion: 2,
+      actionId: root.actionId,
+      launchId: root.launchId,
+      activity:
+        root.activity === "waiting"
+          ? "ended"
+          : root.activity === "responding"
+            ? "running"
+            : "idle",
+      capturedAt: root.capturedAt
+    };
+  }
+  throw new Error("Invalid Code Start runtime state");
 }
 
 async function readJson(filePath: string): Promise<unknown | undefined> {
@@ -242,21 +266,21 @@ export async function loadCodeStartDisplayState(
   try {
     const activeValue = await readJson(activeLaunchPath(dataDir, actionId));
     if (!activeValue) {
-      return { kind: "idle", activity: "waiting" };
+      return { kind: "idle", activity: "idle" };
     }
     const activeRecord = asRecord(activeValue);
     if (activeRecord?.schemaVersion === 1) {
-      return { kind: "idle", activity: "waiting" };
+      return { kind: "idle", activity: "idle" };
     }
     const active = parseActiveLaunch(activeValue);
     if (active.actionId !== actionId) {
-      return { kind: "error", activity: "waiting" };
+      return { kind: "error", activity: "idle" };
     }
     if (!sameFolder(active.folder, folder)) {
-      return { kind: "idle", activity: "waiting" };
+      return { kind: "idle", activity: "idle" };
     }
     if (!isProcessRunning(active.processId)) {
-      return { kind: "closed", activity: "waiting" };
+      return { kind: "closed", activity: "ended" };
     }
 
     const runtimeValue = await readJson(
@@ -267,8 +291,8 @@ export async function loadCodeStartDisplayState(
       runtime?.actionId === actionId && runtime.launchId === active.launchId
         ? runtime.activity
         : "running";
-    if (activity === "waiting") {
-      return { kind: "closed", activity: "waiting" };
+    if (activity === "ended") {
+      return { kind: "closed", activity: "ended" };
     }
 
     const snapshotValue = await readJson(
@@ -291,6 +315,6 @@ export async function loadCodeStartDisplayState(
       activity
     };
   } catch {
-    return { kind: "error", activity: "waiting" };
+    return { kind: "error", activity: "idle" };
   }
 }

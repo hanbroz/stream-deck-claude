@@ -46,7 +46,7 @@ function usageColor(percentage: number): string {
 }
 
 function activityColor(activity: CodeSessionActivity): string {
-  if (activity === "responding") {
+  if (activity === "waiting") {
     return "#70c7ff";
   }
   if (activity === "running") {

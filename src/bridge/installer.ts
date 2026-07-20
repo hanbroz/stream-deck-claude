@@ -32,6 +32,7 @@ const MANAGED_HOOK_EVENTS = [
   "UserPromptSubmit",
   "Stop",
   "StopFailure",
+  "Notification",
   "SessionEnd"
 ] as const;
 

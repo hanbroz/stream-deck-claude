@@ -22,10 +22,10 @@ export type ActiveCodeLaunch = {
   processId: number;
 };
 
-export type CodeSessionActivity = "waiting" | "running" | "responding";
+export type CodeSessionActivity = "idle" | "running" | "waiting" | "ended";
 
 export type ContextSessionRuntime = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   actionId: string;
   launchId: string;
   activity: CodeSessionActivity;
@@ -37,7 +37,7 @@ export type CodeStartDisplayState =
   | { kind: "idle"; activity: CodeSessionActivity }
   | { kind: "starting"; activity: CodeSessionActivity }
   | { kind: "ready"; percentage: number; activity: CodeSessionActivity }
-  | { kind: "closed"; activity: "waiting" }
+  | { kind: "closed"; activity: "ended" }
   | { kind: "error"; activity: CodeSessionActivity };
 
 type JsonRecord = Record<string, unknown>;
@@ -112,20 +112,38 @@ export function extractContextSessionRuntime(
 
   const hookEventName = root.hook_event_name;
   let activity: CodeSessionActivity;
-  if (hookEventName === undefined || hookEventName === "SessionStart") {
-    activity = "running";
+  if (hookEventName === "SessionStart") {
+    activity = "idle";
   } else if (hookEventName === "UserPromptSubmit") {
-    activity = "responding";
-  } else if (hookEventName === "Stop" || hookEventName === "StopFailure") {
     activity = "running";
+  } else if (hookEventName === "Stop" || hookEventName === "StopFailure") {
+    activity = "idle";
+  } else if (hookEventName === "Notification") {
+    const notificationType = root.notification_type;
+    if (
+      notificationType === "permission_prompt" ||
+      notificationType === "elicitation_dialog" ||
+      notificationType === "agent_needs_input"
+    ) {
+      activity = "waiting";
+    } else if (notificationType === "idle_prompt" || notificationType === "agent_completed") {
+      activity = "idle";
+    } else if (
+      notificationType === "elicitation_complete" ||
+      notificationType === "elicitation_response"
+    ) {
+      activity = "running";
+    } else {
+      return undefined;
+    }
   } else if (hookEventName === "SessionEnd") {
-    activity = "waiting";
+    activity = "ended";
   } else {
     return undefined;
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     actionId,
     launchId,
     activity,
