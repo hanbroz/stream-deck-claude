@@ -19,7 +19,7 @@ export type ActiveCodeLaunch = {
   launchId: string;
   folder: string;
   startedAt: number;
-  terminal: "windows-terminal" | "powershell";
+  terminal: "companion" | "windows-terminal" | "powershell";
   processId: number;
 };
 
@@ -34,6 +34,14 @@ export type ContextSessionRuntime = {
   actionId: string;
   launchId: string;
   activity: CodeSessionActivity;
+  capturedAt: number;
+};
+
+export type ContextSessionIdentity = {
+  schemaVersion: 1;
+  actionId: string;
+  launchId: string;
+  sessionId: string;
   capturedAt: number;
 };
 
@@ -188,6 +196,34 @@ export function extractContextSessionRuntime(
     actionId,
     launchId,
     activity,
+    capturedAt
+  };
+}
+
+export function extractContextSessionIdentity(
+  payload: unknown,
+  actionId: string | undefined,
+  launchId: string | undefined,
+  capturedAt = Date.now()
+): ContextSessionIdentity | undefined {
+  if (!actionId || !launchId) {
+    return undefined;
+  }
+
+  const root = asRecord(payload);
+  if (
+    typeof root?.hook_event_name !== "string" ||
+    typeof root.session_id !== "string" ||
+    root.session_id.length === 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    schemaVersion: 1,
+    actionId,
+    launchId,
+    sessionId: root.session_id,
     capturedAt
   };
 }

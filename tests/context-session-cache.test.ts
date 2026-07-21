@@ -9,7 +9,11 @@ import {
   contextSessionSnapshotPath,
   findReconnectableBindingId,
   loadCodeStartDisplayState,
+  readContextSessionResumePointer,
+  refreshResumePointerFromIdentity,
+  refreshResumePointerFromSnapshot,
   writeActiveLaunch,
+  writeContextSessionResumePointer,
   writeContextSessionRuntime
 } from "../src/io/context-session-cache";
 
@@ -91,6 +95,164 @@ describe("context session cache", () => {
       kind: "starting",
       activity: "running"
     });
+  });
+
+  it("accepts a Companion active launch as the tracked process", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    await writeActiveLaunch(root, {
+      schemaVersion: 2,
+      actionId: "action-companion",
+      launchId: "launch-companion",
+      folder: "D:\\Projects\\Demo",
+      startedAt: 100,
+      terminal: "companion",
+      processId: process.pid
+    });
+
+    await expect(
+      loadCodeStartDisplayState(root, "action-companion", "D:\\Projects\\Demo")
+    ).resolves.toEqual({ kind: "starting", activity: "running" });
+  });
+
+  it("writes and reads a canonical-folder resume pointer", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    const folder = await mkdtemp(path.join(os.tmpdir(), "claude-project-"));
+
+    await expect(
+      writeContextSessionResumePointer(root, {
+        actionId: "action-1",
+        folder,
+        sessionId: "session-1",
+        sourceLaunchId: "launch-1",
+        capturedAt: 123
+      })
+    ).resolves.toMatchObject({
+      schemaVersion: 1,
+      actionId: "action-1",
+      sessionId: "session-1",
+      sourceLaunchId: "launch-1",
+      capturedAt: 123
+    });
+
+    await expect(
+      readContextSessionResumePointer(root, "action-1", folder)
+    ).resolves.toMatchObject({
+      actionId: "action-1",
+      sessionId: "session-1",
+      sourceLaunchId: "launch-1"
+    });
+    await expect(
+      readContextSessionResumePointer(root, "other-action", folder)
+    ).resolves.toBeUndefined();
+  });
+
+  it("ignores resume pointers with mismatched folder authority", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    const folder = await mkdtemp(path.join(os.tmpdir(), "claude-project-"));
+    const otherFolder = await mkdtemp(path.join(os.tmpdir(), "claude-project-"));
+    await writeContextSessionResumePointer(root, {
+      actionId: "action-1",
+      folder,
+      sessionId: "session-1",
+      sourceLaunchId: "launch-1",
+      capturedAt: 123
+    });
+
+    await expect(
+      readContextSessionResumePointer(root, "action-1", otherFolder)
+    ).resolves.toBeUndefined();
+  });
+
+  it("refreshes the pointer from matching status-line snapshots only", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    const folder = await mkdtemp(path.join(os.tmpdir(), "claude-project-"));
+    const otherFolder = await mkdtemp(path.join(os.tmpdir(), "claude-project-"));
+
+    await expect(
+      refreshResumePointerFromSnapshot(
+        root,
+        {
+          schemaVersion: 2,
+          actionId: "action-1",
+          launchId: "launch-1",
+          sessionId: "session-1",
+          projectDir: otherFolder,
+          capturedAt: 123,
+          context: { usedPercentage: 1 }
+        },
+        folder
+      )
+    ).resolves.toBeUndefined();
+    await expect(
+      refreshResumePointerFromSnapshot(
+        root,
+        {
+          schemaVersion: 2,
+          actionId: "action-1",
+          launchId: "launch-1",
+          sessionId: "session-1",
+          projectDir: folder,
+          capturedAt: 123,
+          context: { usedPercentage: 1 }
+        },
+        folder
+      )
+    ).resolves.toMatchObject({ sessionId: "session-1" });
+  });
+
+  it("refreshes the pointer from hook identity only for the active launch and folder", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    const folder = await mkdtemp(path.join(os.tmpdir(), "claude-project-"));
+    const otherFolder = await mkdtemp(path.join(os.tmpdir(), "claude-project-"));
+    await writeActiveLaunch(root, {
+      schemaVersion: 2,
+      actionId: "action-1",
+      launchId: "launch-1",
+      folder,
+      startedAt: 100,
+      terminal: "companion",
+      processId: process.pid
+    });
+
+    await expect(
+      refreshResumePointerFromIdentity(
+        root,
+        {
+          schemaVersion: 1,
+          actionId: "action-1",
+          launchId: "other-launch",
+          sessionId: "session-1",
+          capturedAt: 123
+        },
+        folder
+      )
+    ).resolves.toBeUndefined();
+    await expect(
+      refreshResumePointerFromIdentity(
+        root,
+        {
+          schemaVersion: 1,
+          actionId: "action-1",
+          launchId: "launch-1",
+          sessionId: "session-1",
+          capturedAt: 123
+        },
+        otherFolder
+      )
+    ).resolves.toBeUndefined();
+    await expect(
+      refreshResumePointerFromIdentity(
+        root,
+        {
+          schemaVersion: 1,
+          actionId: "action-1",
+          launchId: "launch-1",
+          sessionId: "session-1",
+          capturedAt: 123
+        },
+        folder
+      )
+    ).resolves.toMatchObject({ sessionId: "session-1" });
   });
 
   it("returns the matching session percentage and preserves null as starting", async () => {

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cascadia+Code:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:'Segoe UI Variable','Segoe UI',system-ui,sans-serif;background:#1f1f1f;color:#cccccc;overflow:hidden}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#4a4a4a;border-radius:6px;border:2px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-thumb:hover{background:#5a5a5a;background-clip:padding-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  @keyframes blink{0%,50%{opacity:1}51%,100%{opacity:0}}
+</style>
+</helmet>
+<div style="height:100vh;display:flex;flex-direction:column;background:#1f1f1f;border-radius:8px;overflow:hidden">
+
+  <!-- Title bar -->
+  <div style="height:40px;flex:none;display:flex;align-items:center;justify-content:space-between;background:#2b2b2b;padding-left:14px;user-select:none">
+    <div style="display:flex;align-items:center;gap:9px">
+      <div style="width:15px;height:15px;border-radius:4px;background:linear-gradient(135deg,#d97757,#c15f3c)"></div>
+      <span style="font-size:12.5px;color:#cccccc">STREAM DECK TERMINAL</span>
+      <span style="font-size:12.5px;color:#6e6e6e">—</span>
+      <span style="font-size:12.5px;color:#d97757;font-weight:600">my-project</span>
+    </div>
+    <div style="display:flex;height:100%">
+      <div style="width:46px;height:100%;display:flex;align-items:center;justify-content:center;color:#cccccc" style-hover="background:#3a3a3a">
+        <svg width="11" height="11" viewBox="0 0 11 11"><rect x="0" y="5" width="11" height="1" fill="currentColor"/></svg>
+      </div>
+      <div style="width:46px;height:100%;display:flex;align-items:center;justify-content:center;color:#cccccc" style-hover="background:#3a3a3a">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor"/></svg>
+      </div>
+      <div style="width:46px;height:100%;display:flex;align-items:center;justify-content:center;color:#cccccc" style-hover="background:#c42b1c;color:#ffffff">
+        <svg width="11" height="11" viewBox="0 0 11 11"><path d="M0 0 L11 11 M11 0 L0 11" stroke="currentColor" stroke-width="1"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div style="flex:1;display:flex;min-height:0">
+
+    <!-- Collapsed rail (shown when explorer is closed) -->
+    <sc-if value="{{ explorerCollapsed }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ toggleExplorer }}" title="탐색기 열기"
+           style="width:40px;flex:none;background:#2b2b2b;border-right:1px solid #1a1a1a;display:flex;flex-direction:column;align-items:center;padding-top:10px;cursor:pointer;color:#9a9a9a" style-hover="color:#ffffff">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h7l2 2h9v12a1 1 0 0 1-1 1H3z"/></svg>
+      </div>
+    </sc-if>
+
+    <!-- Explorer -->
+    <sc-if value="{{ explorerOpen }}" hint-placeholder-val="{{ true }}">
+    <div style="{{ explorerStyle }}">
+      <div style="display:flex;align-items:center;gap:4px;padding:8px 6px 4px 8px;color:#cccccc">
+        <div style="display:flex;align-items:center;gap:4px;cursor:pointer;flex:1">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6 4l4 4-4 4z"/></svg>
+          <span style="font-size:12px;font-weight:700;letter-spacing:.4px">MY-PROJECT</span>
+        </div>
+        <div onClick="{{ toggleExplorer }}" title="탐색기 닫기" style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:#858585;border-radius:5px;cursor:pointer" style-hover="background:#3a3a3a;color:#ffffff">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 6l-6 6 6 6"/></svg>
+        </div>
+      </div>
+      <div onContextMenu="{{ onEmptyMenu }}" style="flex:1;overflow-y:auto;padding-bottom:8px">
+        <sc-for list="{{ tree }}" as="node" hint-placeholder-count="8">
+          <div onClick="{{ node.onClick }}" onContextMenu="{{ node.onContextMenu }}"
+               style="{{ node.rowStyle }}"
+               style-hover="background:#2a2d2e">
+            <span style="{{ node.caretStyle }}">▸</span>
+            <span style="font-size:15px;line-height:1;{{ node.iconColor }}">{{ node.icon }}</span>
+            <span style="font-size:13px;color:{{ node.textColor }}">{{ node.label }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <!-- Resizer -->
+    <div onMouseDown="{{ startResize }}" title="드래그하여 크기 조절"
+         style="width:5px;flex:none;cursor:col-resize;background:transparent;position:relative;z-index:5" style-hover="background:#d97757"></div>
+    </sc-if>
+
+    <!-- Right side -->
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0;background:#1e1e1e">
+
+      <!-- Session tab bar -->
+      <div style="height:36px;flex:none;display:flex;align-items:center;background:#252526;border-bottom:1px solid #1a1a1a">
+        <div style="height:100%;display:flex;align-items:center;gap:8px;padding:0 14px;background:#1e1e1e;border-top:1px solid #d97757">
+          <div style="width:9px;height:9px;border-radius:50%;background:#3fb950"></div>
+          <span style="font-size:12.5px;color:#dddddd">Claude Code — Session</span>
+        </div>
+        <div onClick="{{ toggleTerminal }}" style="{{ termTabStyle }}" title="터미널 패널 열기/닫기">
+          <span style="font-size:12.5px">TERMINAL</span>
+          <span style="font-size:13px;opacity:.7">{{ termTabSign }}</span>
+        </div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;gap:14px;padding-right:16px;color:#858585;font-size:11.5px">
+          <span>claude-sonnet-4.5</span>
+          <span style="padding:2px 8px;background:#2d2d2d;border-radius:5px;color:#a0a0a0">◍ 1.2k tokens</span>
+        </div>
+      </div>
+
+      <!-- Console + Terminal split -->
+      <div style="flex:1;display:flex;min-height:0">
+        <!-- Console output -->
+        <div style="flex:1;overflow-y:auto;padding:18px 22px;font-family:'Cascadia Code',ui-monospace,monospace;font-size:13px;line-height:1.7;min-width:0">
+          <sc-for list="{{ logLines }}" as="line" hint-placeholder-count="10">
+            <div style="{{ line.style }}">{{ line.text }}</div>
+          </sc-for>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:6px;color:#d97757">
+            <span>❯</span>
+            <span style="width:8px;height:16px;background:#d97757;display:inline-block;animation:blink 1s step-end infinite"></span>
+          </div>
+        </div>
+        <!-- Terminal panel -->
+        <sc-if value="{{ showTerminal }}" hint-placeholder-val="{{ false }}">
+          <div onMouseDown="{{ startTermResize }}" title="드래그하여 크기 조절"
+               style="width:5px;flex:none;cursor:col-resize;background:#333333" style-hover="background:#d97757"></div>
+          <div style="{{ termPanelStyle }}">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 14px;background:#232323;border-bottom:1px solid #2d2d2d">
+              <span style="display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.6px;color:#bbbbbb;text-transform:uppercase">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l4 4-4 4M12 16h7"/></svg>
+                PowerShell
+              </span>
+              <div onClick="{{ toggleTerminal }}" title="닫기" style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:#858585;border-radius:5px;cursor:pointer" style-hover="background:#3a3a3a;color:#fff">
+                <svg width="11" height="11" viewBox="0 0 11 11"><path d="M0 0 L11 11 M11 0 L0 11" stroke="currentColor" stroke-width="1.3"/></svg>
+              </div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:12px 14px;font-family:'Cascadia Code',ui-monospace,monospace;font-size:12.5px;line-height:1.65;min-height:0">
+              <sc-for list="{{ termLines }}" as="line" hint-placeholder-count="6">
+                <div style="{{ line.style }}">{{ line.text }}</div>
+              </sc-for>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:4px;color:#3fb950">
+                <span style="color:#569cd6">PS C:\my-project&gt;</span>
+                <span style="width:7px;height:15px;background:#cccccc;display:inline-block;animation:blink 1s step-end infinite"></span>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+
+      <!-- Chat resizer -->
+      <div onMouseDown="{{ startDockResize }}" title="드래그하여 높이 조절"
+           style="height:6px;flex:none;cursor:row-resize;background:#333333" style-hover="background:#d97757"></div>
+      <!-- Input dock -->
+      <div style="{{ dockStyle }}">
+        <div style="flex:1;border:1px solid {{ inputBorder }};background:#262626;border-radius:12px;padding:10px 12px;transition:border-color .15s;display:flex;min-height:0">
+          <textarea value="{{ draft }}" onInput="{{ onDraft }}" onFocus="{{ onFocus }}" onBlur="{{ onBlur }}" onKeyDown="{{ onKey }}"
+            placeholder="Claude Code에게 요청을 입력하세요…  (Enter 전송 · Shift+Enter 줄바꿈)"
+            style="width:100%;border:none;outline:none;resize:none;background:transparent;color:#e6e6e6;font-family:inherit;font-size:13.5px;line-height:1.5;display:block"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context menu -->
+  <sc-if value="{{ menu.open }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeMenu }}" onContextMenu="{{ preventClose }}" style="position:fixed;inset:0;z-index:50"></div>
+    <div style="{{ menu.style }}">
+      <div style="padding:5px 14px 6px 14px;font-size:11px;color:#7a7a7a;border-bottom:1px solid #333333;margin-bottom:4px;white-space:nowrap">{{ menu.target }}</div>
+      <sc-for list="{{ menu.items }}" as="mi" hint-placeholder-count="4">
+        <sc-if value="{{ mi.divider }}" hint-placeholder-val="{{ false }}">
+          <div style="height:1px;background:#333333;margin:4px 0"></div>
+        </sc-if>
+        <sc-if value="{{ mi.label }}" hint-placeholder-val="{{ true }}">
+          <div onClick="{{ mi.onClick }}" style="display:flex;align-items:center;gap:10px;padding:6px 14px;font-size:13px;color:#dcdcdc;cursor:pointer;white-space:nowrap" style-hover="background:#d97757;color:#2a1810">
+            <span style="width:16px;text-align:center;font-size:14px">{{ mi.icon }}</span>
+            <span style="flex:1">{{ mi.label }}</span>
+            <span style="font-size:11px;color:#7a7a7a;margin-left:20px">{{ mi.shortcut }}</span>
+          </div>
+        </sc-if>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <!-- Toast -->
+  <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:36px;right:16px;z-index:60;background:#2d2d2d;border:1px solid #3a3a3a;border-left:3px solid #d97757;border-radius:8px;padding:10px 16px;font-size:12.5px;color:#e6e6e6;box-shadow:0 6px 22px rgba(0,0,0,.45)">{{ toast }}</div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    draft: "", focused: false,
+    menu: { open: false },
+    toast: "",
+    explorerW: 260, explorerCollapsed: false,
+    showTerminal: false, termW: 460, dockH: 150,
+    rows: [
+      [0,"folder-open","src"],
+        [1,"folder-open","components"],
+          [2,"tsx","Button.tsx"],
+          [2,"tsx","Sidebar.tsx"],
+          [2,"tsx","Console.tsx"],
+        [1,"ts","main.ts"],
+        [1,"ts","preload.ts"],
+        [1,"css","styles.css"],
+      [0,"folder","public"],
+      [0,"json","package.json"],
+      [0,"md","README.md"],
+      [0,"js","electron.config.js"],
+    ],
+  };
+  _toastTimer = null;
+
+  flashToast(msg) {
+    clearTimeout(this._toastTimer);
+    this.setState({ toast: msg });
+    this._toastTimer = setTimeout(() => this.setState({ toast: "" }), 2600);
+  }
+
+  iconFor(t) {
+    return ({
+      "folder":["📁",""], "folder-open":["📂",""],
+      "tsx":["⬡","color:#4fc3f7"], "ts":["⬡","color:#4fc3f7"],
+      "js":["◆","color:#e6c14b"], "json":["{}","color:#e6c14b"],
+      "css":["#","color:#c678dd"], "md":["≡","color:#6a9bd8"], "txt":["≡","color:#9aa0a6"]
+    }[t] || ["·","color:#9aa0a6"]);
+  }
+
+  extType(name) {
+    const e = (name.split(".").pop() || "").toLowerCase();
+    return ({tsx:"tsx",ts:"ts",js:"js",json:"json",css:"css",md:"md"}[e]) || "txt";
+  }
+
+  // Insert a new row directly under index `at` (or at end for -1), at given depth.
+  insertRow(at, depth, type, label) {
+    const rows = this.state.rows.map(r => r.slice());
+    const row = [depth, type, label];
+    if (at < 0) rows.push(row); else rows.splice(at + 1, 0, row);
+    this.setState({ rows });
+  }
+
+  openMenu(e, target, kind, index, depth) {
+    e.preventDefault(); e.stopPropagation();
+    const items = [];
+    const childDepth = kind === "folder" ? depth + 1 : (kind === "empty" ? 0 : depth);
+    const anchor = index; // insert after this row
+    items.push({ icon:"🗎", label:"New File", shortcut:"", onClick:() => {
+      this.insertRow(kind==="empty" ? -1 : anchor, childDepth, this.extType("untitled.txt"), "untitled.txt");
+      this.flashToast("새 파일 생성: untitled.txt"); this.closeMenu();
+    }});
+    items.push({ icon:"🗀", label:"New Folder", shortcut:"", onClick:() => {
+      this.insertRow(kind==="empty" ? -1 : anchor, childDepth, "folder", "new-folder");
+      this.flashToast("새 폴더 생성: new-folder"); this.closeMenu();
+    }});
+    items.push({ divider:true });
+    items.push({ icon:"🗂", label:"Reveal in File Explorer", shortcut:"Shift+Alt+R", onClick:() => {
+      this.flashToast("파일 탐색기에서 열기 (Electron: shell.showItemInFolder)"); this.closeMenu();
+    }});
+    items.push({ icon:"⟳", label:"Reload", shortcut:"", onClick:() => {
+      this.flashToast("탐색기 새로고침"); this.closeMenu();
+    }});
+
+    const menuW = 260, menuH = 30 + items.length * 32;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const x = Math.min(e.clientX, vw - menuW - 8);
+    const y = Math.min(e.clientY, vh - menuH - 8);
+    this.setState({ menu: {
+      open: true, target, items,
+      style: `position:fixed;left:${x}px;top:${y}px;z-index:51;min-width:220px;background:#2b2b2b;border:1px solid #3a3a3a;border-radius:8px;padding:5px 0 6px 0;box-shadow:0 8px 28px rgba(0,0,0,.5);font-family:'Segoe UI Variable','Segoe UI',sans-serif`
+    }});
+  }
+
+  closeMenu() { this.setState({ menu: { open: false } }); }
+
+  toggleExplorer() { this.setState(s => ({ explorerCollapsed: !s.explorerCollapsed })); }
+
+  toggleTerminal() { this.setState(s => ({ showTerminal: !s.showTerminal })); }
+
+  startDockResize(e) {
+    e.preventDefault();
+    const startY = e.clientY, startH = this.state.dockH;
+    const onMove = (ev) => {
+      const h = Math.max(70, Math.min(480, startH - (ev.clientY - startY)));
+      this.setState({ dockH: h });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  startTermResize(e) {
+    e.preventDefault();
+    const startX = e.clientX, startW = this.state.termW;
+    const onMove = (ev) => {
+      const w = Math.max(240, Math.min(900, startW - (ev.clientX - startX)));
+      this.setState({ termW: w });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  startResize(e) {
+    e.preventDefault();
+    const startX = e.clientX, startW = this.state.explorerW;
+    const onMove = (ev) => {
+      const w = Math.max(180, Math.min(520, startW + (ev.clientX - startX)));
+      this.setState({ explorerW: w });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  buildTree() {
+    return this.state.rows.map((r, i) => {
+      const [depth, type, label] = r;
+      const isFolder = type.startsWith("folder");
+      const [icon, iconColor] = this.iconFor(type);
+      return {
+        label, icon, iconColor,
+        textColor: isFolder ? "#cccccc" : "#c8c8c8",
+        rowStyle: `display:flex;align-items:center;gap:6px;height:23px;cursor:pointer;padding-left:${8+depth*15}px`,
+        caretStyle: isFolder
+          ? `font-size:10px;color:#858585;display:inline-block;width:10px;transform:rotate(${type==="folder-open"?90:0}deg)`
+          : "display:inline-block;width:10px",
+        onClick: () => {},
+        onContextMenu: (e) => this.openMenu(e, label, isFolder ? "folder" : "file", i, depth),
+      };
+    });
+  }
+
+  renderVals() {
+    const c = (t,col) => ({ text: t, style: `color:${col};white-space:pre-wrap` });
+    const logLines = [
+      c("$ claude \"Electron 앱 초기 구조를 잡아줘\"", "#8a8a8a"),
+      c("", "#8a8a8a"),
+      c("● 프로젝트를 분석하고 있습니다…", "#d97757"),
+      c("  ⎿ package.json 읽음", "#8a8a8a"),
+      c("  ⎿ src/main.ts 읽음 (48 lines)", "#8a8a8a"),
+      c("", "#8a8a8a"),
+      c("● main 프로세스와 renderer를 분리하고 preload 브릿지를", "#e6e6e6"),
+      c("  통해 IPC를 노출하는 구조를 제안합니다.", "#e6e6e6"),
+      c("", "#8a8a8a"),
+      c("  Update(src/main.ts)", "#3fb950"),
+      c("  ⎿  +12 -3", "#3fb950"),
+      c("  Create(src/preload.ts)", "#3fb950"),
+      c("  ⎿  +21 new file", "#3fb950"),
+      c("", "#8a8a8a"),
+      c("● 변경을 적용했습니다. 개발 서버를 실행할까요?", "#e6e6e6"),
+    ];
+
+    const t = (txt, col) => ({ text: txt, style: `color:${col};white-space:pre-wrap` });
+    const termLines = [
+      t("PS C:\\my-project> npm run dev", "#dcdcdc"),
+      t("", "#dcdcdc"),
+      t("> stream-deck-terminal@1.0.0 dev", "#8a8a8a"),
+      t("> electron .", "#8a8a8a"),
+      t("", "#dcdcdc"),
+      t("[main] Electron 앱 시작", "#569cd6"),
+      t("[vite] dev server ready in 412 ms", "#3fb950"),
+      t("  ➜  Local:   http://localhost:5173/", "#4fc3f7"),
+      t("[main] BrowserWindow 로드 완료", "#569cd6"),
+    ];
+
+    return {
+      tree: this.buildTree(),
+      logLines,
+      termLines,
+      showTerminal: this.state.showTerminal,
+      toggleTerminal: () => this.toggleTerminal(),
+      startTermResize: (e) => this.startTermResize(e),
+      startDockResize: (e) => this.startDockResize(e),
+      dockStyle: `height:${this.state.dockH}px;flex:none;padding:10px 16px 14px 16px;background:#1e1e1e;display:flex`,
+      termPanelStyle: `width:${this.state.termW}px;flex:none;display:flex;flex-direction:column;background:#181818;min-width:0`,
+      termTabSign: this.state.showTerminal ? "×" : "+",
+      termTabStyle: "height:100%;display:flex;align-items:center;gap:7px;padding:0 14px;cursor:pointer;border-top:1px solid "
+        + (this.state.showTerminal ? "#d97757" : "transparent")
+        + ";background:" + (this.state.showTerminal ? "#1e1e1e" : "transparent")
+        + ";color:" + (this.state.showTerminal ? "#dddddd" : "#9a9a9a"),
+      menu: this.state.menu,
+      toast: this.state.toast,
+      explorerOpen: !this.state.explorerCollapsed,
+      explorerCollapsed: this.state.explorerCollapsed,
+      explorerStyle: `width:${this.state.explorerW}px;flex:none;background:#252526;display:flex;flex-direction:column`,
+      toggleExplorer: () => this.toggleExplorer(),
+      startResize: (e) => this.startResize(e),
+      closeMenu: () => this.closeMenu(),
+      preventClose: (e) => { e.preventDefault(); this.closeMenu(); },
+      onEmptyMenu: (e) => this.openMenu(e, "MY-PROJECT", "empty", -1, 0),
+      draft: this.state.draft,
+      inputBorder: this.state.focused ? "#d97757" : "#3a3a3a",
+      sendStyle: "display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;color:#2a1810;background:"
+        + (this.state.draft.trim() ? "#d97757" : "#5a4238"),
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      onFocus: () => this.setState({ focused: true }),
+      onBlur: () => this.setState({ focused: false }),
+      onKey: (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this.setState({ draft: "" }); } },
+      onSend: () => this.setState({ draft: "" }),
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -18,6 +18,7 @@ export type UsageDisplayState =
   | { kind: "ready"; percentage: number; remaining: string }
   | { kind: "expired"; remaining: "REFRESH" }
   | { kind: "setup" }
+  | { kind: "statusline-conflict" }
   | { kind: "waiting" }
   | { kind: "error" };
 

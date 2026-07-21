@@ -2,9 +2,14 @@ import { randomUUID } from "node:crypto";
 
 import type { ensureBridgeInstalled } from "../bridge/installer";
 import { defaultClaudeSettingsPath, defaultUsageDataDir } from "../bridge/paths";
-import type { writeActiveLaunch } from "../io/context-session-cache";
 import type {
-  launchClaudeTerminal,
+  readContextSessionResumePointer,
+  writeActiveLaunch
+} from "../io/context-session-cache";
+import type {
+  launchClaudeCompanion
+} from "../services/companion-launcher";
+import type {
   validateLaunchFolder
 } from "../services/terminal-launcher";
 import type { renderCodeStartKeyImage } from "../ui/code-start-renderer";
@@ -31,7 +36,8 @@ export type CodeStartLaunchDependencies = {
   defaultClaudeSettingsPath: typeof defaultClaudeSettingsPath;
   defaultUsageDataDir: typeof defaultUsageDataDir;
   ensureBridgeInstalled: typeof ensureBridgeInstalled;
-  launchClaudeTerminal: typeof launchClaudeTerminal;
+  launchClaudeCompanion: typeof launchClaudeCompanion;
+  readContextSessionResumePointer: typeof readContextSessionResumePointer;
   renderCodeStartKeyImage: typeof renderCodeStartKeyImage;
   validateLaunchFolder: typeof validateLaunchFolder;
   writeActiveLaunch: typeof writeActiveLaunch;
@@ -69,8 +75,8 @@ export function configuredBindingId(settings: CodeStartLaunchSettings): string |
 export function defaultCodeStartLaunchDependencies(
   overrides: Pick<
     CodeStartLaunchDependencies,
-    "ensureBridgeInstalled" | "launchClaudeTerminal" | "renderCodeStartKeyImage" |
-      "validateLaunchFolder" | "writeActiveLaunch" | "logger"
+    "ensureBridgeInstalled" | "launchClaudeCompanion" | "readContextSessionResumePointer" |
+      "renderCodeStartKeyImage" | "validateLaunchFolder" | "writeActiveLaunch" | "logger"
   >
 ): CodeStartLaunchDependencies {
   return {
@@ -124,7 +130,17 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
     });
 
     const launchId = dependencies.createLaunchId();
-    const launch = await dependencies.launchClaudeTerminal(folder, bindingId, launchId);
+    const resumePointer = await dependencies.readContextSessionResumePointer(
+      dependencies.defaultUsageDataDir(),
+      bindingId,
+      folder
+    );
+    const launch = await dependencies.launchClaudeCompanion(
+      folder,
+      bindingId,
+      launchId,
+      resumePointer?.sessionId
+    );
     await dependencies.writeActiveLaunch(dependencies.defaultUsageDataDir(), {
       schemaVersion: 2,
       actionId: bindingId,

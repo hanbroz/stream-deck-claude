@@ -1,0 +1,28 @@
+appId: com.hanbroz.claudedeck.companion
+productName: Claude Deck Companion
+copyright: Copyright (c) Hanbroz
+directories:
+  output: dist/companion
+files:
+  - "dist/companion/app/**/*"
+  - "package.json"
+asar: true
+asarUnpack:
+  - "**/node-pty/**"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: "Claude Deck Companion Setup ${version}.${ext}"
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: false
+  include: companion/packaging/nsis/wt-prerequisite.nsh
+extraResources:
+  - from: dist/com.hanbroz.claude-usage.streamDeckPlugin
+    to: com.hanbroz.claude-usage.streamDeckPlugin
+  - from: docs/INSTALL_WINDOWS_KO.html
+    to: INSTALL_WINDOWS_KO.html

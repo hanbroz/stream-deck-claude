@@ -51,6 +51,19 @@ describe("loadUsageDisplayState", () => {
     ).resolves.toEqual({ kind: "ready", percentage: 73, remaining: "1d 3h" });
   });
 
+  it("reports a status-line conflict instead of claiming usage data is live", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
+    const cachePath = path.join(root, "usage.json");
+    await expect(
+      loadUsageDisplayState("fiveHour", {
+        cachePath,
+        bridgeInstalled: false,
+        statusLineConflict: true,
+        nowMs: 0
+      })
+    ).resolves.toEqual({ kind: "statusline-conflict" });
+  });
+
   it("renders an error for malformed cache data", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
     const cachePath = path.join(root, "usage.json");

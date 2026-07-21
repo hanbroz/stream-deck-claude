@@ -5,6 +5,7 @@ $distDir = Join-Path $projectRoot "dist"
 $manifestPath = Join-Path $projectRoot "com.hanbroz.claude-usage.sdPlugin\manifest.json"
 $pluginName = "com.hanbroz.claude-usage.streamDeckPlugin"
 $pluginPath = Join-Path $distDir $pluginName
+$companionInstallerPattern = "Claude Deck Companion Setup *.exe"
 $guidePath = Join-Path $projectRoot "docs\INSTALL_WINDOWS_KO.html"
 $launcherPath = Join-Path $projectRoot "packaging\windows\Install.cmd"
 
@@ -22,9 +23,21 @@ try {
   Invoke-NpmScript "build"
   Invoke-NpmScript "verify:bridge"
   Invoke-NpmScript "validate"
-  Invoke-NpmScript "pack"
+  Invoke-NpmScript "companion:test"
+  Invoke-NpmScript "companion:package"
 } finally {
   Pop-Location
+}
+
+$companionDist = Join-Path $distDir "companion"
+if (-not (Test-Path -LiteralPath $companionDist)) {
+  throw "Companion output directory was not found: $companionDist"
+}
+$companionInstaller = Get-ChildItem -LiteralPath $companionDist -Filter $companionInstallerPattern -File |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
+if ($null -eq $companionInstaller) {
+  throw "Companion installer was not found under dist\companion."
 }
 
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
@@ -40,12 +53,16 @@ if (-not $resolvedStaging.StartsWith($resolvedDist + [IO.Path]::DirectorySeparat
 New-Item -ItemType Directory -Path $staging | Out-Null
 try {
   Copy-Item -LiteralPath $pluginPath -Destination (Join-Path $staging $pluginName)
+  Copy-Item -LiteralPath $companionInstaller.FullName -Destination (Join-Path $staging $companionInstaller.Name)
   Copy-Item -LiteralPath $guidePath -Destination (Join-Path $staging "INSTALL_WINDOWS_KO.html")
   Copy-Item -LiteralPath $launcherPath -Destination (Join-Path $staging "Install.cmd")
 
-  $pluginHash = Get-FileHash -LiteralPath $pluginPath -Algorithm SHA256
-  $checksumLine = "$($pluginHash.Hash)  $pluginName"
-  Set-Content -LiteralPath (Join-Path $staging "SHA256SUMS.txt") -Value $checksumLine -Encoding Ascii
+  $checksumLines = @()
+  foreach ($releaseFile in @($pluginPath, $companionInstaller.FullName, $guidePath, $launcherPath)) {
+    $releaseHash = Get-FileHash -LiteralPath $releaseFile -Algorithm SHA256
+    $checksumLines += "$($releaseHash.Hash)  $([IO.Path]::GetFileName($releaseFile))"
+  }
+  Set-Content -LiteralPath (Join-Path $staging "SHA256SUMS.txt") -Value $checksumLines -Encoding Ascii
 
   if (Test-Path -LiteralPath $archivePath) {
     Remove-Item -LiteralPath $archivePath -Force

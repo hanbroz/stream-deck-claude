@@ -1,8 +1,9 @@
 {
   "name": "claude-usage-streamdeck",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
+  "main": "dist/companion/app/main.cjs",
   "scripts": {
     "build": "rollup -c",
     "test": "vitest run",
@@ -13,19 +14,30 @@
     "preview": "node dist/tools/render-previews.js",
     "pack": "streamdeck pack com.hanbroz.claude-usage.sdPlugin -o dist --force",
     "release:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-release.ps1",
-    "bridge:install": "node com.hanbroz.claude-usage.sdPlugin/bridge/install-bridge.js"
+    "bridge:install": "node com.hanbroz.claude-usage.sdPlugin/bridge/install-bridge.js",
+    "companion:test": "vitest run companion/tests",
+    "companion:build": "node scripts/build-companion.mjs",
+    "companion:rebuild": "electron-builder install-app-deps",
+    "companion:package": "npm run companion:rebuild && npm run companion:build && npm run pack && electron-builder --config companion/electron-builder.yml --win nsis --x64"
   },
   "dependencies": {
-    "@elgato/streamdeck": "2.1.0"
+    "@elgato/streamdeck": "2.1.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "@elgato/cli": "1.7.4",
     "@rollup/plugin-commonjs": "^29.0.2",
     "@rollup/plugin-node-resolve": "^15.2.2",
     "@rollup/plugin-terser": "^1.0.0",
-    "@rollup/plugin-typescript": "^12.1.0",
+    "@rollup/plugin-typescript": "^12.1.2",
     "@tsconfig/node20": "^20.1.2",
     "@types/node": "~24.1.0",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
     "rollup": "^4.0.2",
     "tslib": "^2.6.2",
     "typescript": "^5.2.2",

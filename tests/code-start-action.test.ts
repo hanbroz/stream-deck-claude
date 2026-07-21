@@ -43,10 +43,14 @@ function createDependencies() {
     cachePath: "D:\\Data\\usage.json"
   }));
   const validateLaunchFolder = vi.fn(async () => undefined);
-  const launchClaudeTerminal = vi.fn<CodeStartLaunchDependencies["launchClaudeTerminal"]>(async () => ({
-    terminal: "windows-terminal" as const,
+  const launchClaudeCompanion = vi.fn<CodeStartLaunchDependencies["launchClaudeCompanion"]>(async () => ({
+    terminal: "companion" as const,
     processId: 4321
   }));
+  const readContextSessionResumePointer =
+    vi.fn<CodeStartLaunchDependencies["readContextSessionResumePointer"]>(
+      async () => undefined
+    );
   const writeActiveLaunch = vi.fn(async () => undefined);
   const renderCodeStartKeyImage = vi.fn((projectName: string, state: { kind: string; activity: string }) =>
     `${projectName}:${state.kind}:${state.activity}`
@@ -55,7 +59,8 @@ function createDependencies() {
     defaultClaudeSettingsPath: () => "D:\\Claude\\settings.json",
     defaultUsageDataDir: () => "D:\\Data\\ClaudeUsageDeck",
     ensureBridgeInstalled,
-    launchClaudeTerminal,
+    launchClaudeCompanion,
+    readContextSessionResumePointer,
     renderCodeStartKeyImage,
     validateLaunchFolder,
     writeActiveLaunch,
@@ -68,7 +73,8 @@ function createDependencies() {
     dependencies,
     ensureBridgeInstalled,
     validateLaunchFolder,
-    launchClaudeTerminal,
+    launchClaudeCompanion,
+    readContextSessionResumePointer,
     writeActiveLaunch,
     renderCodeStartKeyImage,
     logger
@@ -112,10 +118,16 @@ describe("Code Start relaunch guard", () => {
       dataDir: "D:\\Data\\ClaudeUsageDeck",
       bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js"
     });
-    expect(harness.launchClaudeTerminal).toHaveBeenCalledWith(
+    expect(harness.readContextSessionResumePointer).toHaveBeenCalledWith(
+      "D:\\Data\\ClaudeUsageDeck",
+      "binding-1",
+      "D:\\Projects\\Demo"
+    );
+    expect(harness.launchClaudeCompanion).toHaveBeenCalledWith(
       "D:\\Projects\\Demo",
       "binding-1",
-      "launch-123"
+      "launch-123",
+      undefined
     );
     expect(harness.writeActiveLaunch).toHaveBeenCalledWith(
       "D:\\Data\\ClaudeUsageDeck",
@@ -125,7 +137,7 @@ describe("Code Start relaunch guard", () => {
         launchId: "launch-123",
         folder: "D:\\Projects\\Demo",
         startedAt: 1_700_000_000_000,
-        terminal: "windows-terminal",
+        terminal: "companion",
         processId: 4321
       })
     );
@@ -136,8 +148,8 @@ describe("Code Start relaunch guard", () => {
 
   it("keeps duplicate presses in Starting state without launching twice", async () => {
     const harness = createDependencies();
-    const launch = deferred<{ terminal: "windows-terminal" | "powershell"; processId: number }>();
-    harness.launchClaudeTerminal.mockReturnValue(launch.promise);
+    const launch = deferred<{ terminal: "companion" | "windows-terminal" | "powershell"; processId: number }>();
+    harness.launchClaudeCompanion.mockReturnValue(launch.promise);
     const action = createAction();
     const options = {
       action,
@@ -152,14 +164,14 @@ describe("Code Start relaunch guard", () => {
     };
 
     const firstPress = launchConfiguredCodeStart(options);
-    await vi.waitFor(() => expect(harness.launchClaudeTerminal).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(harness.launchClaudeCompanion).toHaveBeenCalledTimes(1));
     await launchConfiguredCodeStart(options);
 
-    expect(harness.launchClaudeTerminal).toHaveBeenCalledTimes(1);
+    expect(harness.launchClaudeCompanion).toHaveBeenCalledTimes(1);
     expect(harness.writeActiveLaunch).not.toHaveBeenCalled();
     expect(action.setImage).toHaveBeenCalledWith("Demo:starting:running");
 
-    launch.resolve({ terminal: "windows-terminal", processId: 4321 });
+    launch.resolve({ terminal: "companion", processId: 4321 });
     await firstPress;
     expect(harness.writeActiveLaunch).toHaveBeenCalledTimes(1);
     expect(action.showOk).toHaveBeenCalledTimes(1);
@@ -167,7 +179,7 @@ describe("Code Start relaunch guard", () => {
 
   it("releases the launch guard after a failed launch so the next press can relaunch", async () => {
     const harness = createDependencies();
-    harness.launchClaudeTerminal
+    harness.launchClaudeCompanion
       .mockRejectedValueOnce(new Error("launch failed"))
       .mockResolvedValueOnce({ terminal: "powershell", processId: 8765 });
     const action = createAction();
@@ -186,7 +198,7 @@ describe("Code Start relaunch guard", () => {
     await launchConfiguredCodeStart(options);
     await launchConfiguredCodeStart(options);
 
-    expect(harness.launchClaudeTerminal).toHaveBeenCalledTimes(2);
+    expect(harness.launchClaudeCompanion).toHaveBeenCalledTimes(2);
     expect(action.setImage).toHaveBeenCalledWith("Demo:error:idle");
     expect(action.showAlert).toHaveBeenCalledTimes(1);
     expect(harness.writeActiveLaunch).toHaveBeenCalledWith(
@@ -198,5 +210,37 @@ describe("Code Start relaunch guard", () => {
       })
     );
     expect(action.showOk).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes an exact resume session ID from the matching pointer into Companion", async () => {
+    const harness = createDependencies();
+    harness.readContextSessionResumePointer.mockResolvedValue({
+      schemaVersion: 1,
+      actionId: "binding-1",
+      folder: "D:\\Projects\\Demo",
+      sessionId: "session-resume",
+      sourceLaunchId: "launch-old",
+      capturedAt: 123
+    });
+    const action = createAction();
+
+    await launchConfiguredCodeStart({
+      action,
+      settings: {
+        bindingId: "binding-1",
+        folder: "D:\\Projects\\Demo",
+        projectName: "Demo"
+      },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    });
+
+    expect(harness.launchClaudeCompanion).toHaveBeenCalledWith(
+      "D:\\Projects\\Demo",
+      "binding-1",
+      "launch-123",
+      "session-resume"
+    );
   });
 });

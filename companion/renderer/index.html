@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Companion</title>
+    <link rel="stylesheet" href="./index.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="app-shell" class="app-shell">
+      <header class="titlebar" aria-label="앱 제목 표시줄">
+        <div class="titlebar__brand">
+          <span class="titlebar__logo" aria-hidden="true"></span>
+          <span>STREAM DECK TERMINAL</span>
+          <span class="titlebar__divider">-</span>
+          <strong id="title-project-name">project</strong>
+        </div>
+        <div class="window-controls" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </header>
+
+      <div class="body-shell">
+        <button id="explorer-rail" class="explorer-rail" type="button" title="탐색기 열기" aria-label="탐색기 열기" hidden>
+          <span aria-hidden="true">▣</span>
+        </button>
+
+        <aside id="sidebar" class="sidebar" aria-label="프로젝트 탐색기">
+          <header class="sidebar__header">
+            <button id="explorer-toggle" class="explorer-title" type="button" title="탐색기 닫기">
+              <span aria-hidden="true">▸</span>
+              <strong id="explorer-project-name">PROJECT</strong>
+            </button>
+            <button id="new-session" class="icon-button" type="button" title="새 세션" aria-label="새 세션">+</button>
+          </header>
+
+          <section class="status-panel" aria-label="세션 상태">
+            <div>
+              <span class="status-dot" id="status-dot"></span>
+              <strong id="session-state">대기 중</strong>
+            </div>
+            <span id="session-model">모델 없음</span>
+          </section>
+
+          <section class="resume-panel" aria-label="세션 재개">
+            <input id="resume-session-id" type="text" spellcheck="false" placeholder="세션 ID" aria-label="재개할 세션 ID" />
+            <button id="resume-session" type="button">재개</button>
+          </section>
+
+          <nav class="tree-toolbar" aria-label="탐색기 도구">
+            <button id="open-explorer" type="button">탐색기</button>
+            <button id="open-terminal" type="button">터미널</button>
+          </nav>
+
+          <section id="tree" class="tree" aria-label="파일 트리"></section>
+        </aside>
+
+        <section class="workspace" aria-label="Claude Code 작업 영역">
+          <nav class="session-tabs" aria-label="세션 탭">
+            <div class="session-tab session-tab--active">
+              <span id="session-tab-dot" class="tab-dot"></span>
+              <span>Claude Code - Session</span>
+            </div>
+            <button id="terminal-split-toggle" class="session-tab session-tab--button" type="button" title="터미널 패널 열기/닫기">
+              <span>TERMINAL</span>
+              <span id="terminal-split-sign">×</span>
+            </button>
+            <div class="session-tabs__meta">
+              <span id="tab-model">모델 없음</span>
+              <span id="tab-project-name">project</span>
+            </div>
+          </nav>
+
+          <div class="work-split">
+            <section class="console-pane" aria-label="Claude Code 터미널">
+              <div id="console-log" class="console-log">
+                <p class="console-line console-line--muted">$ claude</p>
+                <p class="console-line console-line--accent">● Claude Code 세션을 준비합니다...</p>
+                <p class="console-line">프로젝트 탐색기에서 폴더를 선택하거나 새 세션을 시작하세요.</p>
+              </div>
+              <div id="terminal" class="terminal" aria-label="Claude Code 터미널"></div>
+            </section>
+
+            <section id="terminal-panel" class="terminal-panel" aria-label="터미널 패널">
+              <header class="terminal-panel__header">
+                <span>PowerShell</span>
+                <button id="terminal-panel-close" class="icon-button icon-button--small" type="button" title="닫기" aria-label="터미널 패널 닫기">×</button>
+              </header>
+              <div class="terminal-panel__empty">
+                Windows Terminal은 프로젝트 경로에서 별도 창으로 열립니다.
+              </div>
+            </section>
+          </div>
+
+          <footer class="composer" aria-label="메시지 입력">
+            <div id="image-preview" class="image-preview" aria-live="polite"></div>
+            <div class="composer__row">
+              <textarea
+                id="prompt-input"
+                rows="2"
+                spellcheck="false"
+                placeholder="Claude Code에게 요청을 입력하세요... (Enter 전송 · Shift+Enter 줄바꿈)"
+                aria-label="프롬프트 입력"
+              ></textarea>
+              <div class="composer__actions">
+                <button id="copy-selection" class="icon-button" type="button" title="선택 복사" aria-label="선택 복사" disabled>
+                  ⧉
+                </button>
+                <button id="send-prompt" type="button">전송</button>
+              </div>
+            </div>
+          </footer>
+        </section>
+      </div>
+    </main>
+
+    <div id="context-menu" class="context-menu" role="menu" hidden>
+      <div id="context-menu-title" class="context-menu__title">PROJECT</div>
+      <button data-action="new-file" type="button" role="menuitem"><span>▢</span>새 파일</button>
+      <button data-action="new-folder" type="button" role="menuitem"><span>▣</span>새 폴더</button>
+      <button data-action="refresh" type="button" role="menuitem"><span>↻</span>새로고침</button>
+      <button data-action="show-explorer" type="button" role="menuitem"><span>⌕</span>탐색기에서 보기</button>
+      <button data-action="open-terminal" type="button" role="menuitem"><span>›</span>여기서 터미널 열기</button>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>

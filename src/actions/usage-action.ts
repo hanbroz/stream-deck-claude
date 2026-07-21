@@ -10,7 +10,11 @@ import {
   streamDeck
 } from "@elgato/streamdeck";
 
-import { ensureBridgeInstalled, isBridgeInstalled } from "../bridge/installer";
+import {
+  ensureBridgeInstalled,
+  isBridgeInstalled,
+  isStatusLineConflict
+} from "../bridge/installer";
 import { defaultClaudeSettingsPath, defaultUsageDataDir } from "../bridge/paths";
 import type { RateLimitKind } from "../domain/rate-limits";
 import { loadUsageDisplayState } from "../services/display-loader";
@@ -88,7 +92,8 @@ export abstract class UsageAction extends SingletonAction {
     const dataDir = defaultUsageDataDir();
     const state = await loadUsageDisplayState(this.kind, {
       cachePath: path.join(dataDir, "usage.json"),
-      bridgeInstalled: await isBridgeInstalled(settingsPath, dataDir)
+      bridgeInstalled: await isBridgeInstalled(settingsPath, dataDir),
+      statusLineConflict: await isStatusLineConflict(settingsPath, dataDir)
     });
     const image = renderUsageKeyImage(this.kind, state);
     await Promise.all(

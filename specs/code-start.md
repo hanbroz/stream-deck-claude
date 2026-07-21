@@ -2,14 +2,14 @@
 
 ## Goal
 
-Add a private Stream Deck action named `Code Start` that launches Claude Code in a configured folder and displays the current model and context-window usage for the exact session launched by that action instance.
+Add a private Stream Deck action named `Code Start` that launches Claude Code through Claude Deck Companion in a configured folder and displays the current model and context-window usage for the exact session launched by that action instance.
 
 ## Acceptance criteria
 
 1. The manifest contains a third, uniquely identified key action named `Code Start` with its own icon, key image, and property inspector.
 2. Each placed action stores its own `folder` and `projectName` settings. With no folder configured, pressing it does not launch a process.
-3. Pressing a configured action validates that the folder exists, installs/updates the existing Claude status-line bridge, and launches the exact command `claude --dangerously-skip-permissions` with the folder passed as the process working directory rather than interpolated into shell text.
-4. Windows Terminal is preferred when `wt.exe` is available. Its PowerShell payload is passed as UTF-16LE Base64 through `-EncodedCommand`, so statement separators such as `;` are not interpreted as additional Windows Terminal commands. A visible PowerShell window is used as the fallback when `wt.exe` is not available.
+3. Pressing a configured action validates that the folder exists, installs/updates the existing Claude status-line bridge, opens Claude Deck Companion, and launches the exact command `claude --dangerously-skip-permissions` with the folder passed as the process working directory rather than interpolated into shell text.
+4. Claude Deck Companion is resolved from `CLAUDE_DECK_COMPANION_PATH`, then `%LOCALAPPDATA%\Programs\Claude Deck Companion\Claude Deck Companion.exe`, then `dist\companion\win-unpacked\Claude Deck Companion.exe`. The legacy terminal launcher is available only when `CLAUDE_DECK_ALLOW_TERMINAL_FALLBACK=1` is set for development.
 5. Every placed action persists a binding ID independent of Stream Deck's transient action-instance ID, and every launch has that binding ID plus a new random launch ID in its inherited environment. Multiple buttons, repeated launches, and older still-running sessions cannot overwrite the active session selected for another launch.
 6. The status-line bridge caches only the session ID, launch ID, project directory, current model display name, context percentage, token totals, and capture time. It never caches effort, prompts, transcripts, credentials, or the complete status-line payload.
 7. The key displays exactly three content elements and no status labels: the configured project name, the current model (for example `Opus 4.8`), and a context-usage progress bar. Context-capacity decorations such as `(1M context)` are omitted, and the project name remains larger than the model line.
@@ -26,3 +26,8 @@ Add a private Stream Deck action named `Code Start` that launches Claude Code in
 18. Both Windows Terminal and the PowerShell fallback report the persistent PowerShell host PID, allowing terminal closure to be detected instead of tracking a short-lived launcher process.
 19. Moving a running Code Start action to another key preserves its binding ID and continues displaying the same session. Existing installations without a binding ID reconnect only when exactly one unclaimed running launch matches the configured folder; ambiguous matches are never guessed.
 20. The Windows Terminal launch-plan regression test decodes the encoded PowerShell payload back to the exact Claude launch command and verifies that no raw semicolon remains in the `wt.exe` argument vector.
+21. Reopening the same Code Start binding and canonical folder passes the latest observed same-binding session ID to Companion as an exact resume request. If resume fails, Companion shows the failure and does not silently start a new unrelated session.
+22. Companion provides a project explorer scoped to the configured root. MVP operations are open/reveal, lazy folder expansion, and non-overwriting file/folder creation; destructive operations, rename, move, and arbitrary shell commands are non-goals.
+23. Companion's terminal-open action runs exactly `wt.exe -d <configured-folder>` and does not start Claude.
+24. The Windows installer requires Windows Terminal. It detects `wt.exe`, otherwise runs `winget install --id Microsoft.WindowsTerminal -e --source winget --silent --accept-package-agreements --accept-source-agreements`, rechecks `wt.exe`, and aborts with Korean manual-install guidance if Windows Terminal is still unavailable.
+25. Windows release packaging builds the Companion installer, packages the Stream Deck plugin, stages `Install.cmd`, `INSTALL_WINDOWS_KO.html`, and `SHA256SUMS.txt`, and the Companion NSIS installer opens the bundled `.streamDeckPlugin` after Companion files are installed.

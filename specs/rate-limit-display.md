@@ -48,7 +48,11 @@ A missing cache renders `RUN CLAUDE` if the bridge is already installed.
 
 ### AC-7 Refresh
 
-The installer sets Claude Code status-line `refreshInterval` to the supported minimum of one second. Existing status-line commands and other settings remain preserved.
+When no other status-line command is configured, the installer sets Claude Code status-line `refreshInterval` to the supported minimum of one second.
+
+Existing status-line commands and other settings remain preserved in Claude settings because Claude Code exposes a single status-line command slot.
+
+When an external status-line command owns that slot (for example OMC HUD), usage keys show `STATUSLINE BUSY` and do not claim the rate-limit cache is live. Code Start lifecycle hooks still operate, but rate-limit refresh requires the Usage Deck bridge to own the slot.
 
 Visible keys re-read the local cache every second and when pressed. Unchanged images are not sent to Stream Deck again.
 
@@ -58,9 +62,14 @@ The display remains bounded by Claude Code's documented `rate_limits` payload; i
 
 ### AC-8 Existing status line compatibility
 
-Installing the bridge preserves the existing status-line command and settings.
+Installing the bridge preserves the existing status-line command and settings in Claude settings.
 
-The bridge forwards the original JSON input to the existing command and relays its stdout.
+When the Usage Deck bridge owns the status-line slot, it forwards the original JSON input to the
+recorded command and relays its stdout. If another command already owns the slot (for example OMC
+HUD), the installer does not replace or wrap that command; the usage keys show `STATUSLINE BUSY`
+and no rate-limit forwarding is attempted.
+
+If an older install left the managed bridge command in Claude settings, reinstalling restores the recorded original command instead of forwarding to itself.
 
 ### AC-9 Safe installation
 

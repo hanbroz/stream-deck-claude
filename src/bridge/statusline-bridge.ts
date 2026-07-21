@@ -5,10 +5,13 @@ import { fileURLToPath } from "node:url";
 
 import { extractUsageCache } from "../domain/rate-limits";
 import {
+  extractContextSessionIdentity,
   extractContextSessionRuntime,
   extractContextSessionSnapshot
 } from "../domain/context-session";
 import {
+  refreshResumePointerFromIdentity,
+  refreshResumePointerFromSnapshot,
   writeContextSessionRuntime,
   writeContextSessionSnapshot
 } from "../io/context-session-cache";
@@ -51,17 +54,34 @@ async function writeContextCache(dataDir: string, payload: unknown): Promise<voi
   );
   if (snapshot) {
     await writeContextSessionSnapshot(dataDir, snapshot);
+    if (process.env.CLAUDE_STREAM_DECK_FOLDER) {
+      await refreshResumePointerFromSnapshot(
+        dataDir,
+        snapshot,
+        process.env.CLAUDE_STREAM_DECK_FOLDER
+      );
+    }
   }
 }
 
 async function writeRuntimeCache(dataDir: string, payload: unknown): Promise<void> {
+  const bindingId = sessionBindingId();
+  const launchId = process.env.CLAUDE_STREAM_DECK_LAUNCH_ID;
   const runtime = extractContextSessionRuntime(
     payload,
-    sessionBindingId(),
-    process.env.CLAUDE_STREAM_DECK_LAUNCH_ID
+    bindingId,
+    launchId
   );
   if (runtime) {
     await writeContextSessionRuntime(dataDir, runtime);
+  }
+  const identity = extractContextSessionIdentity(payload, bindingId, launchId);
+  if (identity && process.env.CLAUDE_STREAM_DECK_FOLDER) {
+    await refreshResumePointerFromIdentity(
+      dataDir,
+      identity,
+      process.env.CLAUDE_STREAM_DECK_FOLDER
+    );
   }
 }
 

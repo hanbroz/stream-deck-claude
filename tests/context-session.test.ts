@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  extractContextSessionIdentity,
   extractContextSessionRuntime,
   extractContextSessionSnapshot
 } from "../src/domain/context-session";
@@ -221,6 +222,47 @@ describe("extractContextSessionRuntime", () => {
     expect(
       extractContextSessionRuntime(
         { session_id: "session", hook_event_name: "Stop" },
+        undefined,
+        "launch"
+      )
+    ).toBeUndefined();
+  });
+});
+
+describe("extractContextSessionIdentity", () => {
+  it("extracts only hook session identity for resume pointer updates", () => {
+    const identity = extractContextSessionIdentity(
+      {
+        hook_event_name: "SessionStart",
+        session_id: "session-abc",
+        prompt: "must-not-be-cached"
+      },
+      "action-1",
+      "launch-1",
+      123
+    );
+
+    expect(identity).toEqual({
+      schemaVersion: 1,
+      actionId: "action-1",
+      launchId: "launch-1",
+      sessionId: "session-abc",
+      capturedAt: 123
+    });
+    expect(JSON.stringify(identity)).not.toContain("must-not-be-cached");
+  });
+
+  it("ignores status-line payloads and unmanaged launches", () => {
+    expect(
+      extractContextSessionIdentity(
+        { session_id: "session", context_window: { used_percentage: 10 } },
+        "action",
+        "launch"
+      )
+    ).toBeUndefined();
+    expect(
+      extractContextSessionIdentity(
+        { session_id: "session", hook_event_name: "SessionStart" },
         undefined,
         "launch"
       )

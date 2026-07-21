@@ -9,6 +9,7 @@ import { readUsageCache } from "../io/usage-cache";
 export type DisplayLoaderOptions = {
   cachePath: string;
   bridgeInstalled: boolean;
+  statusLineConflict?: boolean;
   nowMs?: number;
 };
 
@@ -17,6 +18,9 @@ export async function loadUsageDisplayState(
   options: DisplayLoaderOptions
 ): Promise<UsageDisplayState> {
   try {
+    if (options.statusLineConflict) {
+      return { kind: "statusline-conflict" };
+    }
     const cache = await readUsageCache(options.cachePath);
     if (!cache) {
       return options.bridgeInstalled ? { kind: "waiting" } : { kind: "setup" };

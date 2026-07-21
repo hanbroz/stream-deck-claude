@@ -50,6 +50,15 @@ export function renderUsageKey(kind: RateLimitKind, state: UsageDisplayState): s
     );
   }
 
+  if (state.kind === "statusline-conflict") {
+    return shell(
+      label,
+      `<text x="72" y="67" text-anchor="middle" fill="#ffb84d" font-family="Arial, sans-serif" font-size="21" font-weight="800">STATUSLINE BUSY</text>
+  <text x="72" y="105" text-anchor="middle" fill="#dbe3ef" font-family="Arial, sans-serif" font-size="12" font-weight="700">KEEP EXISTING HUD</text>`,
+      "#ffb84d"
+    );
+  }
+
   if (state.kind === "waiting") {
     return shell(
       label,

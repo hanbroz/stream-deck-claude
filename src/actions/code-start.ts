@@ -20,10 +20,12 @@ import { defaultClaudeSettingsPath, defaultUsageDataDir } from "../bridge/paths"
 import {
   findReconnectableBindingId,
   loadCodeStartDisplayState,
+  readContextSessionResumePointer,
   writeActiveLaunch
 } from "../io/context-session-cache";
 import { showFolderPicker } from "../services/folder-picker";
-import { launchClaudeTerminal, validateLaunchFolder } from "../services/terminal-launcher";
+import { launchClaudeCompanion } from "../services/companion-launcher";
+import { validateLaunchFolder } from "../services/terminal-launcher";
 import { renderCodeStartKeyImage } from "../ui/code-start-renderer";
 import { CodeStartLaunchGuard } from "./code-start-launch-guard";
 import {
@@ -87,7 +89,6 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
 
   override async onKeyDown(ev: KeyDownEvent<CodeStartSettings>): Promise<void> {
     const settings = await this.ensureBindingId(ev.action, ev.payload.settings);
-    // The helper preserves the launchClaudeTerminal(folder, bindingId, launchId) flow.
     await launchConfiguredCodeStart({
       action: ev.action,
       settings,
@@ -95,8 +96,9 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
       bridgeSourcePath,
       dependencies: defaultCodeStartLaunchDependencies({
         ensureBridgeInstalled,
-        launchClaudeTerminal,
+        launchClaudeCompanion,
         logger: streamDeck.logger,
+        readContextSessionResumePointer,
         renderCodeStartKeyImage,
         validateLaunchFolder,
         writeActiveLaunch

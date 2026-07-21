@@ -23,9 +23,15 @@ type HookGroup = {
 type ClaudeHooks = Record<string, unknown>;
 
 type ClaudeSettings = {
-  statusLine?: StatusLineSettings;
+  statusLine?: unknown;
   hooks?: ClaudeHooks;
   [key: string]: unknown;
+};
+
+type BridgeConfig = {
+  schemaVersion?: number;
+  originalCommand?: string | null;
+  installedAt?: number;
 };
 
 const MANAGED_HOOK_EVENTS = [
@@ -73,6 +79,29 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function asStatusLineSettings(value: unknown): StatusLineSettings | undefined {
+  return asRecord(value) as StatusLineSettings | undefined;
+}
+
+function statusLineCommand(value: unknown): string | undefined {
+  const command = asStatusLineSettings(value)?.command;
+  return typeof command === "string" && command.length > 0 ? command : undefined;
+}
+
+async function readBridgeConfig(configPath: string): Promise<BridgeConfig> {
+  try {
+    return JSON.parse(await readFile(configPath, "utf8")) as BridgeConfig;
+  } catch {
+    return {};
+  }
+}
+
+function originalCommandFromConfig(config: BridgeConfig): string | null {
+  return typeof config.originalCommand === "string" && config.originalCommand.length > 0
+    ? config.originalCommand
+    : null;
+}
+
 function hasManagedHook(groups: unknown, managedCommand: string): boolean {
   if (!Array.isArray(groups)) {
     return false;
@@ -114,13 +143,31 @@ export async function isBridgeInstalled(settingsPath: string, dataDir: string): 
   try {
     const settings = JSON.parse(await readFile(settingsPath, "utf8")) as ClaudeSettings;
     const managedCommand = managedBridgeCommand(dataDir);
+    const currentCommand = statusLineCommand(settings.statusLine);
+    const config = await readBridgeConfig(path.join(dataDir, "bridge-config.json"));
+    const originalCommand = originalCommandFromConfig(config);
+    const statusLineInstalled =
+      (
+        currentCommand === managedCommand &&
+        originalCommand === null &&
+        asStatusLineSettings(settings.statusLine)?.refreshInterval === STATUS_LINE_REFRESH_INTERVAL_SECONDS
+      );
     return (
-      settings.statusLine?.command === managedCommand &&
-      settings.statusLine.refreshInterval === STATUS_LINE_REFRESH_INTERVAL_SECONDS &&
+      statusLineInstalled &&
       MANAGED_HOOK_EVENTS.every((eventName) =>
         hasManagedHook(asRecord(settings.hooks)?.[eventName], managedCommand)
       )
     );
+  } catch {
+    return false;
+  }
+}
+
+export async function isStatusLineConflict(settingsPath: string, dataDir: string): Promise<boolean> {
+  try {
+    const settings = JSON.parse(await readFile(settingsPath, "utf8")) as ClaudeSettings;
+    const currentCommand = statusLineCommand(settings.statusLine);
+    return currentCommand !== undefined && currentCommand !== managedBridgeCommand(dataDir);
   } catch {
     return false;
   }
@@ -143,24 +190,39 @@ export async function ensureBridgeInstalled(
     ? await readFile(settingsPath, "utf8")
     : "{}";
   const settings = JSON.parse(rawSettings) as ClaudeSettings;
-  const existingStatusLine = settings.statusLine;
+  const existingStatusLine = asStatusLineSettings(settings.statusLine);
+  const existingCommand = statusLineCommand(settings.statusLine);
+  const existingConfig = await readBridgeConfig(configPath);
+  const configuredOriginalCommand = originalCommandFromConfig(existingConfig);
   let changed = false;
-  const commandChanged = existingStatusLine?.command !== managedCommand;
-  const refreshIntervalChanged =
+  const originalCommand =
+    existingCommand && existingCommand !== managedCommand
+      ? existingCommand
+      : configuredOriginalCommand && configuredOriginalCommand !== managedCommand
+        ? configuredOriginalCommand
+        : null;
+  const needsManagedStatusLine = !originalCommand;
+  const shouldRestoreOriginalStatusLine = existingCommand === managedCommand && originalCommand;
+  const managedRefreshIntervalChanged =
+    needsManagedStatusLine &&
     existingStatusLine?.refreshInterval !== STATUS_LINE_REFRESH_INTERVAL_SECONDS;
-  if (commandChanged || refreshIntervalChanged) {
+  const statusLineCommandChanged =
+    shouldRestoreOriginalStatusLine || (needsManagedStatusLine && existingCommand !== managedCommand);
+  const configChanged = existingConfig.originalCommand !== originalCommand;
+
+  if (statusLineCommandChanged || managedRefreshIntervalChanged || configChanged) {
     const backupPath = `${settingsPath}.claude-usage-deck.bak`;
     if (!(await exists(backupPath))) {
       await writeFile(backupPath, rawSettings, "utf8");
     }
 
-    if (commandChanged) {
+    if (configChanged) {
       await writeFile(
         configPath,
         `${JSON.stringify(
           {
             schemaVersion: 1,
-            originalCommand: existingStatusLine?.command ?? null,
+            originalCommand,
             installedAt: Date.now()
           },
           null,
@@ -170,12 +232,22 @@ export async function ensureBridgeInstalled(
       );
     }
 
-    settings.statusLine = {
-      ...(existingStatusLine ?? {}),
-      type: "command",
-      command: managedCommand,
-      refreshInterval: STATUS_LINE_REFRESH_INTERVAL_SECONDS
-    };
+    if (shouldRestoreOriginalStatusLine) {
+      const restoredStatusLine = {
+        ...(existingStatusLine ?? {}),
+        type: "command",
+        command: originalCommand
+      };
+      delete restoredStatusLine.refreshInterval;
+      settings.statusLine = restoredStatusLine;
+    } else if (needsManagedStatusLine && (statusLineCommandChanged || managedRefreshIntervalChanged)) {
+      settings.statusLine = {
+        ...(existingStatusLine ?? {}),
+        type: "command",
+        command: managedCommand,
+        refreshInterval: STATUS_LINE_REFRESH_INTERVAL_SECONDS
+      };
+    }
     changed = true;
   }
 

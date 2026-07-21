@@ -1,16 +1,26 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type {
   ActiveCodeLaunch,
   CodeSessionModel,
   CodeStartDisplayState,
+  ContextSessionIdentity,
   ContextSessionRuntime,
   ContextSessionSnapshot
 } from "../domain/context-session";
 
 type JsonRecord = Record<string, unknown>;
+
+export type ContextSessionResumePointer = {
+  schemaVersion: 1;
+  actionId: string;
+  folder: string;
+  sessionId: string;
+  sourceLaunchId: string;
+  capturedAt: number;
+};
 
 function asRecord(value: unknown): JsonRecord | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -28,6 +38,10 @@ function actionSessionDir(dataDir: string, actionId: string): string {
 
 function sameFolder(left: string, right: string): boolean {
   return path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase();
+}
+
+async function canonicalFolder(folder: string): Promise<string> {
+  return await realpath(path.resolve(folder));
 }
 
 export function activeLaunchPath(dataDir: string, actionId: string): string {
@@ -48,6 +62,18 @@ export function contextSessionRuntimePath(
   launchId: string
 ): string {
   return path.join(actionSessionDir(dataDir, actionId), `${digest(launchId)}.state.json`);
+}
+
+export function contextSessionResumePointerPath(
+  dataDir: string,
+  actionId: string,
+  canonicalProjectFolder: string
+): string {
+  return path.join(
+    actionSessionDir(dataDir, actionId),
+    "resumes",
+    `${digest(canonicalProjectFolder)}.json`
+  );
 }
 
 async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
@@ -84,6 +110,23 @@ export async function writeContextSessionRuntime(
   );
 }
 
+export async function writeContextSessionResumePointer(
+  dataDir: string,
+  pointer: Omit<ContextSessionResumePointer, "schemaVersion" | "folder"> & { folder: string }
+): Promise<ContextSessionResumePointer> {
+  const folder = await canonicalFolder(pointer.folder);
+  const value: ContextSessionResumePointer = {
+    schemaVersion: 1,
+    actionId: pointer.actionId,
+    folder,
+    sessionId: pointer.sessionId,
+    sourceLaunchId: pointer.sourceLaunchId,
+    capturedAt: pointer.capturedAt
+  };
+  await writeJsonAtomic(contextSessionResumePointerPath(dataDir, value.actionId, folder), value);
+  return value;
+}
+
 function parseActiveLaunch(value: unknown): ActiveCodeLaunch {
   const root = asRecord(value);
   if (
@@ -92,7 +135,9 @@ function parseActiveLaunch(value: unknown): ActiveCodeLaunch {
     typeof root.launchId !== "string" ||
     typeof root.folder !== "string" ||
     typeof root.startedAt !== "number" ||
-    (root.terminal !== "windows-terminal" && root.terminal !== "powershell") ||
+    (root.terminal !== "companion" &&
+      root.terminal !== "windows-terminal" &&
+      root.terminal !== "powershell") ||
     typeof root.processId !== "number" ||
     !Number.isInteger(root.processId) ||
     root.processId <= 0
@@ -107,6 +152,29 @@ function parseActiveLaunch(value: unknown): ActiveCodeLaunch {
     startedAt: root.startedAt,
     terminal: root.terminal,
     processId: root.processId
+  };
+}
+
+function parseResumePointer(value: unknown): ContextSessionResumePointer {
+  const root = asRecord(value);
+  if (
+    root?.schemaVersion !== 1 ||
+    typeof root.actionId !== "string" ||
+    typeof root.folder !== "string" ||
+    typeof root.sessionId !== "string" ||
+    root.sessionId.length === 0 ||
+    typeof root.sourceLaunchId !== "string" ||
+    typeof root.capturedAt !== "number"
+  ) {
+    throw new Error("Invalid Code Start resume pointer");
+  }
+  return {
+    schemaVersion: 1,
+    actionId: root.actionId,
+    folder: root.folder,
+    sessionId: root.sessionId,
+    sourceLaunchId: root.sourceLaunchId,
+    capturedAt: root.capturedAt
   };
 }
 
@@ -218,6 +286,90 @@ async function readJson(filePath: string): Promise<unknown | undefined> {
       return undefined;
     }
     throw error;
+  }
+}
+
+export async function readContextSessionResumePointer(
+  dataDir: string,
+  actionId: string,
+  folder: string
+): Promise<ContextSessionResumePointer | undefined> {
+  try {
+    const canonicalProjectFolder = await canonicalFolder(folder);
+    const value = await readJson(
+      contextSessionResumePointerPath(dataDir, actionId, canonicalProjectFolder)
+    );
+    if (value === undefined) {
+      return undefined;
+    }
+    const pointer = parseResumePointer(value);
+    if (
+      pointer.actionId !== actionId ||
+      !sameFolder(pointer.folder, canonicalProjectFolder)
+    ) {
+      return undefined;
+    }
+    return pointer;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function refreshResumePointerFromSnapshot(
+  dataDir: string,
+  snapshot: ContextSessionSnapshot,
+  launchFolder: string
+): Promise<ContextSessionResumePointer | undefined> {
+  if (!snapshot.projectDir) {
+    return undefined;
+  }
+
+  try {
+    const canonicalLaunchFolder = await canonicalFolder(launchFolder);
+    const canonicalProjectDir = await canonicalFolder(snapshot.projectDir);
+    if (!sameFolder(canonicalLaunchFolder, canonicalProjectDir)) {
+      return undefined;
+    }
+    return await writeContextSessionResumePointer(dataDir, {
+      actionId: snapshot.actionId,
+      folder: canonicalLaunchFolder,
+      sessionId: snapshot.sessionId,
+      sourceLaunchId: snapshot.launchId,
+      capturedAt: snapshot.capturedAt
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+export async function refreshResumePointerFromIdentity(
+  dataDir: string,
+  identity: ContextSessionIdentity,
+  launchFolder: string
+): Promise<ContextSessionResumePointer | undefined> {
+  try {
+    const canonicalLaunchFolder = await canonicalFolder(launchFolder);
+    const activeValue = await readJson(activeLaunchPath(dataDir, identity.actionId));
+    if (activeValue === undefined) {
+      return undefined;
+    }
+    const active = parseActiveLaunch(activeValue);
+    if (
+      active.actionId !== identity.actionId ||
+      active.launchId !== identity.launchId ||
+      !sameFolder(active.folder, canonicalLaunchFolder)
+    ) {
+      return undefined;
+    }
+    return await writeContextSessionResumePointer(dataDir, {
+      actionId: identity.actionId,
+      folder: canonicalLaunchFolder,
+      sessionId: identity.sessionId,
+      sourceLaunchId: identity.launchId,
+      capturedAt: identity.capturedAt
+    });
+  } catch {
+    return undefined;
   }
 }
 

@@ -1,0 +1,189 @@
+import { mkdir, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import type { DirectoryEntry } from "../shared/claude-command";
+
+export type PathShell = {
+  openPath(path: string): Promise<string>;
+  showItemInFolder(path: string): void;
+};
+
+export const COMPANION_FOLDER_ENV = "CLAUDE_STREAM_DECK_FOLDER";
+export const COMPANION_CLAUDE_PATH_ENV = "CLAUDE_STREAM_DECK_CLAUDE_PATH";
+export const COMPANION_RESUME_ENV = "CLAUDE_STREAM_DECK_RESUME";
+export const COMPANION_RESUME_SESSION_ID_ENV = "CLAUDE_STREAM_DECK_RESUME_SESSION_ID";
+
+export type CompanionRuntimeEnv = {
+  rootPath: string;
+  claudePath: string;
+  resumeSessionId?: string;
+};
+
+function isContainedPath(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function assertSafeName(name: string, label: string): void {
+  const trimmed = name.trim();
+  const reserved = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
+  if (
+    trimmed.length === 0 ||
+    trimmed === "." ||
+    trimmed === ".." ||
+    trimmed !== name ||
+    reserved.test(trimmed) ||
+    /[\\/:\u0000\r\n]/u.test(name)
+  ) {
+    throw new Error(`${label} is invalid`);
+  }
+}
+
+export async function resolveCompanionRoot(
+  env: NodeJS.ProcessEnv
+): Promise<string> {
+  const configuredRoot = cleanEnvValue(env[COMPANION_FOLDER_ENV], COMPANION_FOLDER_ENV);
+  if (!configuredRoot) {
+    throw new Error(`${COMPANION_FOLDER_ENV} is required`);
+  }
+  const resolvedRoot = await realpath(path.resolve(configuredRoot));
+  const info = await stat(resolvedRoot);
+  if (!info.isDirectory()) {
+    throw new Error("Companion root is not a directory");
+  }
+  return resolvedRoot;
+}
+
+function cleanEnvValue(value: string | undefined, label: string): string | undefined {
+  const cleaned = value?.trim();
+  if (!cleaned) {
+    return undefined;
+  }
+  if (/[\u0000\r\n]/u.test(cleaned)) {
+    throw new Error(`${label} contains unsupported characters`);
+  }
+  return cleaned;
+}
+
+export async function resolveCompanionRuntimeEnv(
+  env: NodeJS.ProcessEnv
+): Promise<CompanionRuntimeEnv> {
+  return {
+    rootPath: await resolveCompanionRoot(env),
+    claudePath: cleanEnvValue(env[COMPANION_CLAUDE_PATH_ENV], COMPANION_CLAUDE_PATH_ENV) ?? "claude",
+    resumeSessionId:
+      cleanEnvValue(env[COMPANION_RESUME_ENV], COMPANION_RESUME_ENV) ??
+      cleanEnvValue(env[COMPANION_RESUME_SESSION_ID_ENV], COMPANION_RESUME_SESSION_ID_ENV)
+  };
+}
+
+export function resolveContainedPath(root: string, requestedPath = "."): string {
+  const absoluteRoot = path.resolve(root);
+  const absoluteTarget = path.resolve(
+    path.isAbsolute(requestedPath)
+      ? requestedPath
+      : path.join(absoluteRoot, requestedPath)
+  );
+
+  if (isContainedPath(absoluteRoot, absoluteTarget)) {
+    return absoluteTarget;
+  }
+
+  throw new Error("Path is outside the allowed root");
+}
+
+export async function resolveExistingContainedPath(
+  root: string,
+  requestedPath = "."
+): Promise<string> {
+  const realRoot = await realpath(path.resolve(root));
+  const lexicalTarget = resolveContainedPath(realRoot, requestedPath);
+  const realTarget = await realpath(lexicalTarget);
+  if (!isContainedPath(realRoot, realTarget)) {
+    throw new Error("Path is outside the allowed root");
+  }
+  return realTarget;
+}
+
+export async function listContainedDirectory(
+  root: string,
+  requestedPath = "."
+): Promise<DirectoryEntry[]> {
+  const directory = await resolveContainedDirectory(root, requestedPath);
+
+  const entries = await readdir(directory, { withFileTypes: true });
+  return entries
+    .filter((entry) => !entry.name.includes("\u0000"))
+    .map((entry) => ({
+      name: entry.name,
+      path: path.join(directory, entry.name),
+      isDirectory: entry.isDirectory()
+    }))
+    .sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) {
+        return a.isDirectory ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+}
+
+export async function resolveContainedDirectory(
+  root: string,
+  requestedPath = "."
+): Promise<string> {
+  const directory = await resolveExistingContainedPath(root, requestedPath);
+  const info = await stat(directory);
+  if (!info.isDirectory()) {
+    throw new Error("Path is not a directory");
+  }
+  return directory;
+}
+
+export async function createContainedDirectory(
+  root: string,
+  parentPath: string,
+  name: string
+): Promise<string> {
+  assertSafeName(name, "Directory name");
+  const realRoot = await realpath(path.resolve(root));
+  const parent = await resolveExistingContainedPath(realRoot, parentPath);
+  const directory = resolveContainedPath(realRoot, path.join(path.relative(realRoot, parent), name));
+  await mkdir(directory, { recursive: false });
+  return directory;
+}
+
+export async function createContainedFile(
+  root: string,
+  parentPath: string,
+  name: string,
+  content = ""
+): Promise<string> {
+  assertSafeName(name, "File name");
+  const realRoot = await realpath(path.resolve(root));
+  const parent = await resolveExistingContainedPath(realRoot, parentPath);
+  const filePath = resolveContainedPath(realRoot, path.join(path.relative(realRoot, parent), name));
+  await writeFile(filePath, content, { encoding: "utf8", flag: "wx" });
+  return filePath;
+}
+
+export async function openContainedPath(
+  root: string,
+  requestedPath: string,
+  shell: PathShell
+): Promise<void> {
+  const target = await resolveExistingContainedPath(root, requestedPath);
+  const error = await shell.openPath(target);
+  if (error) {
+    throw new Error(error);
+  }
+}
+
+export function revealContainedPath(
+  root: string,
+  requestedPath: string,
+  shell: PathShell
+): Promise<void> {
+  return resolveExistingContainedPath(root, requestedPath).then((target) => {
+    shell.showItemInFolder(target);
+  });
+}

@@ -34,7 +34,7 @@ describe("Code Start property inspector", () => {
     expect(source).toContain("bindingId?: string;");
     expect(source).toContain("findReconnectableBindingId");
     expect(source).toContain("bindingIdsByAction");
-    expect(source).toContain("launchClaudeTerminal(folder, bindingId, launchId)");
+    expect(source).toContain("launchClaudeCompanion");
     expect(source).toContain("loadCodeStartDisplayState");
   });
 });
