@@ -107,6 +107,12 @@ export function createCompanionLaunchPlan(
   resumeSessionId?: string,
   projectName?: string
 ): CompanionLaunchPlan {
+  const inheritedEnv = { ...process.env };
+  // Stream Deck and other Electron hosts may set this flag for their own
+  // Node runtime. Passing it to the Companion makes Electron start as Node,
+  // which leaves `app`/`BrowserWindow` unavailable and produces a blank shell.
+  delete inheritedEnv.ELECTRON_RUN_AS_NODE;
+  delete inheritedEnv.ELECTRON_NO_ATTACH_CONSOLE;
   return {
     command: companionPath,
     // The packaged Electron runtime rejects unknown top-level CLI flags. The
@@ -115,7 +121,7 @@ export function createCompanionLaunchPlan(
     args: [],
     cwd: folder,
     env: {
-      ...process.env,
+      ...inheritedEnv,
       CLAUDE_STREAM_DECK_BINDING_ID: bindingId,
       // Retained while older installed bridges still read the legacy variable name.
       CLAUDE_STREAM_DECK_ACTION_ID: bindingId,

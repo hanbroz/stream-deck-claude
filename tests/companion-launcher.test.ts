@@ -108,6 +108,8 @@ describe("resolveCompanionExecutable", () => {
 
 describe("createCompanionLaunchPlan", () => {
   it("preserves Stream Deck identity env and adds resume only when present", () => {
+    vi.stubEnv("ELECTRON_RUN_AS_NODE", "1");
+    vi.stubEnv("ELECTRON_NO_ATTACH_CONSOLE", "1");
     const plan = createCompanionLaunchPlan(
       "D:\\Companion\\Claude Deck Companion.exe",
       "D:\\Projects\\Demo",
@@ -130,6 +132,8 @@ describe("createCompanionLaunchPlan", () => {
     expect(plan.env.CLAUDE_STREAM_DECK_CLAUDE_PATH).toBe("C:\\Users\\Me\\.local\\bin\\claude.exe");
     expect(plan.env.CLAUDE_STREAM_DECK_PROJECT_NAME).toBe("020_Source");
     expect(plan.env.CLAUDE_STREAM_DECK_RESUME_SESSION_ID).toBe("session-1");
+    expect(plan.env.ELECTRON_RUN_AS_NODE).toBeUndefined();
+    expect(plan.env.ELECTRON_NO_ATTACH_CONSOLE).toBeUndefined();
   });
 });
 

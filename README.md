@@ -64,6 +64,13 @@ The maintained visual contract is documented in [`DESIGN.md`](DESIGN.md). The re
 
 If Code Start still opens the previous dark console window with a native `File / Edit / View / Window` menu, the old Companion binary is still being used. For a released/installed plugin, install the matching `Claude Deck Companion Setup *.exe` once and restart Stream Deck. During local development you do not need to reinstall for every change: run `npm run companion:dir`, keep the plugin linked with `npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin`, and Code Start resolves `dist/companion/win-unpacked/Claude Deck Companion.exe` before the per-user installed copy. `CLAUDE_DECK_COMPANION_PATH` can also point Stream Deck at a specific unpacked executable.
 
+If the title shows `.` or the embedded terminal says `[project terminal API unavailable]`, the Companion preload or plugin process is stale. Rebuild the Companion, restart the linked plugin, close any old Companion window, and press Code Start again:
+
+```powershell
+npm run companion:dir
+npm exec -- streamdeck restart com.hanbroz.claude-usage
+```
+
 Usage keys check the local cache every second and skip unchanged images. These refreshes do not send Claude requests or consume usage. The value can still trail the web dashboard until Claude Code publishes a newer `rate_limits` payload; if a reset time passes first, the key displays `REFRESH` instead of a stale percentage.
 
 ### Local development

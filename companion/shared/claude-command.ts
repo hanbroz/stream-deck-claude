@@ -103,9 +103,7 @@ export function createClaudeCommandArgs(request: ClaudeCommandRequest): string[]
 }
 
 export function encodeRuntimeProjectMetadata(metadata: RuntimeProjectMetadata): string {
-  return `${RUNTIME_ARG_PREFIX}${Buffer.from(JSON.stringify(metadata), "utf8").toString(
-    "base64url"
-  )}`;
+  return `${RUNTIME_ARG_PREFIX}${encodeBase64Url(JSON.stringify(metadata))}`;
 }
 
 export function readRuntimeProjectMetadataArg(argv: string[]): RuntimeProjectMetadata {
@@ -113,9 +111,7 @@ export function readRuntimeProjectMetadataArg(argv: string[]): RuntimeProjectMet
   if (!arg) {
     return { folder: "", projectName: "" };
   }
-  const parsed = JSON.parse(
-    Buffer.from(arg.slice(RUNTIME_ARG_PREFIX.length), "base64url").toString("utf8")
-  ) as Partial<RuntimeProjectMetadata>;
+  const parsed = JSON.parse(decodeBase64Url(arg.slice(RUNTIME_ARG_PREFIX.length))) as Partial<RuntimeProjectMetadata>;
   return {
     folder: typeof parsed.folder === "string" ? parsed.folder : "",
     projectName: typeof parsed.projectName === "string" ? parsed.projectName : "",
@@ -125,4 +121,31 @@ export function readRuntimeProjectMetadataArg(argv: string[]): RuntimeProjectMet
     resumeSessionId:
       typeof parsed.resumeSessionId === "string" ? parsed.resumeSessionId : undefined
   };
+}
+
+/**
+ * Keep the metadata codec usable from Electron's sandboxed preload. Sandboxed
+ * preloads expose Web APIs such as TextEncoder/atob/btoa, but do not expose
+ * Node's Buffer global.
+ */
+function encodeBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  const base64 = typeof btoa === "function"
+    ? btoa(binary)
+    : Buffer.from(bytes).toString("base64");
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
+}
+
+function decodeBase64Url(value: string): string {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = `${base64}${"=".repeat((4 - (base64.length % 4)) % 4)}`;
+  const binary = typeof atob === "function"
+    ? atob(padded)
+    : Buffer.from(padded, "base64").toString("binary");
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }

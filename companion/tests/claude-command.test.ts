@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createClaudeCommandArgs,
@@ -33,19 +33,36 @@ describe("createClaudeCommandArgs", () => {
 describe("runtime metadata args", () => {
   it("round-trips sanitized project metadata for preload", () => {
     const arg = encodeRuntimeProjectMetadata({
-      folder: "D:\\repo",
-      projectName: "Repo",
+      folder: "D:\\프로젝트\\020_Source",
+      projectName: "020_Source 프로젝트",
       model: "Opus 4.8",
       contextPercent: 42,
       resumeSessionId: "resume-1"
     });
 
     expect(readRuntimeProjectMetadataArg(["electron", arg])).toEqual({
-      folder: "D:\\repo",
-      projectName: "Repo",
+      folder: "D:\\프로젝트\\020_Source",
+      projectName: "020_Source 프로젝트",
       model: "Opus 4.8",
       contextPercent: 42,
       resumeSessionId: "resume-1"
     });
+  });
+
+  it("round-trips from Web APIs when the sandboxed preload has no Buffer", () => {
+    vi.stubGlobal("Buffer", undefined);
+    try {
+      const arg = encodeRuntimeProjectMetadata({
+        folder: "D:\\프로젝트",
+        projectName: "한글 프로젝트"
+      });
+
+      expect(readRuntimeProjectMetadataArg([arg])).toEqual({
+        folder: "D:\\프로젝트",
+        projectName: "한글 프로젝트"
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
