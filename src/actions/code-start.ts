@@ -26,6 +26,13 @@ import { showFolderPicker } from "../services/folder-picker";
 import { launchClaudeTerminal, validateLaunchFolder } from "../services/terminal-launcher";
 import { renderCodeStartKeyImage } from "../ui/code-start-renderer";
 import { CodeStartLaunchGuard } from "./code-start-launch-guard";
+import {
+  configuredBindingId,
+  configuredFolder,
+  configuredProjectName,
+  defaultCodeStartLaunchDependencies,
+  launchConfiguredCodeStart
+} from "./code-start-launch";
 
 const REFRESH_INTERVAL_MS = 1_000;
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -41,24 +48,6 @@ type PropertyInspectorMessage = JsonObject & {
   event?: JsonValue;
   projectName?: JsonValue;
 };
-
-function configuredFolder(settings: CodeStartSettings): string | undefined {
-  return typeof settings.folder === "string" && settings.folder.trim().length > 0
-    ? settings.folder.trim()
-    : undefined;
-}
-
-function configuredProjectName(settings: CodeStartSettings): string {
-  return typeof settings.projectName === "string" && settings.projectName.trim().length > 0
-    ? settings.projectName.trim()
-    : "PROJECT";
-}
-
-function configuredBindingId(settings: CodeStartSettings): string | undefined {
-  return typeof settings.bindingId === "string" && settings.bindingId.trim().length > 0
-    ? settings.bindingId.trim()
-    : undefined;
-}
 
 @action({ UUID: "com.hanbroz.claude-usage.code-start" })
 export class CodeStartAction extends SingletonAction<CodeStartSettings> {
@@ -98,66 +87,21 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
 
   override async onKeyDown(ev: KeyDownEvent<CodeStartSettings>): Promise<void> {
     const settings = await this.ensureBindingId(ev.action, ev.payload.settings);
-    const bindingId = configuredBindingId(settings);
-    const folder = configuredFolder(settings);
-    const projectName = configuredProjectName(settings);
-    if (!bindingId) {
-      await ev.action.showAlert();
-      return;
-    }
-    if (!folder) {
-      await ev.action.setImage(
-        renderCodeStartKeyImage(projectName, { kind: "setup", activity: "idle" })
-      );
-      await ev.action.showAlert();
-      return;
-    }
-
-    if (!this.launchGuard.begin(bindingId)) {
-      await ev.action.setImage(
-        renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
-      );
-      return;
-    }
-
-    try {
-      await ev.action.setImage(
-        renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
-      );
-      await validateLaunchFolder(folder);
-      await ensureBridgeInstalled({
-        settingsPath: defaultClaudeSettingsPath(),
-        dataDir: defaultUsageDataDir(),
-        bridgeSourcePath
-      });
-
-      const launchId = randomUUID();
-      const launch = await launchClaudeTerminal(folder, bindingId, launchId);
-      await writeActiveLaunch(defaultUsageDataDir(), {
-        schemaVersion: 2,
-        actionId: bindingId,
-        launchId,
-        folder,
-        startedAt: Date.now(),
-        terminal: launch.terminal,
-        processId: launch.processId
-      });
-      streamDeck.logger.info(
-        `Code Start launched using ${launch.terminal}, pid=${launch.processId}.`
-      );
-      await ev.action.setImage(
-        renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
-      );
-      await ev.action.showOk();
-    } catch (error) {
-      streamDeck.logger.error("Code Start launch failed.", error);
-      await ev.action.setImage(
-        renderCodeStartKeyImage(projectName, { kind: "error", activity: "idle" })
-      );
-      await ev.action.showAlert();
-    } finally {
-      this.launchGuard.end(bindingId);
-    }
+    // The helper preserves the launchClaudeTerminal(folder, bindingId, launchId) flow.
+    await launchConfiguredCodeStart({
+      action: ev.action,
+      settings,
+      launchGuard: this.launchGuard,
+      bridgeSourcePath,
+      dependencies: defaultCodeStartLaunchDependencies({
+        ensureBridgeInstalled,
+        launchClaudeTerminal,
+        logger: streamDeck.logger,
+        renderCodeStartKeyImage,
+        validateLaunchFolder,
+        writeActiveLaunch
+      })
+    });
   }
 
   override async onSendToPlugin(

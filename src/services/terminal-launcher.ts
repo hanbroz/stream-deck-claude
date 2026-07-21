@@ -6,6 +6,10 @@ import path from "node:path";
 
 const CLAUDE_COMMAND =
   "$PID | Set-Content -LiteralPath $env:CLAUDE_STREAM_DECK_PID_FILE -NoNewline; & $env:CLAUDE_STREAM_DECK_CLAUDE_PATH --dangerously-skip-permissions";
+// Windows Terminal treats semicolons as separators between its own commands.
+const ENCODED_CLAUDE_COMMAND = Buffer.from(CLAUDE_COMMAND, "utf16le").toString(
+  "base64"
+);
 const VISIBLE_POWERSHELL_COMMAND =
   `start "Claude Code" powershell.exe -NoExit -Command "${CLAUDE_COMMAND}"`;
 
@@ -33,7 +37,7 @@ export function createTerminalLaunchPlan(
   windowsTerminalAvailable: boolean,
   claudePath = "claude.exe"
 ): TerminalLaunchPlan {
-  const powershellArgs = ["-NoExit", "-Command", CLAUDE_COMMAND];
+  const powershellArgs = ["-NoExit", "-EncodedCommand", ENCODED_CLAUDE_COMMAND];
   const pidFile = launchPidPath(launchId);
   return {
     command: windowsTerminalAvailable ? "wt.exe" : "cmd.exe",
