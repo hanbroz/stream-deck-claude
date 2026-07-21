@@ -108,11 +108,12 @@ describe("context session cache", () => {
     await writeFile(
       snapshotPath,
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         actionId: "action-1",
         launchId: "launch-1",
         sessionId: "session-1",
         capturedAt: 110,
+        model: { displayName: "Opus 4.8", effortLevel: "xhigh" },
         context: { usedPercentage: null }
       }),
       "utf8"
@@ -121,17 +122,19 @@ describe("context session cache", () => {
       loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo")
     ).resolves.toEqual({
       kind: "starting",
-      activity: "running"
+      activity: "running",
+      model: { displayName: "Opus 4.8" }
     });
 
     await writeFile(
       snapshotPath,
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         actionId: "action-1",
         launchId: "launch-1",
         sessionId: "session-1",
         capturedAt: 120,
+        model: { displayName: "Opus 4.8", effortLevel: "xhigh" },
         context: { usedPercentage: 47.6 }
       }),
       "utf8"
@@ -141,7 +144,8 @@ describe("context session cache", () => {
     ).resolves.toEqual({
       kind: "ready",
       percentage: 48,
-      activity: "running"
+      activity: "running",
+      model: { displayName: "Opus 4.8" }
     });
   });
 

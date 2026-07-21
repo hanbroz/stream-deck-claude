@@ -4,6 +4,7 @@ import path from "node:path";
 
 import type {
   ActiveCodeLaunch,
+  CodeSessionModel,
   CodeStartDisplayState,
   ContextSessionRuntime,
   ContextSessionSnapshot
@@ -114,7 +115,7 @@ function parseSnapshot(value: unknown): ContextSessionSnapshot {
   const context = asRecord(root?.context);
   const percentage = context?.usedPercentage;
   if (
-    root?.schemaVersion !== 1 ||
+    (root?.schemaVersion !== 1 && root?.schemaVersion !== 2) ||
     typeof root.actionId !== "string" ||
     typeof root.launchId !== "string" ||
     typeof root.sessionId !== "string" ||
@@ -129,13 +130,16 @@ function parseSnapshot(value: unknown): ContextSessionSnapshot {
     throw new Error("Invalid Code Start context snapshot");
   }
 
+  const model = root.schemaVersion === 2 ? parseModel(root.model) : undefined;
+
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     actionId: root.actionId,
     launchId: root.launchId,
     sessionId: root.sessionId,
     ...(typeof root.projectDir === "string" ? { projectDir: root.projectDir } : {}),
     capturedAt: root.capturedAt,
+    ...(model === undefined ? {} : { model }),
     context: {
       usedPercentage: percentage,
       ...(typeof context.totalInputTokens === "number"
@@ -146,6 +150,18 @@ function parseSnapshot(value: unknown): ContextSessionSnapshot {
         : {})
     }
   };
+}
+
+function parseModel(value: unknown): CodeSessionModel | undefined {
+  const model = asRecord(value);
+  if (typeof model?.displayName !== "string") {
+    return undefined;
+  }
+  const displayName = model.displayName.trim();
+  if (displayName.length === 0 || Array.from(displayName).length > 48) {
+    return undefined;
+  }
+  return { displayName };
 }
 
 function parseRuntime(value: unknown): ContextSessionRuntime {
@@ -304,15 +320,19 @@ export async function loadCodeStartDisplayState(
     const snapshot = parseSnapshot(snapshotValue);
     if (
       snapshot.actionId !== actionId ||
-      snapshot.launchId !== active.launchId ||
-      snapshot.context.usedPercentage === null
+      snapshot.launchId !== active.launchId
     ) {
       return { kind: "starting", activity };
+    }
+    const model = snapshot.model === undefined ? {} : { model: snapshot.model };
+    if (snapshot.context.usedPercentage === null) {
+      return { kind: "starting", activity, ...model };
     }
     return {
       kind: "ready",
       percentage: Math.round(snapshot.context.usedPercentage),
-      activity
+      activity,
+      ...model
     };
   } catch {
     return { kind: "error", activity: "idle" };

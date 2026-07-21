@@ -5,6 +5,7 @@ import path from "node:path";
 type StatusLineSettings = {
   type?: string;
   command?: string;
+  refreshInterval?: number;
   [key: string]: unknown;
 };
 
@@ -35,6 +36,7 @@ const MANAGED_HOOK_EVENTS = [
   "Notification",
   "SessionEnd"
 ] as const;
+const STATUS_LINE_REFRESH_INTERVAL_SECONDS = 1;
 
 export type BridgeInstallOptions = {
   settingsPath: string;
@@ -114,6 +116,7 @@ export async function isBridgeInstalled(settingsPath: string, dataDir: string): 
     const managedCommand = managedBridgeCommand(dataDir);
     return (
       settings.statusLine?.command === managedCommand &&
+      settings.statusLine.refreshInterval === STATUS_LINE_REFRESH_INTERVAL_SECONDS &&
       MANAGED_HOOK_EVENTS.every((eventName) =>
         hasManagedHook(asRecord(settings.hooks)?.[eventName], managedCommand)
       )
@@ -142,30 +145,36 @@ export async function ensureBridgeInstalled(
   const settings = JSON.parse(rawSettings) as ClaudeSettings;
   const existingStatusLine = settings.statusLine;
   let changed = false;
-  if (existingStatusLine?.command !== managedCommand) {
+  const commandChanged = existingStatusLine?.command !== managedCommand;
+  const refreshIntervalChanged =
+    existingStatusLine?.refreshInterval !== STATUS_LINE_REFRESH_INTERVAL_SECONDS;
+  if (commandChanged || refreshIntervalChanged) {
     const backupPath = `${settingsPath}.claude-usage-deck.bak`;
     if (!(await exists(backupPath))) {
       await writeFile(backupPath, rawSettings, "utf8");
     }
 
-    await writeFile(
-      configPath,
-      `${JSON.stringify(
-        {
-          schemaVersion: 1,
-          originalCommand: existingStatusLine?.command ?? null,
-          installedAt: Date.now()
-        },
-        null,
-        2
-      )}\n`,
-      "utf8"
-    );
+    if (commandChanged) {
+      await writeFile(
+        configPath,
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            originalCommand: existingStatusLine?.command ?? null,
+            installedAt: Date.now()
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+    }
 
     settings.statusLine = {
       ...(existingStatusLine ?? {}),
       type: "command",
-      command: managedCommand
+      command: managedCommand,
+      refreshInterval: STATUS_LINE_REFRESH_INTERVAL_SECONDS
     };
     changed = true;
   }

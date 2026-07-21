@@ -16,6 +16,8 @@ It writes only percentages, reset epochs, schema version, and capture time to th
 
 It must not copy the status-line payload, session transcript, prompt, credential, or token fields.
 
+Within the same reset epoch, a lower percentage from another stale Claude session must not overwrite a higher observed percentage, including when bridge processes write concurrently. A later reset epoch starts a new window and may accept a lower percentage.
+
 ### AC-2 Independent actions
 
 The manifest exposes a five-hour action and a weekly action with distinct UUIDs.
@@ -46,9 +48,13 @@ A missing cache renders `RUN CLAUDE` if the bridge is already installed.
 
 ### AC-7 Refresh
 
-Visible keys re-read the local cache on an interval and when pressed.
+The installer sets Claude Code status-line `refreshInterval` to the supported minimum of one second. Existing status-line commands and other settings remain preserved.
+
+Visible keys re-read the local cache every second and when pressed. Unchanged images are not sent to Stream Deck again.
 
 Reset countdown is calculated from the current clock without consuming Claude usage.
+
+The display remains bounded by Claude Code's documented `rate_limits` payload; it does not scrape the web dashboard or read Claude credentials.
 
 ### AC-8 Existing status line compatibility
 

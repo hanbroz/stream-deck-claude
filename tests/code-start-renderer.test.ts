@@ -6,16 +6,18 @@ import { describe, expect, it } from "vitest";
 import { renderCodeStartKey, renderCodeStartKeyImage } from "../src/ui/code-start-renderer";
 
 describe("renderCodeStartKey", () => {
-  it("renders only the project name, smaller CTX value, and usage bar", () => {
+  it("renders only the project name, current model, and usage bar", () => {
     const ready = renderCodeStartKey("Project A", {
       kind: "ready",
       percentage: 42,
-      activity: "running"
+      activity: "running",
+      model: { displayName: "Opus 4.8" }
     });
 
     expect(ready).toContain('font-size="25" font-weight="800"');
     expect(ready).toContain(">Project A</text>");
-    expect(ready).toContain('font-size="17" font-weight="800">CTX 42%</text>');
+    expect(ready).toContain('font-size="17" font-weight="800">Opus 4.8</text>');
+    expect(ready).not.toContain('textLength="108" lengthAdjust="spacingAndGlyphs">Opus 4.8</text>');
     expect(ready.match(/<text\b/g)).toHaveLength(2);
     expect(ready).toContain('data-role="context-track"');
     expect(ready).toContain('data-role="context-fill"');
@@ -37,7 +39,7 @@ describe("renderCodeStartKey", () => {
       const svg = renderCodeStartKey("Project A", { kind, activity: "idle" });
 
       expect(svg).toContain("Project A");
-      expect(svg).toContain("CTX --%");
+      expect(svg).toContain("MODEL --");
       expect(svg.match(/<text\b/g)).toHaveLength(2);
       expect(svg).toContain('data-role="context-track"');
       expect(svg).toContain('data-role="context-fill"');
@@ -71,25 +73,39 @@ describe("renderCodeStartKey", () => {
     const image = renderCodeStartKeyImage("Project A", {
       kind: "ready",
       percentage: 67,
-      activity: "running"
+      activity: "running",
+      model: { displayName: "Opus 4.8" }
     });
     expect(image).toMatch(/^data:image\/svg\+xml,/);
-    expect(decodeURIComponent(image.split(",", 2)[1])).toContain("CTX 67%");
+    expect(decodeURIComponent(image.split(",", 2)[1])).toContain("Opus 4.8");
+  });
+
+  it("escapes model text before rendering it into SVG", () => {
+    const svg = renderCodeStartKey("Project A", {
+      kind: "ready",
+      percentage: 42,
+      activity: "running",
+      model: { displayName: "Opus & <Beta>" }
+    });
+
+    expect(svg).toContain("Opus &amp; &lt;Beta&gt;");
+    expect(svg).not.toContain("Opus & <Beta>");
   });
 
   it.each([
     ["running", "#60d3a3"],
     ["idle", "#ff6b74"],
     ["waiting", "#70c7ff"]
-  ] as const)("renders %s CTX text as %s", (activity, color) => {
+  ] as const)("renders %s model text as %s", (activity, color) => {
     const svg = renderCodeStartKey("Project A", {
       kind: "ready",
       percentage: 42,
-      activity
+      activity,
+      model: { displayName: "Opus 4.8" }
     });
 
-    expect(svg).toContain(`data-role="context-text"`);
-    expect(svg).toContain(`data-role="context-text" x="72" y="84" text-anchor="middle" fill="${color}"`);
+    expect(svg).toContain(`data-role="model-text"`);
+    expect(svg).toContain(`data-role="model-text" x="72" y="84" text-anchor="middle" fill="${color}"`);
     expect(svg).toContain('data-role="context-fill" x="18" y="101" width="45"');
   });
 
@@ -102,7 +118,7 @@ describe("renderCodeStartKey", () => {
     expect(svg).toContain(">Project A</text>");
     expect(svg).toContain(">Closed</text>");
     expect(svg.match(/<text\b/g)).toHaveLength(2);
-    expect(svg).not.toContain("CTX");
+    expect(svg).not.toContain('data-role="model-text"');
     expect(svg).not.toContain('data-role="context-track"');
     expect(svg).not.toContain('data-role="context-fill"');
   });
@@ -115,8 +131,8 @@ describe("renderCodeStartKey", () => {
 
     expect(svg.match(/<text\b/g)).toHaveLength(2);
     expect(svg).toContain("PROJECT");
-    expect(svg).toContain("CTX --%");
-    expect(svg).toContain('data-role="context-text" x="72" y="84" text-anchor="middle" fill="#ff6b74"');
+    expect(svg).toContain("MODEL --");
+    expect(svg).toContain('data-role="model-text" x="72" y="84" text-anchor="middle" fill="#ff6b74"');
     expect(svg).toContain('data-role="context-track"');
     expect(svg).not.toContain("CODE START");
     expect(svg).not.toContain("SET FOLDER");

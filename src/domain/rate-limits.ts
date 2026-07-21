@@ -86,6 +86,53 @@ export function selectRateLimitWindow(
   return cache.rateLimits[kind];
 }
 
+function mergeRateLimitWindow(
+  current: RateLimitWindow | undefined,
+  incoming: RateLimitWindow | undefined
+): RateLimitWindow | undefined {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+  if (incoming.resetsAt > current.resetsAt) {
+    return incoming;
+  }
+  if (incoming.resetsAt < current.resetsAt) {
+    return current;
+  }
+  return {
+    usedPercentage: Math.max(current.usedPercentage, incoming.usedPercentage),
+    resetsAt: current.resetsAt
+  };
+}
+
+export function mergeUsageCaches(
+  current: UsageCache | undefined,
+  incoming: UsageCache
+): UsageCache {
+  if (!current) {
+    return incoming;
+  }
+  const fiveHour = mergeRateLimitWindow(
+    current.rateLimits.fiveHour,
+    incoming.rateLimits.fiveHour
+  );
+  const sevenDay = mergeRateLimitWindow(
+    current.rateLimits.sevenDay,
+    incoming.rateLimits.sevenDay
+  );
+  return {
+    schemaVersion: 1,
+    capturedAt: Math.max(current.capturedAt, incoming.capturedAt),
+    rateLimits: {
+      ...(fiveHour ? { fiveHour } : {}),
+      ...(sevenDay ? { sevenDay } : {})
+    }
+  };
+}
+
 export function formatRemaining(resetAtEpochSeconds: number, nowMs = Date.now()): string {
   const remainingSeconds = Math.floor(resetAtEpochSeconds - nowMs / 1000);
   if (remainingSeconds <= 0) {

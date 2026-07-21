@@ -37,7 +37,8 @@ for (const preview of codeStartPreviews) {
   const state = {
     kind: "ready",
     percentage: 42,
-    activity: preview.activity
+    activity: preview.activity,
+    model: { displayName: "Opus 4.8" }
   } as const;
   await writeFile(
     path.join(outputDir, preview.filename),

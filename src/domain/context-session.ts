@@ -1,10 +1,11 @@
 export type ContextSessionSnapshot = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   actionId: string;
   launchId: string;
   sessionId: string;
   projectDir?: string;
   capturedAt: number;
+  model?: CodeSessionModel;
   context: {
     usedPercentage: number | null;
     totalInputTokens?: number;
@@ -24,6 +25,10 @@ export type ActiveCodeLaunch = {
 
 export type CodeSessionActivity = "idle" | "running" | "waiting" | "ended";
 
+export type CodeSessionModel = {
+  displayName: string;
+};
+
 export type ContextSessionRuntime = {
   schemaVersion: 2;
   actionId: string;
@@ -32,13 +37,16 @@ export type ContextSessionRuntime = {
   capturedAt: number;
 };
 
-export type CodeStartDisplayState =
+type OpenCodeStartDisplayState =
   | { kind: "setup"; activity: CodeSessionActivity }
   | { kind: "idle"; activity: CodeSessionActivity }
   | { kind: "starting"; activity: CodeSessionActivity }
   | { kind: "ready"; percentage: number; activity: CodeSessionActivity }
-  | { kind: "closed"; activity: "ended" }
   | { kind: "error"; activity: CodeSessionActivity };
+
+export type CodeStartDisplayState =
+  | (OpenCodeStartDisplayState & { model?: CodeSessionModel })
+  | { kind: "closed"; activity: "ended" };
 
 type JsonRecord = Record<string, unknown>;
 
@@ -50,6 +58,37 @@ function asRecord(value: unknown): JsonRecord | undefined {
 
 function finiteNonNegative(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function modelVersionFromId(value: unknown): { family: string; version: string } | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const match = /^claude-(opus|sonnet|haiku)-(\d+)-(\d+)(?:-|$)/iu.exec(value.trim());
+  if (!match) {
+    return undefined;
+  }
+  return {
+    family: `${match[1][0].toUpperCase()}${match[1].slice(1).toLowerCase()}`,
+    version: `${match[2]}.${match[3]}`
+  };
+}
+
+function extractModel(root: JsonRecord): CodeSessionModel | undefined {
+  const model = asRecord(root.model);
+  const version = modelVersionFromId(model?.id);
+  const rawDisplayName = model?.display_name;
+  let displayName = version
+    ? `${version.family} ${version.version}`
+    : typeof rawDisplayName === "string"
+      ? rawDisplayName.replace(/\s*\([^)]*\)\s*$/u, "").trim()
+      : undefined;
+  if (!displayName) {
+    return undefined;
+  }
+  displayName = Array.from(displayName).slice(0, 48).join("");
+
+  return { displayName };
 }
 
 export function extractContextSessionSnapshot(
@@ -78,14 +117,16 @@ export function extractContextSessionSnapshot(
   const projectDir = workspace?.project_dir;
   const totalInputTokens = finiteNonNegative(contextWindow.total_input_tokens);
   const contextWindowSize = finiteNonNegative(contextWindow.context_window_size);
+  const model = root === undefined ? undefined : extractModel(root);
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     actionId,
     launchId,
     sessionId,
     ...(typeof projectDir === "string" && projectDir.length > 0 ? { projectDir } : {}),
     capturedAt,
+    ...(model === undefined ? {} : { model }),
     context: {
       usedPercentage:
         rawPercentage === null ? null : Math.min(100, Math.max(0, rawPercentage)),

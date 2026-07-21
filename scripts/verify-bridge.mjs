@@ -50,6 +50,8 @@ try {
   const firstInput = {
     session_id: "session-code-start",
     workspace: { project_dir: "D:\\Projects\\Demo" },
+    model: { id: "claude-opus-4-8", display_name: "Opus 4.8 (1M context)" },
+    effort: { level: "xhigh" },
     context_window: {
       used_percentage: 41.7,
       total_input_tokens: 12_345,
@@ -88,13 +90,20 @@ try {
     "capturedAt",
     "context",
     "launchId",
+    "model",
     "projectDir",
     "schemaVersion",
     "sessionId"
   ]);
   assert.equal(contextCache.context.usedPercentage, 41.7);
+  assert.equal(contextCache.schemaVersion, 2);
+  assert.deepEqual(contextCache.model, {
+    displayName: "Opus 4.8"
+  });
   assert.equal(contextCache.actionId, "binding-1");
   assert.equal(contextCache.sessionId, "session-code-start");
+  assert.equal(JSON.stringify(contextCache).includes("claude-opus-4-8"), false);
+  assert.equal(JSON.stringify(contextCache).includes("xhigh"), false);
   assert.equal(JSON.stringify(contextCache).includes("must-not-be-cached"), false);
 
   const runtimePath = path.join(
@@ -225,8 +234,21 @@ try {
   const secondCache = JSON.parse(await readFile(path.join(tempRoot, "usage.json"), "utf8"));
   assert.equal(secondCache.rateLimits.fiveHour.usedPercentage, 32.5);
 
+  const staleRun = await runBridge(bridgePath, {
+    rate_limits: {
+      five_hour: { used_percentage: 10, resets_at: 1_900_000_000 },
+      seven_day: { used_percentage: 20, resets_at: 1_900_500_000 }
+    }
+  });
+  assert.equal(staleRun.code, 0);
+  const cacheAfterStaleRun = JSON.parse(
+    await readFile(path.join(tempRoot, "usage.json"), "utf8")
+  );
+  assert.equal(cacheAfterStaleRun.rateLimits.fiveHour.usedPercentage, 32.5);
+  assert.equal(cacheAfterStaleRun.rateLimits.sevenDay.usedPercentage, 65.1);
+
   process.stdout.write(
-    "Bridge verification successful: safe usage/context/activity caches, hook isolation, session isolation, overwrite, and HUD forwarding.\n"
+    "Bridge verification successful: safe monotonic usage merging, context/model/activity caches, hook isolation, session isolation, and HUD forwarding.\n"
   );
 } finally {
   const normalizedTemp = path.resolve(tempRoot);

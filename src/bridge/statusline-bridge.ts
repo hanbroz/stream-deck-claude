@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +12,7 @@ import {
   writeContextSessionRuntime,
   writeContextSessionSnapshot
 } from "../io/context-session-cache";
+import { writeMergedUsageCache } from "../io/usage-cache";
 
 type BridgeConfig = {
   originalCommand?: string | null;
@@ -33,15 +34,13 @@ async function readStdin(): Promise<string> {
 }
 
 async function writeUsageCache(dataDir: string, payload: unknown): Promise<void> {
-  const cache = extractUsageCache(payload);
-  if (!cache) {
+  const incoming = extractUsageCache(payload);
+  if (!incoming) {
     return;
   }
 
   const cachePath = path.join(dataDir, "usage.json");
-  const temporaryPath = `${cachePath}.${process.pid}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(cache, null, 2)}\n`, "utf8");
-  await rename(temporaryPath, cachePath);
+  await writeMergedUsageCache(cachePath, incoming);
 }
 
 async function writeContextCache(dataDir: string, payload: unknown): Promise<void> {

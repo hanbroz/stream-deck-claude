@@ -4,6 +4,7 @@ import {
   extractUsageCache,
   formatRemaining,
   getDisplayState,
+  mergeUsageCaches,
   selectRateLimitWindow
 } from "../src/domain/rate-limits";
 
@@ -95,5 +96,62 @@ describe("window selection and display", () => {
       1_700_000_000_000
     );
     expect(state).toEqual({ kind: "ready", percentage: 24, remaining: "2h 46m" });
+  });
+});
+
+describe("mergeUsageCaches", () => {
+  it("keeps the highest usage in one reset window and accepts a later reset", () => {
+    const current = {
+      schemaVersion: 1 as const,
+      capturedAt: 100,
+      rateLimits: {
+        fiveHour: { usedPercentage: 37, resetsAt: 2_000_000_000 },
+        sevenDay: { usedPercentage: 65, resetsAt: 2_000_100_000 }
+      }
+    };
+
+    expect(
+      mergeUsageCaches(current, {
+        schemaVersion: 1,
+        capturedAt: 200,
+        rateLimits: {
+          fiveHour: { usedPercentage: 35, resetsAt: 2_000_000_000 },
+          sevenDay: { usedPercentage: 4, resetsAt: 2_000_200_000 }
+        }
+      })
+    ).toEqual({
+      schemaVersion: 1,
+      capturedAt: 200,
+      rateLimits: {
+        fiveHour: { usedPercentage: 37, resetsAt: 2_000_000_000 },
+        sevenDay: { usedPercentage: 4, resetsAt: 2_000_200_000 }
+      }
+    });
+  });
+
+  it("preserves a valid window when an update contains only the other window", () => {
+    expect(
+      mergeUsageCaches(
+        {
+          schemaVersion: 1,
+          capturedAt: 100,
+          rateLimits: {
+            sevenDay: { usedPercentage: 65, resetsAt: 2_000_100_000 }
+          }
+        },
+        {
+          schemaVersion: 1,
+          capturedAt: 200,
+          rateLimits: {
+            fiveHour: { usedPercentage: 37, resetsAt: 2_000_000_000 }
+          }
+        }
+      )
+    ).toMatchObject({
+      rateLimits: {
+        fiveHour: { usedPercentage: 37 },
+        sevenDay: { usedPercentage: 65 }
+      }
+    });
   });
 });
