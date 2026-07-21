@@ -28,6 +28,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -237,6 +241,19 @@ button:disabled {
   display: block;
 }
 
+.explorer-resizer {
+  width: 5px;
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 5;
+}
+
+.explorer-resizer:hover {
+  background: var(--accent);
+}
+
 .sidebar__header {
   display: flex;
   height: 34px;
@@ -244,6 +261,23 @@ button:disabled {
   gap: 4px;
   padding: 7px 6px 4px 8px;
   color: var(--text-soft);
+}
+
+.explorer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 1px;
+}
+
+.explorer-actions svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .explorer-title {
@@ -412,6 +446,11 @@ button:disabled {
   place-items: center;
   color: var(--muted);
   font-size: 10px;
+  transition: transform 120ms ease;
+}
+
+.tree-row__chevron.is-expanded {
+  transform: rotate(90deg);
 }
 
 .tree-row__icon {
@@ -526,7 +565,7 @@ button:disabled {
   flex-direction: column;
   min-width: 0;
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   padding: 18px 22px;
   font-family:
     "Cascadia Code",
@@ -535,6 +574,12 @@ button:disabled {
     monospace;
   font-size: 13px;
   line-height: 1.7;
+}
+
+.console-log {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .console-line {
@@ -549,6 +594,10 @@ button:disabled {
 
 .console-line--accent {
   color: var(--accent);
+}
+
+.console-line--success {
+  color: var(--green);
 }
 
 .console-cursor {
@@ -572,12 +621,26 @@ button:disabled {
   min-width: 320px;
   flex: 0 0 min(42vw, 520px);
   flex-direction: column;
-  border-left: 5px solid #333333;
   background: #181818;
 }
 
 .app-shell:not(.is-terminal-split) .terminal-panel {
   display: none;
+}
+
+.app-shell:not(.is-terminal-split) .terminal-resizer {
+  display: none;
+}
+
+.terminal-resizer {
+  width: 5px;
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: #333333;
+}
+
+.terminal-resizer:hover {
+  background: var(--accent);
 }
 
 .terminal-panel__header {
@@ -595,22 +658,57 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.terminal-panel__empty {
-  display: flex;
+.terminal-panel__content {
   min-height: 0;
   flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  color: #dcdcdc;
+  font-family: "Cascadia Code", "D2Coding", Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.terminal-panel__content p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.terminal-line--muted {
+  color: #8a8a8a;
+}
+
+.terminal-line--blue {
+  color: var(--blue);
+}
+
+.terminal-line--green {
+  color: var(--green);
+}
+
+.terminal-line--cyan {
+  color: #4fc3f7;
+}
+
+.terminal-cursor {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 24px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.6;
-  text-align: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--green);
+}
+
+.terminal-cursor span:last-child {
+  width: 7px;
+  height: 15px;
+  background: #cccccc;
+  animation: blink 1s step-end infinite;
 }
 
 .terminal {
   min-height: 0;
   flex: 1;
+  display: none;
   overflow: hidden;
   padding: 10px 12px;
 }
@@ -620,8 +718,17 @@ button:disabled {
   padding: 0;
 }
 
+.app-shell.is-session-active .console-log {
+  display: none;
+}
+
+.app-shell.is-session-active .console-pane > .terminal {
+  display: block;
+}
+
 .composer {
   flex: 0 0 auto;
+  min-height: 150px;
   border-top: 6px solid #333333;
   background: var(--surface);
   padding: 10px 16px 14px;

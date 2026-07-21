@@ -107,7 +107,7 @@ describe("createCompanionLaunchPlan", () => {
 
     expect(plan).toMatchObject({
       command: "D:\\Companion\\Claude Deck Companion.exe",
-      args: ["--folder", "D:\\Projects\\Demo"],
+      args: [],
       cwd: "D:\\Projects\\Demo"
     });
     expect(plan.env.CLAUDE_STREAM_DECK_BINDING_ID).toBe("binding-1");
@@ -136,7 +136,7 @@ describe("launchClaudeCompanion", () => {
 
     expect(spawnMock).toHaveBeenCalledWith(
       expect.stringContaining("Claude Deck Companion.exe"),
-      ["--folder", "D:\\Projects\\Demo"],
+      [],
       expect.objectContaining({
         cwd: "D:\\Projects\\Demo",
         windowsHide: false,

@@ -34,10 +34,18 @@
               <span aria-hidden="true">▸</span>
               <strong id="explorer-project-name">PROJECT</strong>
             </button>
-            <button id="new-session" class="icon-button" type="button" title="새 세션" aria-label="새 세션">+</button>
+            <div class="explorer-actions">
+              <button id="open-explorer" class="icon-button icon-button--small" type="button" title="현재 폴더 열기" aria-label="현재 폴더 열기">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h7l2 2h9v12a1 1 0 0 1-1 1H3z" /></svg>
+              </button>
+              <button id="open-terminal" class="icon-button icon-button--small" type="button" title="프로젝트 터미널 열기" aria-label="프로젝트 터미널 열기">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4M12 16h7" /></svg>
+              </button>
+              <button id="new-session" class="icon-button icon-button--small" type="button" title="새 세션" aria-label="새 세션">+</button>
+            </div>
           </header>
 
-          <section class="status-panel" aria-label="세션 상태">
+          <section class="status-panel" aria-label="세션 상태" hidden>
             <div>
               <span class="status-dot" id="status-dot"></span>
               <strong id="session-state">대기 중</strong>
@@ -45,18 +53,14 @@
             <span id="session-model">모델 없음</span>
           </section>
 
-          <section class="resume-panel" aria-label="세션 재개">
+          <section class="resume-panel" aria-label="세션 재개" hidden>
             <input id="resume-session-id" type="text" spellcheck="false" placeholder="세션 ID" aria-label="재개할 세션 ID" />
             <button id="resume-session" type="button">재개</button>
           </section>
 
-          <nav class="tree-toolbar" aria-label="탐색기 도구">
-            <button id="open-explorer" type="button">탐색기</button>
-            <button id="open-terminal" type="button">터미널</button>
-          </nav>
-
           <section id="tree" class="tree" aria-label="파일 트리"></section>
         </aside>
+        <div id="explorer-resizer" class="explorer-resizer" aria-hidden="true"></div>
 
         <section class="workspace" aria-label="Claude Code 작업 영역">
           <nav class="session-tabs" aria-label="세션 탭">
@@ -66,7 +70,7 @@
             </div>
             <button id="terminal-split-toggle" class="session-tab session-tab--button" type="button" title="터미널 패널 열기/닫기">
               <span>TERMINAL</span>
-              <span id="terminal-split-sign">×</span>
+              <span id="terminal-split-sign">+</span>
             </button>
             <div class="session-tabs__meta">
               <span id="tab-model">모델 없음</span>
@@ -77,20 +81,44 @@
           <div class="work-split">
             <section class="console-pane" aria-label="Claude Code 터미널">
               <div id="console-log" class="console-log">
-                <p class="console-line console-line--muted">$ claude</p>
-                <p class="console-line console-line--accent">● Claude Code 세션을 준비합니다...</p>
-                <p class="console-line">프로젝트 탐색기에서 폴더를 선택하거나 새 세션을 시작하세요.</p>
+                <p class="console-line console-line--muted">$ claude "Electron 앱 초기 구조를 잡아줘"</p>
+                <p class="console-line console-line--muted">&nbsp;</p>
+                <p class="console-line console-line--accent">● 프로젝트를 분석하고 있습니다...</p>
+                <p class="console-line console-line--muted">  ⎿ package.json 읽음</p>
+                <p class="console-line console-line--muted">  ⎿ src/main.ts 읽음 (48 lines)</p>
+                <p class="console-line console-line--muted">&nbsp;</p>
+                <p class="console-line">● main 프로세스와 renderer를 분리하고 preload 브릿지를</p>
+                <p class="console-line">  통해 IPC를 노출하는 구조를 제안합니다.</p>
+                <p class="console-line console-line--muted">&nbsp;</p>
+                <p class="console-line console-line--success">  Update(src/main.ts)</p>
+                <p class="console-line console-line--success">  ⎿ +12 -3</p>
+                <p class="console-line console-line--success">  Create(src/preload.ts)</p>
+                <p class="console-line console-line--success">  ⎿ +21 new file</p>
+                <p class="console-line console-line--muted">&nbsp;</p>
+                <p class="console-line">● 변경을 적용했습니다. 개발 서버를 실행할까요?</p>
+                <div class="console-cursor" aria-hidden="true"><span>❯</span><span></span></div>
               </div>
               <div id="terminal" class="terminal" aria-label="Claude Code 터미널"></div>
             </section>
+
+            <div id="terminal-resizer" class="terminal-resizer" aria-hidden="true"></div>
 
             <section id="terminal-panel" class="terminal-panel" aria-label="터미널 패널">
               <header class="terminal-panel__header">
                 <span>PowerShell</span>
                 <button id="terminal-panel-close" class="icon-button icon-button--small" type="button" title="닫기" aria-label="터미널 패널 닫기">×</button>
               </header>
-              <div class="terminal-panel__empty">
-                Windows Terminal은 프로젝트 경로에서 별도 창으로 열립니다.
+              <div class="terminal-panel__content">
+                <p>PS C:\project&gt; npm run dev</p>
+                <p class="terminal-line--muted">&nbsp;</p>
+                <p class="terminal-line--muted">&gt; stream-deck-terminal@1.0.0 dev</p>
+                <p class="terminal-line--muted">&gt; electron .</p>
+                <p class="terminal-line--muted">&nbsp;</p>
+                <p class="terminal-line--blue">[main] Electron 앱 시작</p>
+                <p class="terminal-line--green">[vite] dev server ready in 412 ms</p>
+                <p class="terminal-line--cyan">  ➜ Local: http://localhost:5173/</p>
+                <p class="terminal-line--blue">[main] BrowserWindow 로드 완료</p>
+                <div class="terminal-cursor"><span>PS C:\project&gt;</span><span></span></div>
               </div>
             </section>
           </div>

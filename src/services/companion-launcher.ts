@@ -108,7 +108,10 @@ export function createCompanionLaunchPlan(
 ): CompanionLaunchPlan {
   return {
     command: companionPath,
-    args: ["--folder", folder],
+    // The packaged Electron runtime rejects unknown top-level CLI flags. The
+    // Companion receives its project root and Claude path through the inherited
+    // environment below, which is also how resume state is transported.
+    args: [],
     cwd: folder,
     env: {
       ...process.env,

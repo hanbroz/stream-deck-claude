@@ -49,6 +49,7 @@ const tabProjectName = mustElement<HTMLElement>("tab-project-name");
 const tabModel = mustElement<HTMLElement>("tab-model");
 const sessionTabDot = mustElement<HTMLElement>("session-tab-dot");
 const treeElement = mustElement<HTMLElement>("tree");
+const sidebar = mustElement<HTMLElement>("sidebar");
 const contextMenu = mustElement<HTMLElement>("context-menu");
 const contextMenuTitle = mustElement<HTMLElement>("context-menu-title");
 const promptInput = mustElement<HTMLTextAreaElement>("prompt-input");
@@ -69,6 +70,10 @@ const explorerToggle = mustElement<HTMLButtonElement>("explorer-toggle");
 const terminalSplitToggle = mustElement<HTMLButtonElement>("terminal-split-toggle");
 const terminalPanelClose = mustElement<HTMLButtonElement>("terminal-panel-close");
 const terminalSplitSign = mustElement<HTMLElement>("terminal-split-sign");
+const terminalElement = mustElement<HTMLElement>("terminal");
+const terminalPanel = mustElement<HTMLElement>("terminal-panel");
+const explorerResizer = mustElement<HTMLElement>("explorer-resizer");
+const terminalResizer = mustElement<HTMLElement>("terminal-resizer");
 
 let treeRoots: TreeNode[] = [];
 let selectedPath: string | undefined;
@@ -91,7 +96,7 @@ const terminal = new Terminal({
 });
 const fitAddon = new FitAddon();
 terminal.loadAddon(fitAddon);
-terminal.open(mustElement<HTMLElement>("terminal"));
+terminal.open(terminalElement);
 fitTerminal();
 
 terminal.onData((data) => {
@@ -114,6 +119,7 @@ api?.claude.onExit((message) => {
   if (activeSession?.sessionId === message.sessionId) {
     renderStatus({ state: "ended", cwd: activeSession.cwd });
     activeSession = undefined;
+    appShell.classList.remove("is-session-active");
     showToast("Session ended.");
   }
 });
@@ -147,6 +153,14 @@ terminalSplitToggle.addEventListener("click", () => {
 
 terminalPanelClose.addEventListener("click", () => {
   setTerminalSplit(false);
+});
+
+explorerResizer.addEventListener("mousedown", (event) => {
+  startColumnResize(event, "explorer");
+});
+
+terminalResizer.addEventListener("mousedown", (event) => {
+  startColumnResize(event, "terminal");
 });
 
 resumeSessionButton.addEventListener("click", () => {
@@ -313,11 +327,14 @@ function renderTree(): void {
 
     const chevron = document.createElement("span");
     chevron.className = "tree-row__chevron";
-    chevron.textContent = row.node.kind === "directory" ? (row.node.loading ? "..." : row.node.expanded ? "v" : ">") : "";
+    chevron.textContent = row.node.kind === "directory" ? (row.node.loading ? "..." : "▸") : "";
+    chevron.classList.toggle("is-expanded", row.node.kind === "directory" && Boolean(row.node.expanded));
 
     const icon = document.createElement("span");
     icon.className = `tree-row__icon${row.node.kind === "directory" ? " is-folder" : isCodeFile(row.node.name) ? " is-code" : ""}`;
-    icon.textContent = row.node.kind === "directory" ? (row.node.expanded ? "[]" : "[ ]") : fileIcon(row.node.name);
+    icon.textContent = row.node.kind === "directory"
+      ? (row.node.expanded ? "📂" : "📁")
+      : fileIcon(row.node.name);
 
     const name = document.createElement("span");
     name.className = "tree-row__name";
@@ -538,6 +555,8 @@ async function startSession(sessionId?: string): Promise<void> {
     cols: terminal.cols,
     rows: terminal.rows
   });
+  appShell.classList.add("is-session-active");
+  fitTerminal();
   terminal.clear();
   renderStatus({ state: "running", cwd: activeSession.cwd });
   updateProjectName(activeSession.cwd);
@@ -582,8 +601,32 @@ function setExplorerCollapsed(collapsed: boolean): void {
 
 function setTerminalSplit(open: boolean): void {
   appShell.classList.toggle("is-terminal-split", open);
-  terminalSplitSign.textContent = open ? "x" : "+";
+  terminalSplitSign.textContent = open ? "×" : "+";
   window.setTimeout(fitTerminal, 0);
+}
+
+function startColumnResize(event: MouseEvent, target: "explorer" | "terminal"): void {
+  event.preventDefault();
+  const startX = event.clientX;
+  const element = target === "explorer" ? sidebar : terminalPanel;
+  const startWidth = element.getBoundingClientRect().width;
+  const onMove = (moveEvent: MouseEvent) => {
+    const delta = moveEvent.clientX - startX;
+    const nextWidth = target === "explorer"
+      ? Math.max(180, Math.min(520, startWidth + delta))
+      : Math.max(240, Math.min(900, startWidth - delta));
+    element.style.width = `${nextWidth}px`;
+    element.style.flexBasis = `${nextWidth}px`;
+    fitTerminal();
+  };
+  const onUp = () => {
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+    document.body.style.userSelect = "";
+  };
+  document.body.style.userSelect = "none";
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
 }
 
 function updateProjectName(sourcePath: string): void {
@@ -626,16 +669,22 @@ function entryToNode(entry: DirectoryEntry): TreeNode {
 
 function fileIcon(name: string): string {
   const extension = name.split(".").pop()?.toLowerCase();
+  if (extension === "ts" || extension === "tsx") {
+    return "⬡";
+  }
+  if (extension === "js") {
+    return "◆";
+  }
   if (extension === "json") {
     return "{}";
   }
   if (extension === "md") {
-    return "M";
+    return "≡";
   }
   if (extension === "css") {
     return "#";
   }
-  return "*";
+  return "≡";
 }
 
 function isCodeFile(name: string): boolean {

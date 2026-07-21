@@ -60,6 +60,8 @@ The Companion includes an explorer for the configured project root and a termina
 
 The Companion renderer follows the imported Claude Design screen in [`companion/ClaudeCodeApp.dc.html`](companion/ClaudeCodeApp.dc.html): an orange-accented Visual Studio-style title bar, project explorer, session tabs, terminal split, context menu, and chat dock. The Electron renderer translates that design into regular DOM/CSS while retaining the live Claude PTY and project-file operations.
 
+The maintained visual contract is documented in [`DESIGN.md`](DESIGN.md). The renderer keeps the reference's 40px title bar, 36px session tabs, 260px explorer, Cascadia Code console, resizable split handles, 150px composer dock, and orange focus states; runtime-only controls are kept in compact explorer actions or context menus so they do not displace the reference layout.
+
 Usage keys check the local cache every second and skip unchanged images. These refreshes do not send Claude requests or consume usage. The value can still trail the web dashboard until Claude Code publishes a newer `rate_limits` payload; if a reset time passes first, the key displays `REFRESH` instead of a stale percentage.
 
 ### Local development
