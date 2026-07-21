@@ -52,7 +52,7 @@ When no other status-line command is configured, the installer sets Claude Code 
 
 Existing status-line commands and other settings remain preserved in Claude settings because Claude Code exposes a single status-line command slot.
 
-When an external status-line command owns that slot (for example OMC HUD), usage keys show `STATUSLINE BUSY` and do not claim the rate-limit cache is live. Code Start lifecycle hooks still operate, but rate-limit refresh requires the Usage Deck bridge to own the slot.
+When an external status-line command owns that slot (for example OMC HUD), usage keys first accept a fresh Anthropic cache already published by that owner, bounded by source, error, and freshness checks. If no such cache is available they show `STATUSLINE BUSY` and do not claim stale data is live. Code Start lifecycle hooks still operate without replacing the external command.
 
 Visible keys re-read the local cache every second and when pressed. Unchanged images are not sent to Stream Deck again.
 
@@ -66,8 +66,8 @@ Installing the bridge preserves the existing status-line command and settings in
 
 When the Usage Deck bridge owns the status-line slot, it forwards the original JSON input to the
 recorded command and relays its stdout. If another command already owns the slot (for example OMC
-HUD), the installer does not replace or wrap that command; the usage keys show `STATUSLINE BUSY`
-and no rate-limit forwarding is attempted.
+HUD), the installer does not replace or wrap that command; the usage keys may show a fresh
+OMC Anthropic cache value, otherwise `STATUSLINE BUSY`, and no rate-limit forwarding is attempted.
 
 If an older install left the managed bridge command in Claude settings, reinstalling restores the recorded original command instead of forwarding to itself.
 

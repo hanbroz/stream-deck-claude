@@ -15,7 +15,11 @@ import {
   isBridgeInstalled,
   isStatusLineConflict
 } from "../bridge/installer";
-import { defaultClaudeSettingsPath, defaultUsageDataDir } from "../bridge/paths";
+import {
+  defaultClaudeSettingsPath,
+  defaultOmcUsageCachePath,
+  defaultUsageDataDir
+} from "../bridge/paths";
 import type { RateLimitKind } from "../domain/rate-limits";
 import { loadUsageDisplayState } from "../services/display-loader";
 import { renderUsageKeyImage } from "../ui/key-renderer";
@@ -93,7 +97,8 @@ export abstract class UsageAction extends SingletonAction {
     const state = await loadUsageDisplayState(this.kind, {
       cachePath: path.join(dataDir, "usage.json"),
       bridgeInstalled: await isBridgeInstalled(settingsPath, dataDir),
-      statusLineConflict: await isStatusLineConflict(settingsPath, dataDir)
+      statusLineConflict: await isStatusLineConflict(settingsPath, dataDir),
+      externalUsageCachePath: defaultOmcUsageCachePath()
     });
     const image = renderUsageKeyImage(this.kind, state);
     await Promise.all(

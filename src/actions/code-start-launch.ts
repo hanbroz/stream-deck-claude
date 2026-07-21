@@ -139,7 +139,8 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
       folder,
       bindingId,
       launchId,
-      resumePointer?.sessionId
+      resumePointer?.sessionId,
+      projectName
     );
     await dependencies.writeActiveLaunch(dependencies.defaultUsageDataDir(), {
       schemaVersion: 2,

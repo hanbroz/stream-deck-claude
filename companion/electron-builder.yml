@@ -9,6 +9,10 @@ files:
 asar: true
 asarUnpack:
   - "**/node-pty/**"
+# The local `companion:dir` path reuses the checked-in/prebuilt node-pty binary.
+# Release packaging runs `companion:rebuild` first and therefore still produces
+# an Electron-matched native module.
+npmRebuild: false
 win:
   target:
     - target: nsis

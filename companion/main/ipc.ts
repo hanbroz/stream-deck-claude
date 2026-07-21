@@ -2,7 +2,8 @@ import type { WebContents } from "electron";
 
 import {
   COMPANION_IPC,
-  type ClaudeSessionStartRequest
+  type ClaudeSessionStartRequest,
+  type TerminalSessionStartRequest
 } from "../shared/claude-command";
 import { ClaudePtyManager, type ClipboardImageReader } from "./claude-session";
 import {
@@ -14,6 +15,8 @@ import {
   resolveContainedDirectory,
   type PathShell
 } from "./paths";
+import { ProjectTerminalManager } from "./terminal-session";
+import type { CompanionSessionStatus } from "./session-status";
 import { openWindowsTerminalFolder } from "./windows-terminal";
 
 export type CompanionIpcDependencies = {
@@ -39,6 +42,7 @@ export type CompanionIpcDependencies = {
   };
   rootPath: string;
   ptyManager?: ClaudePtyManager;
+  terminalManager?: ProjectTerminalManager;
   clipboard: ClipboardImageReader & {
     writeImage?: (image: unknown) => void;
   };
@@ -47,6 +51,7 @@ export type CompanionIpcDependencies = {
   };
   shell: PathShell;
   openTerminalFolder?: (folder: string) => unknown;
+  sessionStatus?: () => Promise<CompanionSessionStatus> | CompanionSessionStatus;
 };
 
 type SenderEvent = {
@@ -104,8 +109,37 @@ function requireClaudeStartRequest(value: unknown): ClaudeSessionStartRequest {
   };
 }
 
+function requireTerminalStartRequest(value: unknown): TerminalSessionStartRequest {
+  if (value === undefined) {
+    return {};
+  }
+  if (typeof value !== "object" || value === null) {
+    throw new Error("Terminal start request must be an object");
+  }
+  const request = value as Record<string, unknown>;
+  const shell = request.shell;
+  if (shell !== undefined && shell !== "powershell" && shell !== "cmd") {
+    throw new Error("Terminal shell is invalid");
+  }
+  const cols = request.cols;
+  const rows = request.rows;
+  if (cols !== undefined && typeof cols !== "number") {
+    throw new Error("cols must be a number");
+  }
+  if (rows !== undefined && typeof rows !== "number") {
+    throw new Error("rows must be a number");
+  }
+  return {
+    cwd: optionalString(request.cwd, "cwd"),
+    shell,
+    cols,
+    rows
+  };
+}
+
 export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyManager {
   const ptyManager = deps.ptyManager ?? new ClaudePtyManager();
+  const terminalManager = deps.terminalManager ?? new ProjectTerminalManager();
   const openTerminal = deps.openTerminalFolder ?? openWindowsTerminalFolder;
 
   ptyManager.on("data", (sessionId, data) => {
@@ -113,6 +147,16 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   });
   ptyManager.on("exit", (sessionId, exitCode, signal) => {
     deps.window.webContents.send(COMPANION_IPC.claudeExit, {
+      sessionId,
+      exitCode,
+      signal
+    });
+  });
+  terminalManager.on("data", (sessionId, data) => {
+    deps.window.webContents.send(COMPANION_IPC.terminalData, { sessionId, data });
+  });
+  terminalManager.on("exit", (sessionId, exitCode, signal) => {
+    deps.window.webContents.send(COMPANION_IPC.terminalExit, {
       sessionId,
       exitCode,
       signal
@@ -171,6 +215,15 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   deps.ipcMain.handle(COMPANION_IPC.terminalOpenFolder, async (_event: SenderEvent, path: unknown) => {
     openTerminal(await resolveContainedDirectory(deps.rootPath, requireString(path, "path")));
   });
+  deps.ipcMain.handle(
+    COMPANION_IPC.terminalStart,
+    async (_event: SenderEvent, request: unknown) => {
+      const validated = requireTerminalStartRequest(request);
+      const cwd = await resolveContainedDirectory(deps.rootPath, validated.cwd ?? ".");
+      return terminalManager.start({ ...validated, cwd });
+    }
+  );
+  deps.ipcMain.handle(COMPANION_IPC.sessionStatus, () => deps.sessionStatus?.() ?? {});
   deps.ipcMain.handle(COMPANION_IPC.windowMinimize, () => {
     deps.window.minimize?.();
   });
@@ -196,6 +249,18 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   });
   deps.ipcMain.on(COMPANION_IPC.claudeKill, (_event: SenderEvent, sessionId) => {
     ptyManager.kill(requireString(sessionId, "sessionId"));
+  });
+  deps.ipcMain.on(COMPANION_IPC.terminalWrite, (_event: SenderEvent, sessionId, data) => {
+    terminalManager.write(requireString(sessionId, "sessionId"), requireString(data, "data"));
+  });
+  deps.ipcMain.on(COMPANION_IPC.terminalResize, (_event: SenderEvent, sessionId, cols, rows) => {
+    if (typeof cols !== "number" || typeof rows !== "number") {
+      throw new Error("PTY dimensions must be numbers");
+    }
+    terminalManager.resize(requireString(sessionId, "sessionId"), cols, rows);
+  });
+  deps.ipcMain.on(COMPANION_IPC.terminalKill, (_event: SenderEvent, sessionId) => {
+    terminalManager.kill(requireString(sessionId, "sessionId"));
   });
 
   return ptyManager;

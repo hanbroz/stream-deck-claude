@@ -2,14 +2,23 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import {
   COMPANION_IPC,
+  readRuntimeProjectMetadataArg,
   type ClaudeSessionStartRequest,
   type ClaudeSessionStarted,
-  type DirectoryEntry
+  type DirectoryEntry,
+  type RuntimeProjectMetadata,
+  type TerminalSessionStarted,
+  type TerminalSessionStartRequest
 } from "../shared/claude-command";
+import type { CompanionSessionStatus } from "../main/session-status";
 
 export type ClaudeCompanionApi = {
   runtime: {
+    metadata: RuntimeProjectMetadata;
     folder: string;
+    projectName: string;
+    model?: string;
+    contextPercent?: number;
     resumeSessionId?: string;
   };
   claude: {
@@ -35,7 +44,22 @@ export type ClaudeCompanionApi = {
     reveal(path: string): Promise<void>;
   };
   terminal: {
+    start(request?: TerminalSessionStartRequest): Promise<TerminalSessionStarted>;
+    write(sessionId: string, data: string): void;
+    resize(sessionId: string, cols: number, rows: number): void;
+    kill(sessionId: string): void;
+    onData(listener: (message: { sessionId: string; data: string }) => void): () => void;
+    onExit(
+      listener: (message: {
+        sessionId: string;
+        exitCode: number;
+        signal?: number;
+      }) => void
+    ): () => void;
     openFolder(path: string): Promise<void>;
+  };
+  session: {
+    status(): Promise<CompanionSessionStatus>;
   };
   windowControls: {
     minimize(): Promise<void>;
@@ -53,12 +77,16 @@ function subscribe<T>(
   return () => ipcRenderer.off(channel, wrapped);
 }
 
+const runtimeMetadata = readRuntimeProjectMetadataArg(process.argv);
+
 const api: ClaudeCompanionApi = {
   runtime: {
-    folder: process.env.CLAUDE_STREAM_DECK_FOLDER ?? "",
-    resumeSessionId:
-      process.env.CLAUDE_STREAM_DECK_RESUME_SESSION_ID ??
-      process.env.CLAUDE_STREAM_DECK_RESUME
+    metadata: runtimeMetadata,
+    folder: runtimeMetadata.folder,
+    projectName: runtimeMetadata.projectName,
+    model: runtimeMetadata.model,
+    contextPercent: runtimeMetadata.contextPercent,
+    resumeSessionId: runtimeMetadata.resumeSessionId
   },
   claude: {
     start: (request) => ipcRenderer.invoke(COMPANION_IPC.claudeStart, request),
@@ -82,7 +110,18 @@ const api: ClaudeCompanionApi = {
     reveal: (path) => ipcRenderer.invoke(COMPANION_IPC.pathReveal, path)
   },
   terminal: {
+    start: (request = {}) => ipcRenderer.invoke(COMPANION_IPC.terminalStart, request),
+    write: (sessionId, data) =>
+      ipcRenderer.send(COMPANION_IPC.terminalWrite, sessionId, data),
+    resize: (sessionId, cols, rows) =>
+      ipcRenderer.send(COMPANION_IPC.terminalResize, sessionId, cols, rows),
+    kill: (sessionId) => ipcRenderer.send(COMPANION_IPC.terminalKill, sessionId),
+    onData: (listener) => subscribe(COMPANION_IPC.terminalData, listener),
+    onExit: (listener) => subscribe(COMPANION_IPC.terminalExit, listener),
     openFolder: (path) => ipcRenderer.invoke(COMPANION_IPC.terminalOpenFolder, path)
+  },
+  session: {
+    status: () => ipcRenderer.invoke(COMPANION_IPC.sessionStatus)
   },
   windowControls: {
     minimize: () => ipcRenderer.invoke(COMPANION_IPC.windowMinimize),

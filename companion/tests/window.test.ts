@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { readRuntimeProjectMetadataArg } from "../shared/claude-command";
 import {
   companionWindowOptions,
   createCompanionWindow,
@@ -17,6 +18,24 @@ describe("companionWindowOptions", () => {
       sandbox: true,
       webSecurity: true,
       allowRunningInsecureContent: false
+    });
+    expect(options.webPreferences?.additionalArguments).toEqual([]);
+  });
+
+  it("passes runtime metadata through additional preload arguments", () => {
+    const options = companionWindowOptions("D:\\app\\preload.cjs", {
+      folder: "D:\\repo",
+      projectName: "Repo"
+    });
+
+    expect(
+      readRuntimeProjectMetadataArg(options.webPreferences?.additionalArguments ?? [])
+    ).toEqual({
+      folder: "D:\\repo",
+      projectName: "Repo",
+      model: undefined,
+      contextPercent: undefined,
+      resumeSessionId: undefined
     });
   });
 });

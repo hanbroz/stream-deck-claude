@@ -1,5 +1,7 @@
 import type { BrowserWindowConstructorOptions } from "electron";
 
+import { encodeRuntimeProjectMetadata, type RuntimeProjectMetadata } from "../shared/claude-command";
+
 export type BrowserWindowLike = {
   loadFile(filePath: string): Promise<void>;
   loadURL(url: string): Promise<void>;
@@ -23,13 +25,15 @@ export type BrowserWindowFactory = new (
 export type CompanionWindowOptions = {
   BrowserWindow: BrowserWindowFactory;
   preloadPath: string;
+  runtimeMetadata?: RuntimeProjectMetadata;
   indexPath?: string;
   devServerUrl?: string;
   beforeLoad?: (window: BrowserWindowLike) => void | Promise<void>;
 };
 
 export function companionWindowOptions(
-  preloadPath: string
+  preloadPath: string,
+  runtimeMetadata?: RuntimeProjectMetadata
 ): BrowserWindowConstructorOptions {
   return {
     width: 1280,
@@ -46,7 +50,10 @@ export function companionWindowOptions(
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
-      allowRunningInsecureContent: false
+      allowRunningInsecureContent: false,
+      additionalArguments: runtimeMetadata
+        ? [encodeRuntimeProjectMetadata(runtimeMetadata)]
+        : []
     }
   };
 }
@@ -55,7 +62,7 @@ export async function createCompanionWindow(
   options: CompanionWindowOptions
 ): Promise<BrowserWindowLike> {
   const window = new options.BrowserWindow(
-    companionWindowOptions(options.preloadPath)
+    companionWindowOptions(options.preloadPath, options.runtimeMetadata)
   );
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));

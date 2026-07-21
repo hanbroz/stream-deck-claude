@@ -104,7 +104,8 @@ export function createCompanionLaunchPlan(
   bindingId: string,
   launchId: string,
   claudePath: string,
-  resumeSessionId?: string
+  resumeSessionId?: string,
+  projectName?: string
 ): CompanionLaunchPlan {
   return {
     command: companionPath,
@@ -121,6 +122,7 @@ export function createCompanionLaunchPlan(
       CLAUDE_STREAM_DECK_LAUNCH_ID: launchId,
       CLAUDE_STREAM_DECK_FOLDER: folder,
       CLAUDE_STREAM_DECK_CLAUDE_PATH: claudePath,
+      ...(projectName ? { CLAUDE_STREAM_DECK_PROJECT_NAME: projectName } : {}),
       ...(resumeSessionId ? { CLAUDE_STREAM_DECK_RESUME_SESSION_ID: resumeSessionId } : {})
     }
   };
@@ -130,7 +132,8 @@ export async function launchClaudeCompanion(
   folder: string,
   bindingId: string,
   launchId: string,
-  resumeSessionId?: string
+  resumeSessionId?: string,
+  projectName?: string
 ): Promise<CompanionLaunchResult> {
   await validateLaunchFolder(folder);
   let companionPath: string;
@@ -149,7 +152,8 @@ export async function launchClaudeCompanion(
     bindingId,
     launchId,
     claudePath,
-    resumeSessionId
+    resumeSessionId,
+    projectName
   );
   const companion = spawn(plan.command, plan.args, {
     cwd: plan.cwd,

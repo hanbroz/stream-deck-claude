@@ -6,6 +6,7 @@ import { registerCompanionIpc } from "./ipc";
 import { resolveCompanionRuntimeEnv } from "./paths";
 import { createCompanionWindow } from "./window";
 import { ClaudePtyManager } from "./claude-session";
+import { readCompanionSessionStatus } from "./session-status";
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } = require("electron");
@@ -19,6 +20,7 @@ async function start(): Promise<void> {
   await createCompanionWindow({
     BrowserWindow,
     preloadPath,
+    runtimeMetadata: runtimeEnv.metadata,
     indexPath,
     beforeLoad: (createdWindow) => {
       registerCompanionIpc({
@@ -26,6 +28,15 @@ async function start(): Promise<void> {
         window: createdWindow,
         rootPath: runtimeEnv.rootPath,
         ptyManager: new ClaudePtyManager({ command: runtimeEnv.claudePath }),
+        sessionStatus: () => readCompanionSessionStatus({
+          dataDir: runtimeEnv.usageDataDir,
+          bindingId: runtimeEnv.bindingId,
+          launchId: runtimeEnv.launchId,
+          fallback: {
+            model: runtimeEnv.metadata.model,
+            contextPercentage: runtimeEnv.metadata.contextPercent
+          }
+        }),
         clipboard,
         nativeImage,
         shell

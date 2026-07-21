@@ -114,7 +114,8 @@ describe("createCompanionLaunchPlan", () => {
       "binding-1",
       "launch-1",
       "C:\\Users\\Me\\.local\\bin\\claude.exe",
-      "session-1"
+      "session-1",
+      "020_Source"
     );
 
     expect(plan).toMatchObject({
@@ -127,6 +128,7 @@ describe("createCompanionLaunchPlan", () => {
     expect(plan.env.CLAUDE_STREAM_DECK_LAUNCH_ID).toBe("launch-1");
     expect(plan.env.CLAUDE_STREAM_DECK_FOLDER).toBe("D:\\Projects\\Demo");
     expect(plan.env.CLAUDE_STREAM_DECK_CLAUDE_PATH).toBe("C:\\Users\\Me\\.local\\bin\\claude.exe");
+    expect(plan.env.CLAUDE_STREAM_DECK_PROJECT_NAME).toBe("020_Source");
     expect(plan.env.CLAUDE_STREAM_DECK_RESUME_SESSION_ID).toBe("session-1");
   });
 });

@@ -2,6 +2,7 @@ import { mkdir, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { DirectoryEntry } from "../shared/claude-command";
+import type { RuntimeProjectMetadata } from "../shared/claude-command";
 
 export type PathShell = {
   openPath(path: string): Promise<string>;
@@ -12,10 +13,19 @@ export const COMPANION_FOLDER_ENV = "CLAUDE_STREAM_DECK_FOLDER";
 export const COMPANION_CLAUDE_PATH_ENV = "CLAUDE_STREAM_DECK_CLAUDE_PATH";
 export const COMPANION_RESUME_ENV = "CLAUDE_STREAM_DECK_RESUME";
 export const COMPANION_RESUME_SESSION_ID_ENV = "CLAUDE_STREAM_DECK_RESUME_SESSION_ID";
+export const COMPANION_PROJECT_NAME_ENV = "CLAUDE_STREAM_DECK_PROJECT_NAME";
+export const COMPANION_MODEL_ENV = "CLAUDE_STREAM_DECK_MODEL";
+export const COMPANION_CONTEXT_PERCENT_ENV = "CLAUDE_STREAM_DECK_CONTEXT_PERCENT";
+export const COMPANION_BINDING_ID_ENV = "CLAUDE_STREAM_DECK_BINDING_ID";
+export const COMPANION_LAUNCH_ID_ENV = "CLAUDE_STREAM_DECK_LAUNCH_ID";
 
 export type CompanionRuntimeEnv = {
   rootPath: string;
   claudePath: string;
+  metadata: RuntimeProjectMetadata;
+  bindingId?: string;
+  launchId?: string;
+  usageDataDir: string;
   resumeSessionId?: string;
 };
 
@@ -68,13 +78,41 @@ function cleanEnvValue(value: string | undefined, label: string): string | undef
 export async function resolveCompanionRuntimeEnv(
   env: NodeJS.ProcessEnv
 ): Promise<CompanionRuntimeEnv> {
+  const rootPath = await resolveCompanionRoot(env);
+  const resumeSessionId =
+    cleanEnvValue(env[COMPANION_RESUME_ENV], COMPANION_RESUME_ENV) ??
+    cleanEnvValue(env[COMPANION_RESUME_SESSION_ID_ENV], COMPANION_RESUME_SESSION_ID_ENV);
+  const contextPercent = parseContextPercent(env[COMPANION_CONTEXT_PERCENT_ENV]);
+  const localAppData = env.LOCALAPPDATA ?? path.join(env.USERPROFILE ?? process.cwd(), "AppData", "Local");
   return {
-    rootPath: await resolveCompanionRoot(env),
+    rootPath,
     claudePath: cleanEnvValue(env[COMPANION_CLAUDE_PATH_ENV], COMPANION_CLAUDE_PATH_ENV) ?? "claude",
-    resumeSessionId:
-      cleanEnvValue(env[COMPANION_RESUME_ENV], COMPANION_RESUME_ENV) ??
-      cleanEnvValue(env[COMPANION_RESUME_SESSION_ID_ENV], COMPANION_RESUME_SESSION_ID_ENV)
+    bindingId: cleanEnvValue(env[COMPANION_BINDING_ID_ENV], COMPANION_BINDING_ID_ENV),
+    launchId: cleanEnvValue(env[COMPANION_LAUNCH_ID_ENV], COMPANION_LAUNCH_ID_ENV),
+    usageDataDir: path.join(localAppData, "ClaudeUsageDeck"),
+    resumeSessionId,
+    metadata: {
+      folder: rootPath,
+      projectName:
+        cleanEnvValue(env[COMPANION_PROJECT_NAME_ENV], COMPANION_PROJECT_NAME_ENV) ??
+        path.basename(rootPath),
+      model: cleanEnvValue(env[COMPANION_MODEL_ENV], COMPANION_MODEL_ENV),
+      contextPercent,
+      resumeSessionId
+    }
   };
+}
+
+function parseContextPercent(value: string | undefined): number | undefined {
+  const cleaned = cleanEnvValue(value, COMPANION_CONTEXT_PERCENT_ENV);
+  if (cleaned === undefined) {
+    return undefined;
+  }
+  const parsed = Number.parseFloat(cleaned);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${COMPANION_CONTEXT_PERCENT_ENV} must be a number`);
+  }
+  return Math.max(0, Math.min(100, parsed));
 }
 
 export function resolveContainedPath(root: string, requestedPath = "."): string {

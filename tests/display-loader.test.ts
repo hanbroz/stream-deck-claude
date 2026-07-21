@@ -64,6 +64,48 @@ describe("loadUsageDisplayState", () => {
     ).resolves.toEqual({ kind: "statusline-conflict" });
   });
 
+  it("uses a fresh OMC Anthropic cache when OMC owns the status-line slot", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
+    const cachePath = path.join(root, "usage.json");
+    const externalPath = path.join(root, ".usage-cache-anthropic.json");
+    const nowMs = 1_700_000_000_000;
+    await writeFile(
+      externalPath,
+      JSON.stringify({
+        timestamp: nowMs - 1_000,
+        lastSuccessAt: nowMs - 1_000,
+        error: false,
+        source: "anthropic",
+        data: {
+          fiveHourPercent: 43,
+          fiveHourResetsAt: new Date(nowMs + 2 * 3600 * 1000).toISOString(),
+          weeklyPercent: 50,
+          weeklyResetsAt: new Date(nowMs + 24 * 3600 * 1000).toISOString()
+        }
+      }),
+      "utf8"
+    );
+
+    await expect(
+      loadUsageDisplayState("fiveHour", {
+        cachePath,
+        bridgeInstalled: false,
+        statusLineConflict: true,
+        externalUsageCachePath: externalPath,
+        nowMs
+      })
+    ).resolves.toEqual({ kind: "ready", percentage: 43, remaining: "2h 0m" });
+    await expect(
+      loadUsageDisplayState("sevenDay", {
+        cachePath,
+        bridgeInstalled: false,
+        statusLineConflict: true,
+        externalUsageCachePath: externalPath,
+        nowMs
+      })
+    ).resolves.toEqual({ kind: "ready", percentage: 50, remaining: "1d 0h" });
+  });
+
   it("renders an error for malformed cache data", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
     const cachePath = path.join(root, "usage.json");

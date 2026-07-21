@@ -17,6 +17,7 @@
     "bridge:install": "node com.hanbroz.claude-usage.sdPlugin/bridge/install-bridge.js",
     "companion:test": "vitest run companion/tests",
     "companion:build": "node scripts/build-companion.mjs",
+    "companion:dir": "npm run companion:build && npm run pack && electron-builder --config companion/electron-builder.yml --win dir --x64",
     "companion:rebuild": "electron-builder install-app-deps",
     "companion:package": "npm run companion:rebuild && npm run companion:build && npm run pack && electron-builder --config companion/electron-builder.yml --win nsis --x64"
   },

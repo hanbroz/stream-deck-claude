@@ -1,6 +1,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { formatHeaderContext, formatModelName, projectNameFromPath } from "./labels";
 import type { ClaudeCompanionApi } from "../preload";
 import type { ClaudeSessionStarted, DirectoryEntry } from "../shared/claude-command";
 import {
@@ -33,11 +34,19 @@ type SessionStatus = {
   state: "idle" | "running" | "waiting" | "ended";
   model?: string;
   cwd?: string;
+  contextPercentage?: number | null;
+  context?: { usedPercentage?: number | null } | number | null;
+};
+
+type RendererCompanionApi = ClaudeCompanionApi & {
+  session?: {
+    status?(): Promise<SessionStatus>;
+  };
 };
 
 declare global {
   interface Window {
-    claudeCompanion?: ClaudeCompanionApi;
+    claudeCompanion?: RendererCompanionApi;
   }
 }
 
@@ -47,14 +56,13 @@ const titleProjectName = mustElement<HTMLElement>("title-project-name");
 const explorerProjectName = mustElement<HTMLElement>("explorer-project-name");
 const tabProjectName = mustElement<HTMLElement>("tab-project-name");
 const tabModel = mustElement<HTMLElement>("tab-model");
+const tabContext = mustElement<HTMLElement>("tab-context");
 const sessionTabDot = mustElement<HTMLElement>("session-tab-dot");
 const treeElement = mustElement<HTMLElement>("tree");
 const sidebar = mustElement<HTMLElement>("sidebar");
 const contextMenu = mustElement<HTMLElement>("context-menu");
 const contextMenuTitle = mustElement<HTMLElement>("context-menu-title");
 const promptInput = mustElement<HTMLTextAreaElement>("prompt-input");
-const sendPromptButton = mustElement<HTMLButtonElement>("send-prompt");
-const copySelectionButton = mustElement<HTMLButtonElement>("copy-selection");
 const imagePreview = mustElement<HTMLElement>("image-preview");
 const toast = mustElement<HTMLElement>("toast");
 const statusDot = mustElement<HTMLElement>("status-dot");
@@ -74,15 +82,19 @@ const terminalSplitToggle = mustElement<HTMLButtonElement>("terminal-split-toggl
 const terminalPanelClose = mustElement<HTMLButtonElement>("terminal-panel-close");
 const terminalSplitSign = mustElement<HTMLElement>("terminal-split-sign");
 const terminalElement = mustElement<HTMLElement>("terminal");
-const terminalPanel = mustElement<HTMLElement>("terminal-panel");
-const explorerResizer = mustElement<HTMLElement>("explorer-resizer");
-const terminalResizer = mustElement<HTMLElement>("terminal-resizer");
+const consoleElement = mustElement<HTMLElement>("console-log");
 
+const projectRoot = api?.runtime.folder || ".";
 let treeRoots: TreeNode[] = [];
 let selectedPath: string | undefined;
 let contextPath: string | undefined;
 let composer: ComposerState = createComposerState();
-let activeSession: ClaudeSessionStarted | undefined;
+let activeClaudeSession: ClaudeSessionStarted | undefined;
+const pendingClaudeOutput = new Map<string, string[]>();
+let terminalSessionId: string | undefined;
+let terminalStarting = false;
+let sessionStatusTimer: ReturnType<typeof setInterval> | undefined;
+let lastSessionState: SessionStatus["state"] = "idle";
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 const terminal = new Terminal({
@@ -100,46 +112,80 @@ const terminal = new Terminal({
 const fitAddon = new FitAddon();
 terminal.loadAddon(fitAddon);
 terminal.open(terminalElement);
-fitTerminal();
 
-terminal.onData((data) => {
-  if (activeSession) {
-    api?.claude.write(activeSession.sessionId, data);
+const consoleTerminal = new Terminal({
+  convertEol: true,
+  cursorBlink: false,
+  disableStdin: true,
+  fontFamily: '"Cascadia Code", "D2Coding", Consolas, monospace',
+  fontSize: 13,
+  scrollback: 10_000,
+  theme: {
+    background: "#1e1e1e",
+    foreground: "#e6e6e6",
+    selectionBackground: "#5a3a2f"
   }
 });
-
-terminal.onSelectionChange(() => {
-  copySelectionButton.disabled = terminal.getSelection().length === 0;
+const consoleFitAddon = new FitAddon();
+consoleTerminal.loadAddon(consoleFitAddon);
+consoleTerminal.open(consoleElement);
+fitTerminals();
+consoleTerminal.attachCustomKeyEventHandler((event) => {
+  if (event.type !== "keydown") {
+    return false;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c" && consoleTerminal.hasSelection()) {
+    void navigator.clipboard?.writeText(consoleTerminal.getSelection());
+    event.preventDefault();
+  }
+  return false;
 });
 
-api?.claude.onData((message) => {
-  if (!activeSession || message.sessionId === activeSession.sessionId) {
+terminal.onData((data) => {
+  if (terminalSessionId) {
+    api?.terminal.write(terminalSessionId, data);
+  }
+});
+api?.terminal.onData((message) => {
+  if (!terminalSessionId || message.sessionId === terminalSessionId) {
     terminal.write(message.data);
   }
 });
 
-api?.claude.onExit((message) => {
-  if (activeSession?.sessionId === message.sessionId) {
-    renderStatus({ state: "ended", cwd: activeSession.cwd });
-    activeSession = undefined;
-    appShell.classList.remove("is-session-active");
-    showToast("Session ended.");
+api?.terminal.onExit((message) => {
+  if (terminalSessionId && message.sessionId === terminalSessionId) {
+    terminalSessionId = undefined;
+    terminal.writeln("\r\n[terminal exited]");
+    showToast("Project terminal exited.");
   }
 });
 
-window.addEventListener("resize", fitTerminal);
+api?.claude.onData((message) => {
+  if (!activeClaudeSession || message.sessionId === activeClaudeSession.sessionId) {
+    if (activeClaudeSession) {
+      appendConsoleOutput(message.data);
+    } else {
+      pendingClaudeOutput.set(message.sessionId, [
+        ...(pendingClaudeOutput.get(message.sessionId) ?? []),
+        message.data
+      ]);
+    }
+  }
+});
+
+api?.claude.onExit((message) => {
+  if (activeClaudeSession?.sessionId === message.sessionId) {
+    renderStatus({ state: "ended", cwd: activeClaudeSession.cwd });
+    activeClaudeSession = undefined;
+    showToast("Claude session ended.");
+  }
+});
+
+window.addEventListener("resize", fitTerminals);
 document.addEventListener("click", () => hideContextMenu());
 
-copySelectionButton.addEventListener("click", () => {
-  const selection = terminal.getSelection();
-  if (selection.length > 0) {
-    void navigator.clipboard?.writeText(selection);
-    showToast("Selection copied.");
-  }
-});
-
 newSessionButton.addEventListener("click", () => {
-  void startSession();
+  void startClaudeSession();
 });
 
 explorerToggle.addEventListener("click", () => {
@@ -163,19 +209,14 @@ windowClose.addEventListener("click", () => {
 });
 
 terminalSplitToggle.addEventListener("click", () => {
-  setTerminalSplit(!appShell.classList.contains("is-terminal-split"));
+  void setTerminalSplit(
+    !appShell.classList.contains("is-terminal-split"),
+    terminalCwdForSelection()
+  );
 });
 
 terminalPanelClose.addEventListener("click", () => {
-  setTerminalSplit(false);
-});
-
-explorerResizer.addEventListener("mousedown", (event) => {
-  startColumnResize(event, "explorer");
-});
-
-terminalResizer.addEventListener("mousedown", (event) => {
-  startColumnResize(event, "terminal");
+  void setTerminalSplit(false);
 });
 
 resumeSessionButton.addEventListener("click", () => {
@@ -190,20 +231,14 @@ resumeSessionInput.addEventListener("keydown", (event) => {
 });
 
 openExplorerButton.addEventListener("click", () => {
-  if (api?.runtime.folder) {
-    void api.paths.open(api.runtime.folder);
-    showToast("Opening project folder.");
+  if (projectRoot !== ".") {
+    void api?.paths.open(projectRoot);
   }
 });
 
 openTerminalButton.addEventListener("click", () => {
-  if (api?.runtime.folder) {
-    void api.terminal.openFolder(api.runtime.folder);
-    showToast("Opening project terminal.");
-  }
+  void api?.terminal.openFolder(projectRoot);
 });
-
-sendPromptButton.addEventListener("click", submitPrompt);
 
 promptInput.addEventListener("input", () => {
   composer = setComposerText(composer, promptInput.value);
@@ -255,10 +290,8 @@ contextMenu.addEventListener("click", (event) => {
     void refreshNode(node);
   } else if (button.dataset.action === "show-explorer") {
     void api?.paths.reveal(node.path);
-    showToast("Revealing item.");
   } else if (button.dataset.action === "open-terminal") {
     void api?.terminal.openFolder(node.kind === "directory" ? node.path : parentPathOf(node.path));
-    showToast("Opening terminal here.");
   }
 });
 
@@ -274,59 +307,63 @@ function mustElement<T extends HTMLElement>(id: string): T {
 }
 
 async function initialize(): Promise<void> {
-  const rootPath = api?.runtime.folder || ".";
-  updateProjectName(rootPath);
-  renderStatus({ state: "idle" });
-  const rootChildren = entriesToNodes((await api?.paths.list()) ?? []);
+  updateProjectName(api?.runtime.projectName || projectNameFromPath(projectRoot));
+  const initialStatus = await api?.session?.status?.();
+  renderStatus({ state: "idle", ...initialStatus });
+  sessionStatusTimer = setInterval(() => {
+    void refreshSessionStatus();
+  }, 1_000);
+  const rootChildren = entriesToNodes((await api?.paths.list(projectRoot)) ?? []);
   treeRoots = replaceRoots([{
-    id: rootPath,
-    name: projectNameFromPath(rootPath),
-    path: rootPath,
+    id: projectRoot,
+    name: projectNameFromPath(projectRoot),
+    path: projectRoot,
     kind: "directory",
     expanded: true,
     loaded: true,
     children: rootChildren
   }]);
-  selectedPath = rootPath;
+  selectedPath = projectRoot;
   renderTree();
 
   if (api?.runtime.resumeSessionId && api.runtime.folder) {
     resumeSessionInput.value = api.runtime.resumeSessionId;
     try {
-      await startSession(api.runtime.resumeSessionId);
+      await startClaudeSession(api.runtime.resumeSessionId);
     } catch (error) {
       renderStatus({ state: "ended" });
-      terminal.writeln(`\r\n[Resume failed: ${error instanceof Error ? error.message : "unknown error"}]`);
-      showToast("Resume failed.");
+      appendConsoleOutput(`[resume failed: ${error instanceof Error ? error.message : "unknown error"}]\n`);
     }
   }
 }
 
 function fitTerminal(): void {
   fitAddon.fit();
-  if (activeSession && terminal.cols > 0 && terminal.rows > 0) {
-    api?.claude.resize(activeSession.sessionId, terminal.cols, terminal.rows);
+  if (terminalSessionId && terminal.cols > 0 && terminal.rows > 0) {
+    api?.terminal.resize(terminalSessionId, terminal.cols, terminal.rows);
   }
 }
 
+function fitTerminals(): void {
+  fitTerminal();
+  consoleFitAddon.fit();
+}
+
 function renderStatus(status: SessionStatus): void {
+  lastSessionState = status.state;
   statusDot.className = `status-dot is-${status.state}`;
   sessionTabDot.className = `tab-dot is-${status.state}`;
-  sessionState.textContent =
-    status.state === "running"
-      ? "Running"
-      : status.state === "waiting"
-        ? "Waiting"
-        : status.state === "ended"
-          ? "Closed"
-          : "Idle";
-  const model = status.model ?? "Claude Code";
+  sessionState.textContent = status.state === "running"
+    ? "Running"
+    : status.state === "waiting"
+      ? "Waiting"
+      : status.state === "ended"
+        ? "Closed"
+        : "Idle";
+  const model = formatModelName(status.model);
   sessionModel.textContent = model;
   tabModel.textContent = model;
-  selectedPath = selectedPath ?? status.cwd;
-  if (status.cwd) {
-    updateProjectName(status.cwd);
-  }
+  tabContext.textContent = formatContext(status);
 }
 
 function renderTree(): void {
@@ -342,14 +379,12 @@ function renderTree(): void {
 
     const chevron = document.createElement("span");
     chevron.className = "tree-row__chevron";
-    chevron.textContent = row.node.kind === "directory" ? (row.node.loading ? "..." : "▸") : "";
+    chevron.textContent = row.node.kind === "directory" ? (row.node.loading ? "..." : ">") : "";
     chevron.classList.toggle("is-expanded", row.node.kind === "directory" && Boolean(row.node.expanded));
 
     const icon = document.createElement("span");
     icon.className = `tree-row__icon${row.node.kind === "directory" ? " is-folder" : isCodeFile(row.node.name) ? " is-code" : ""}`;
-    icon.textContent = row.node.kind === "directory"
-      ? (row.node.expanded ? "📂" : "📁")
-      : fileIcon(row.node.name);
+    icon.textContent = row.node.kind === "directory" ? "[]" : fileIcon(row.node.name);
 
     const name = document.createElement("span");
     name.className = "tree-row__name";
@@ -419,12 +454,10 @@ async function refreshNode(node: TreeNode): Promise<void> {
 }
 
 function showContextMenu(x: number, y: number): void {
-  contextMenuTitle.textContent = contextPath ? projectNameFromPath(contextPath) : "PROJECT";
+  contextMenuTitle.textContent = contextPath ? projectNameFromPath(contextPath) : projectNameFromPath(projectRoot);
   contextMenu.hidden = false;
-  const width = 240;
-  const height = 220;
-  contextMenu.style.left = `${Math.min(x, window.innerWidth - width - 8)}px`;
-  contextMenu.style.top = `${Math.min(y, window.innerHeight - height - 8)}px`;
+  contextMenu.style.left = `${Math.min(x, window.innerWidth - 248)}px`;
+  contextMenu.style.top = `${Math.min(y, window.innerHeight - 228)}px`;
 }
 
 function hideContextMenu(): void {
@@ -476,17 +509,14 @@ async function commitInlineCreate(node: TreeNode, kind: TreeNodeKind, input: HTM
 
   if (createdPath && node.kind === "directory") {
     const current = findNode(treeRoots, node.path);
-    const created = entryToNode({
+    treeRoots = setNodeChildren(treeRoots, node.path, [...(current?.children ?? []), entryToNode({
       name: request.name,
       path: createdPath,
       isDirectory: kind === "directory"
-    });
-    treeRoots = setNodeChildren(treeRoots, node.path, [...(current?.children ?? []), created]);
+    })]);
     renderTree();
-    showToast(`${kind === "directory" ? "Folder" : "File"} created: ${request.name}`);
   } else if (createdPath) {
     await refreshNode(node);
-    showToast(`${kind === "directory" ? "Folder" : "File"} created: ${request.name}`);
   }
 }
 
@@ -494,7 +524,6 @@ async function addImages(files: File[]): Promise<void> {
   const images = await Promise.all(files.map(fileToComposerImage));
   composer = addComposerImages(composer, images);
   renderImagePreview();
-  showToast(`${images.length} image(s) attached.`);
 }
 
 function fileToComposerImage(file: File): Promise<ComposerImage> {
@@ -519,14 +548,11 @@ function renderImagePreview(): void {
   for (const image of composer.images) {
     const chip = document.createElement("div");
     chip.className = "image-chip";
-
     const thumbnail = document.createElement("img");
     thumbnail.src = image.dataUrl;
     thumbnail.alt = image.name;
-
     const label = document.createElement("span");
     label.textContent = image.name;
-
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "x";
@@ -535,7 +561,6 @@ function renderImagePreview(): void {
       composer = removeComposerImage(composer, image.id);
       renderImagePreview();
     });
-
     chip.append(thumbnail, label, remove);
     imagePreview.append(chip);
   }
@@ -555,58 +580,100 @@ function submitPrompt(): void {
   void sendIntent(result.intent);
 }
 
-async function startSession(sessionId?: string): Promise<void> {
+async function startClaudeSession(sessionId?: string): Promise<void> {
   if (!api) {
     renderStatus({ state: "ended" });
-    showToast("Companion API is unavailable.");
     return;
   }
 
-  const cwd = api.runtime.folder || selectedPath || ".";
-  activeSession = await api.claude.start({
-    cwd,
+  clearConsoleOutput();
+  activeClaudeSession = await api.claude.start({
+    cwd: projectRoot,
     mode: sessionId ? "resume" : "new",
-    sessionId,
-    cols: terminal.cols,
-    rows: terminal.rows
+    sessionId
   });
-  appShell.classList.add("is-session-active");
-  fitTerminal();
-  terminal.clear();
-  renderStatus({ state: "running", cwd: activeSession.cwd });
-  updateProjectName(activeSession.cwd);
-  showToast(sessionId ? "Session resumed." : "New session started.");
-  terminal.focus();
+  renderStatus({ state: "running", cwd: activeClaudeSession.cwd });
+  const pending = pendingClaudeOutput.get(activeClaudeSession.sessionId);
+  pendingClaudeOutput.delete(activeClaudeSession.sessionId);
+  for (const output of pending ?? []) {
+    appendConsoleOutput(output);
+  }
+  appendConsoleOutput(sessionId ? "[session resumed]\n" : "[new session started]\n");
+  promptInput.focus();
 }
 
 async function resumeSession(): Promise<void> {
   const sessionId = resumeSessionInput.value.trim();
   if (sessionId.length === 0) {
     resumeSessionInput.focus();
-    showToast("Enter a session ID to resume.");
     return;
   }
 
-  await startSession(sessionId);
+  await startClaudeSession(sessionId);
 }
 
 async function sendIntent(intent: SubmitIntent): Promise<void> {
-  if (!activeSession) {
-    await startSession();
+  if (!activeClaudeSession) {
+    await startClaudeSession();
   }
 
-  if (!api || !activeSession) {
+  if (!api || !activeClaudeSession) {
     return;
   }
 
   for (const image of intent.images) {
-    await api.claude.pasteClipboardImage(activeSession.sessionId, image.dataUrl);
-    terminal.writeln(`[image attached: ${image.name}]`);
+    await api.claude.pasteClipboardImage(activeClaudeSession.sessionId, image.dataUrl);
+    appendConsoleOutput(`[image attached: ${image.name}]\n`);
   }
 
   if (intent.text.length > 0) {
-    api.claude.write(activeSession.sessionId, `${intent.text}\r`);
+    appendConsoleOutput(`> ${intent.text}\n`);
+    api.claude.write(activeClaudeSession.sessionId, `${intent.text}\r`);
   }
+}
+
+async function setTerminalSplit(open: boolean, cwd = terminalCwdForSelection()): Promise<void> {
+  appShell.classList.toggle("is-terminal-split", open);
+  terminalSplitSign.textContent = open ? "x" : "+";
+  if (open) {
+    await ensureProjectTerminal(cwd);
+  }
+  window.setTimeout(fitTerminal, 0);
+}
+
+function terminalCwdForSelection(): string {
+  const node = selectedPath ? findNode(treeRoots, selectedPath) : undefined;
+  if (!node) {
+    return projectRoot;
+  }
+  return node.kind === "directory" ? node.path : parentPathOf(node.path);
+}
+
+async function ensureProjectTerminal(cwd: string): Promise<void> {
+  if (terminalSessionId || terminalStarting) {
+    return;
+  }
+
+  if (!api?.terminal) {
+    terminal.writeln("[project terminal API unavailable]");
+    return;
+  }
+
+  terminalStarting = true;
+  try {
+    const started = await api.terminal.start({ cwd, cols: terminal.cols, rows: terminal.rows });
+    terminalSessionId = started.sessionId;
+    if (!terminalSessionId) {
+      terminal.writeln("[project terminal did not return a session id]");
+    }
+  } finally {
+    terminalStarting = false;
+  }
+}
+
+function appendConsoleOutput(data: string): void {
+  consoleTerminal.write(data);
+  consoleTerminal.scrollToBottom();
 }
 
 function setExplorerCollapsed(collapsed: boolean): void {
@@ -614,47 +681,14 @@ function setExplorerCollapsed(collapsed: boolean): void {
   explorerRail.hidden = !collapsed;
 }
 
-function setTerminalSplit(open: boolean): void {
-  appShell.classList.toggle("is-terminal-split", open);
-  terminalSplitSign.textContent = open ? "×" : "+";
-  window.setTimeout(fitTerminal, 0);
-}
-
-function startColumnResize(event: MouseEvent, target: "explorer" | "terminal"): void {
-  event.preventDefault();
-  const startX = event.clientX;
-  const element = target === "explorer" ? sidebar : terminalPanel;
-  const startWidth = element.getBoundingClientRect().width;
-  const onMove = (moveEvent: MouseEvent) => {
-    const delta = moveEvent.clientX - startX;
-    const nextWidth = target === "explorer"
-      ? Math.max(180, Math.min(520, startWidth + delta))
-      : Math.max(240, Math.min(900, startWidth - delta));
-    element.style.width = `${nextWidth}px`;
-    element.style.flexBasis = `${nextWidth}px`;
-    fitTerminal();
-  };
-  const onUp = () => {
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-    document.body.style.userSelect = "";
-  };
-  document.body.style.userSelect = "none";
-  window.addEventListener("mousemove", onMove);
-  window.addEventListener("mouseup", onUp);
-}
-
 function updateProjectName(sourcePath: string): void {
-  const name = projectNameFromPath(sourcePath);
-  titleProjectName.textContent = name;
-  explorerProjectName.textContent = name;
-  tabProjectName.textContent = name;
+  titleProjectName.textContent = sourcePath;
+  explorerProjectName.textContent = sourcePath;
+  tabProjectName.textContent = sourcePath;
 }
 
-function projectNameFromPath(sourcePath: string): string {
-  const normalized = sourcePath.replace(/[\\/]+$/, "");
-  const slash = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
-  return (slash >= 0 ? normalized.slice(slash + 1) : normalized) || "project";
+function formatContext(status: SessionStatus): string {
+  return formatHeaderContext(status);
 }
 
 function showToast(message: string): void {
@@ -667,6 +701,21 @@ function showToast(message: string): void {
   toastTimer = setTimeout(() => {
     toast.hidden = true;
   }, 2600);
+}
+
+async function refreshSessionStatus(): Promise<void> {
+  try {
+    const status = await api?.session?.status?.();
+    if (status) {
+      renderStatus({ state: activeClaudeSession ? "running" : lastSessionState, ...status });
+    }
+  } catch {
+    // Status is supplemental; the Claude PTY remains usable if the cache is unavailable.
+  }
+}
+
+function clearConsoleOutput(): void {
+  consoleTerminal.reset();
 }
 
 function entriesToNodes(entries: DirectoryEntry[]): TreeNode[] {
@@ -684,22 +733,16 @@ function entryToNode(entry: DirectoryEntry): TreeNode {
 
 function fileIcon(name: string): string {
   const extension = name.split(".").pop()?.toLowerCase();
-  if (extension === "ts" || extension === "tsx") {
-    return "⬡";
-  }
-  if (extension === "js") {
-    return "◆";
-  }
   if (extension === "json") {
     return "{}";
   }
   if (extension === "md") {
-    return "≡";
+    return "M";
   }
   if (extension === "css") {
     return "#";
   }
-  return "≡";
+  return "*";
 }
 
 function isCodeFile(name: string): boolean {

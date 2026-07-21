@@ -127,7 +127,8 @@ describe("Code Start relaunch guard", () => {
       "D:\\Projects\\Demo",
       "binding-1",
       "launch-123",
-      undefined
+      undefined,
+      "Demo"
     );
     expect(harness.writeActiveLaunch).toHaveBeenCalledWith(
       "D:\\Data\\ClaudeUsageDeck",
@@ -240,7 +241,8 @@ describe("Code Start relaunch guard", () => {
       "D:\\Projects\\Demo",
       "binding-1",
       "launch-123",
-      "session-resume"
+      "session-resume",
+      "Demo"
     );
   });
 });

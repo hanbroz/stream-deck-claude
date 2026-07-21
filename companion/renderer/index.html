@@ -9,142 +9,110 @@
   </head>
   <body>
     <main id="app-shell" class="app-shell">
-      <header class="titlebar" aria-label="앱 제목 표시줄">
+      <header class="titlebar" aria-label="Application title bar">
         <div class="titlebar__brand">
           <span class="titlebar__logo" aria-hidden="true"></span>
           <span>STREAM DECK TERMINAL</span>
           <span class="titlebar__divider">-</span>
           <strong id="title-project-name">project</strong>
         </div>
-        <div class="window-controls" aria-label="창 제어">
-          <button id="window-minimize" class="window-control" type="button" title="최소화" aria-label="최소화">
+        <div class="window-controls" aria-label="Window controls">
+          <button id="window-minimize" class="window-control" type="button" title="Minimize" aria-label="Minimize">
             <svg viewBox="0 0 11 11" aria-hidden="true"><path d="M0 5.5h11" /></svg>
           </button>
-          <button id="window-maximize" class="window-control" type="button" title="최대화" aria-label="최대화">
+          <button id="window-maximize" class="window-control" type="button" title="Maximize" aria-label="Maximize">
             <svg viewBox="0 0 10 10" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9" /></svg>
           </button>
-          <button id="window-close" class="window-control" type="button" title="닫기" aria-label="닫기">
+          <button id="window-close" class="window-control" type="button" title="Close" aria-label="Close">
             <svg viewBox="0 0 11 11" aria-hidden="true"><path d="M0 0 11 11M11 0 0 11" /></svg>
           </button>
         </div>
       </header>
 
       <div class="body-shell">
-        <button id="explorer-rail" class="explorer-rail" type="button" title="탐색기 열기" aria-label="탐색기 열기" hidden>
-          <span aria-hidden="true">▣</span>
+        <button id="explorer-rail" class="explorer-rail" type="button" title="Open explorer" aria-label="Open explorer" hidden>
+          <span aria-hidden="true">EX</span>
         </button>
 
-        <aside id="sidebar" class="sidebar" aria-label="프로젝트 탐색기">
+        <aside id="sidebar" class="sidebar" aria-label="Project explorer">
           <header class="sidebar__header">
-            <button id="explorer-toggle" class="explorer-title" type="button" title="탐색기 닫기">
-              <span aria-hidden="true">▸</span>
+            <button id="explorer-toggle" class="explorer-title" type="button" title="Close explorer">
+              <span aria-hidden="true">&gt;</span>
               <strong id="explorer-project-name">PROJECT</strong>
             </button>
             <div class="explorer-actions">
-              <button id="open-explorer" class="icon-button icon-button--small" type="button" title="현재 폴더 열기" aria-label="현재 폴더 열기">
+              <button id="open-explorer" class="icon-button icon-button--small" type="button" title="Open folder" aria-label="Open folder">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h7l2 2h9v12a1 1 0 0 1-1 1H3z" /></svg>
               </button>
-              <button id="open-terminal" class="icon-button icon-button--small" type="button" title="프로젝트 터미널 열기" aria-label="프로젝트 터미널 열기">
+              <button id="open-terminal" class="icon-button icon-button--small" type="button" title="Open project terminal" aria-label="Open project terminal">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4M12 16h7" /></svg>
               </button>
-              <button id="new-session" class="icon-button icon-button--small" type="button" title="새 세션" aria-label="새 세션">+</button>
+              <button id="new-session" class="icon-button icon-button--small" type="button" title="New Claude session" aria-label="New Claude session">+</button>
             </div>
           </header>
 
-          <section class="status-panel" aria-label="세션 상태" hidden>
+          <section class="status-panel" aria-label="Session status" hidden>
             <div>
               <span class="status-dot" id="status-dot"></span>
-              <strong id="session-state">대기 중</strong>
+              <strong id="session-state">Idle</strong>
             </div>
-            <span id="session-model">모델 없음</span>
+            <span id="session-model">Claude Code</span>
           </section>
 
-          <section class="resume-panel" aria-label="세션 재개" hidden>
-            <input id="resume-session-id" type="text" spellcheck="false" placeholder="세션 ID" aria-label="재개할 세션 ID" />
-            <button id="resume-session" type="button">재개</button>
+          <section class="resume-panel" aria-label="Resume session" hidden>
+            <input id="resume-session-id" type="text" spellcheck="false" placeholder="Session ID" aria-label="Session ID to resume" />
+            <button id="resume-session" type="button">Resume</button>
           </section>
 
-          <section id="tree" class="tree" aria-label="파일 트리"></section>
+          <section id="tree" class="tree" aria-label="File tree"></section>
         </aside>
         <div id="explorer-resizer" class="explorer-resizer" aria-hidden="true"></div>
 
-        <section class="workspace" aria-label="Claude Code 작업 영역">
-          <nav class="session-tabs" aria-label="세션 탭">
+        <section class="workspace" aria-label="Claude Code workspace">
+          <nav class="session-tabs" aria-label="Session header">
             <div class="session-tab session-tab--active">
               <span id="session-tab-dot" class="tab-dot"></span>
-              <span>Claude Code - Session</span>
+              <span>Claude Console</span>
             </div>
-            <button id="terminal-split-toggle" class="session-tab session-tab--button" type="button" title="터미널 패널 열기/닫기">
+            <button id="terminal-split-toggle" class="session-tab session-tab--button" type="button" title="Toggle embedded terminal">
               <span>TERMINAL</span>
               <span id="terminal-split-sign">+</span>
             </button>
             <div class="session-tabs__meta">
-              <span id="tab-model">모델 없음</span>
+              <span id="tab-model">Claude Code</span>
+              <span id="tab-context">CTX --</span>
               <span id="tab-project-name">project</span>
             </div>
           </nav>
 
           <div class="work-split">
-            <section class="console-pane" aria-label="Claude Code 터미널">
-              <div id="console-log" class="console-log">
-                <p class="console-line console-line--muted">$ claude "Electron 앱 초기 구조를 잡아줘"</p>
-                <p class="console-line console-line--muted">&nbsp;</p>
-                <p class="console-line console-line--accent">● 프로젝트를 분석하고 있습니다...</p>
-                <p class="console-line console-line--muted">  ⎿ package.json 읽음</p>
-                <p class="console-line console-line--muted">  ⎿ src/main.ts 읽음 (48 lines)</p>
-                <p class="console-line console-line--muted">&nbsp;</p>
-                <p class="console-line">● main 프로세스와 renderer를 분리하고 preload 브릿지를</p>
-                <p class="console-line">  통해 IPC를 노출하는 구조를 제안합니다.</p>
-                <p class="console-line console-line--muted">&nbsp;</p>
-                <p class="console-line console-line--success">  Update(src/main.ts)</p>
-                <p class="console-line console-line--success">  ⎿ +12 -3</p>
-                <p class="console-line console-line--success">  Create(src/preload.ts)</p>
-                <p class="console-line console-line--success">  ⎿ +21 new file</p>
-                <p class="console-line console-line--muted">&nbsp;</p>
-                <p class="console-line">● 변경을 적용했습니다. 개발 서버를 실행할까요?</p>
-                <div class="console-cursor" aria-hidden="true"><span>❯</span><span></span></div>
-              </div>
-              <div id="terminal" class="terminal" aria-label="Claude Code 터미널"></div>
+            <section class="console-pane" aria-label="Read-only Claude console">
+              <div id="console-log" class="console-log" aria-live="polite" aria-readonly="true"></div>
             </section>
 
             <div id="terminal-resizer" class="terminal-resizer" aria-hidden="true"></div>
 
-            <section id="terminal-panel" class="terminal-panel" aria-label="터미널 패널">
+            <section id="terminal-panel" class="terminal-panel" aria-label="Embedded terminal">
               <header class="terminal-panel__header">
-                <span>PowerShell</span>
-                <button id="terminal-panel-close" class="icon-button icon-button--small" type="button" title="닫기" aria-label="터미널 패널 닫기">×</button>
+                <span>Embedded terminal</span>
+                <button id="terminal-panel-close" class="icon-button icon-button--small" type="button" title="Close terminal panel" aria-label="Close terminal panel">x</button>
               </header>
               <div class="terminal-panel__content">
-                <p>PS C:\project&gt; npm run dev</p>
-                <p class="terminal-line--muted">&nbsp;</p>
-                <p class="terminal-line--muted">&gt; stream-deck-terminal@1.0.0 dev</p>
-                <p class="terminal-line--muted">&gt; electron .</p>
-                <p class="terminal-line--muted">&nbsp;</p>
-                <p class="terminal-line--blue">[main] Electron 앱 시작</p>
-                <p class="terminal-line--green">[vite] dev server ready in 412 ms</p>
-                <p class="terminal-line--cyan">  ➜ Local: http://localhost:5173/</p>
-                <p class="terminal-line--blue">[main] BrowserWindow 로드 완료</p>
-                <div class="terminal-cursor"><span>PS C:\project&gt;</span><span></span></div>
+                <div id="terminal" class="terminal" aria-label="Interactive embedded terminal"></div>
               </div>
             </section>
           </div>
 
-          <footer class="composer" aria-label="메시지 입력">
+          <footer class="composer" aria-label="Prompt composer">
             <div id="image-preview" class="image-preview" aria-live="polite"></div>
             <div class="composer__row">
               <textarea
                 id="prompt-input"
-                rows="2"
+                rows="8"
                 spellcheck="false"
-                placeholder="Claude Code에게 요청을 입력하세요... (Enter 전송 · Shift+Enter 줄바꿈)"
-                aria-label="프롬프트 입력"
+                placeholder="Write to Claude Code. Enter sends, Shift+Enter inserts a new line."
+                aria-label="Prompt input"
               ></textarea>
-              <div class="composer__actions">
-                <button id="copy-selection" class="icon-button" type="button" title="선택 복사" aria-label="선택 복사" disabled>
-                  ⧉
-                </button>
-                <button id="send-prompt" type="button">전송</button>
-              </div>
             </div>
           </footer>
         </section>
@@ -153,11 +121,11 @@
 
     <div id="context-menu" class="context-menu" role="menu" hidden>
       <div id="context-menu-title" class="context-menu__title">PROJECT</div>
-      <button data-action="new-file" type="button" role="menuitem"><span>▢</span>새 파일</button>
-      <button data-action="new-folder" type="button" role="menuitem"><span>▣</span>새 폴더</button>
-      <button data-action="refresh" type="button" role="menuitem"><span>↻</span>새로고침</button>
-      <button data-action="show-explorer" type="button" role="menuitem"><span>⌕</span>탐색기에서 보기</button>
-      <button data-action="open-terminal" type="button" role="menuitem"><span>›</span>여기서 터미널 열기</button>
+      <button data-action="new-file" type="button" role="menuitem"><span>F</span>New File</button>
+      <button data-action="new-folder" type="button" role="menuitem"><span>D</span>New Folder</button>
+      <button data-action="refresh" type="button" role="menuitem"><span>R</span>Refresh</button>
+      <button data-action="show-explorer" type="button" role="menuitem"><span>E</span>Reveal in Explorer</button>
+      <button data-action="open-terminal" type="button" role="menuitem"><span>T</span>Open Terminal Here</button>
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>

@@ -41,7 +41,7 @@
 
 - Color: `#1f1f1f` shell, `#252526` panels, `#1e1e1e` workspace, `#d97757` orange accent, `#3fb950` running state, `#569cd6` informational state
 - Typography: Segoe UI Variable for chrome and Cascadia Code for console/terminal content
-- Spacing/layout rhythm: 40px title bar, 36px session tabs, 260px explorer default, 23px tree rows, 150px composer dock
+- Spacing/layout rhythm: 40px title bar, 36px session tabs, 260px explorer default, 23px tree rows, 34% bottom composer dock (180px minimum)
 - Shape/radius/elevation: 5-12px restrained radii, 1px separators, dark 8-28px context/toast shadows
 - Motion: caret blink and short toast fade only
 - Imagery/iconography: compact inline SVG/icons; no emoji-dependent navigation
@@ -73,7 +73,7 @@
 - Empty: console and terminal show quiet reference-style placeholder lines
 - Error: toast and console message identify session/file failures without losing the workspace
 - Success: toast confirms file creation, refresh, resume, copy, and external launches
-- Disabled: copy is disabled until a terminal selection exists; send remains available for an empty-session start
+- Disabled: the Claude console is output-only; prompt submission uses Enter and Shift+Enter keeps a newline
 - Offline/slow network, if applicable: Claude remains a local PTY; no network-only UI state is introduced
 
 ## Content voice
@@ -90,6 +90,9 @@
 - Compatibility constraints: Windows 10+, Electron 43, Windows Terminal `wt.exe`, secure preload IPC
 - Test/screenshot expectations: run Companion tests, typecheck, build, and inspect the built renderer HTML/CSS before release
 
-## Open questions
+## Runtime notes
 
-- [ ] Should the optional PowerShell split eventually embed a second PTY, or remain an external `wt.exe` launch affordance? / owner: product / impact: terminal panel content
+- The top `TERMINAL` tab opens an embedded PowerShell PTY rooted at the configured project and accepts normal commands.
+- The explorer terminal action still opens an external Windows Terminal window with `wt.exe -d <project-root>`.
+- The Claude console is intentionally selectable/read-only; prompts are entered only in the bottom composer.
+- The header reads the project name from Code Start metadata and polls the current model/context snapshot without taking over another status-line owner.

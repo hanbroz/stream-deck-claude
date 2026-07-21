@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createClaudeCommandArgs } from "../shared/claude-command";
+import {
+  createClaudeCommandArgs,
+  encodeRuntimeProjectMetadata,
+  readRuntimeProjectMetadataArg
+} from "../shared/claude-command";
 
 describe("createClaudeCommandArgs", () => {
   it("starts a new Claude session with skip-permissions only", () => {
@@ -26,3 +30,22 @@ describe("createClaudeCommandArgs", () => {
   });
 });
 
+describe("runtime metadata args", () => {
+  it("round-trips sanitized project metadata for preload", () => {
+    const arg = encodeRuntimeProjectMetadata({
+      folder: "D:\\repo",
+      projectName: "Repo",
+      model: "Opus 4.8",
+      contextPercent: 42,
+      resumeSessionId: "resume-1"
+    });
+
+    expect(readRuntimeProjectMetadataArg(["electron", arg])).toEqual({
+      folder: "D:\\repo",
+      projectName: "Repo",
+      model: "Opus 4.8",
+      contextPercent: 42,
+      resumeSessionId: "resume-1"
+    });
+  });
+});

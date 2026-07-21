@@ -8,7 +8,10 @@ import {
   createContainedDirectory,
   createContainedFile,
   COMPANION_CLAUDE_PATH_ENV,
+  COMPANION_CONTEXT_PERCENT_ENV,
   COMPANION_FOLDER_ENV,
+  COMPANION_MODEL_ENV,
+  COMPANION_PROJECT_NAME_ENV,
   COMPANION_RESUME_ENV,
   COMPANION_RESUME_SESSION_ID_ENV,
   listContainedDirectory,
@@ -53,12 +56,25 @@ describe("contained path operations", () => {
       resolveCompanionRuntimeEnv({
         [COMPANION_FOLDER_ENV]: configured,
         [COMPANION_CLAUDE_PATH_ENV]: "C:\\Tools\\claude.exe",
+        [COMPANION_PROJECT_NAME_ENV]: "Demo Project",
+        [COMPANION_MODEL_ENV]: "Opus 4.8",
+        [COMPANION_CONTEXT_PERCENT_ENV]: "43.7",
         [COMPANION_RESUME_ENV]: "resume-session"
       })
     ).resolves.toEqual({
       rootPath: await realpath(configured),
       claudePath: "C:\\Tools\\claude.exe",
-      resumeSessionId: "resume-session"
+      bindingId: undefined,
+      launchId: undefined,
+      usageDataDir: path.join(process.cwd(), "AppData", "Local", "ClaudeUsageDeck"),
+      resumeSessionId: "resume-session",
+      metadata: {
+        folder: await realpath(configured),
+        projectName: "Demo Project",
+        model: "Opus 4.8",
+        contextPercent: 43.7,
+        resumeSessionId: "resume-session"
+      }
     });
     await expect(resolveCompanionRoot({})).rejects.toThrow(
       "CLAUDE_STREAM_DECK_FOLDER is required"
@@ -66,7 +82,10 @@ describe("contained path operations", () => {
     await expect(resolveCompanionRuntimeEnv({
       [COMPANION_FOLDER_ENV]: configured,
       [COMPANION_RESUME_SESSION_ID_ENV]: "legacy-resume-session"
-    })).resolves.toMatchObject({ resumeSessionId: "legacy-resume-session" });
+    })).resolves.toMatchObject({
+      metadata: { projectName: path.basename(configured) },
+      resumeSessionId: "legacy-resume-session"
+    });
   });
 
   it("lists directories before files and creates child folders/files", async () => {

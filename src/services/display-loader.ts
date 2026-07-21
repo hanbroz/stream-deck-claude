@@ -4,12 +4,13 @@ import {
   type RateLimitKind,
   type UsageDisplayState
 } from "../domain/rate-limits";
-import { readUsageCache } from "../io/usage-cache";
+import { readOmcUsageCache, readUsageCache } from "../io/usage-cache";
 
 export type DisplayLoaderOptions = {
   cachePath: string;
   bridgeInstalled: boolean;
   statusLineConflict?: boolean;
+  externalUsageCachePath?: string;
   nowMs?: number;
 };
 
@@ -19,6 +20,16 @@ export async function loadUsageDisplayState(
 ): Promise<UsageDisplayState> {
   try {
     if (options.statusLineConflict) {
+      if (options.externalUsageCachePath) {
+        const externalCache = await readOmcUsageCache(
+          options.externalUsageCachePath,
+          options.nowMs
+        );
+        const externalWindow = externalCache && selectRateLimitWindow(externalCache, kind);
+        if (externalWindow) {
+          return getDisplayState(externalWindow, options.nowMs);
+        }
+      }
       return { kind: "statusline-conflict" };
     }
     const cache = await readUsageCache(options.cachePath);

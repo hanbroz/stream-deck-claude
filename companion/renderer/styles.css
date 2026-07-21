@@ -216,6 +216,7 @@ button:disabled {
 }
 
 .explorer-resizer {
+  display: none;
   width: 5px;
   flex: 0 0 5px;
   cursor: col-resize;
@@ -528,6 +529,13 @@ button:disabled {
   padding: 2px 8px;
 }
 
+#tab-context {
+  border-radius: 5px;
+  background: #2d2d2d;
+  color: var(--accent);
+  padding: 2px 8px;
+}
+
 .work-split {
   display: flex;
   min-height: 0;
@@ -554,6 +562,8 @@ button:disabled {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  cursor: text;
+  user-select: text;
 }
 
 .console-line {
@@ -607,6 +617,7 @@ button:disabled {
 }
 
 .terminal-resizer {
+  display: none;
   width: 5px;
   flex: 0 0 5px;
   cursor: col-resize;
@@ -633,6 +644,7 @@ button:disabled {
 }
 
 .terminal-panel__content {
+  display: flex;
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -682,37 +694,28 @@ button:disabled {
 .terminal {
   min-height: 0;
   flex: 1;
-  display: none;
+  display: block;
   overflow: hidden;
-  padding: 10px 12px;
-}
-
-.console-pane > .terminal {
-  min-height: 120px;
   padding: 0;
 }
 
-.app-shell.is-session-active .console-log {
-  display: none;
-}
-
-.app-shell.is-session-active .console-pane > .terminal {
-  display: block;
-}
-
 .composer {
-  flex: 0 0 auto;
-  min-height: 150px;
+  display: flex;
+  flex: 0 0 34%;
+  min-height: 180px;
   border-top: 6px solid #333333;
   background: var(--surface);
   padding: 10px 16px 14px;
+  flex-direction: column;
 }
 
 .composer__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
   gap: 10px;
-  align-items: end;
+  align-items: stretch;
   border: 1px solid #3a3a3a;
   border-radius: 12px;
   background: var(--surface-2);
@@ -725,21 +728,16 @@ button:disabled {
 
 textarea {
   width: 100%;
-  max-height: 160px;
-  min-height: 52px;
-  resize: vertical;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  resize: none;
   border: 0;
   background: transparent;
   color: #e6e6e6;
   outline: none;
   padding: 0;
   line-height: 1.5;
-}
-
-.composer__actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
 }
 
 .image-preview {

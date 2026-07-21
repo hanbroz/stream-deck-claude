@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ClaudePtyManager } from "../main/claude-session";
 import { registerCompanionIpc } from "../main/ipc";
+import { ProjectTerminalManager } from "../main/terminal-session";
 import { COMPANION_IPC } from "../shared/claude-command";
 
 let root: string;
@@ -38,6 +39,9 @@ describe("registerCompanionIpc", () => {
     const ipcMain = fakeIpcMain();
     const send = vi.fn();
     const openTerminalFolder = vi.fn();
+    const terminalWrite = vi.fn();
+    const terminalResize = vi.fn();
+    const terminalKill = vi.fn();
     const ptyManager = new ClaudePtyManager({
       ptyFactory: vi.fn(() => ({
         onData: vi.fn(),
@@ -47,12 +51,22 @@ describe("registerCompanionIpc", () => {
         kill: vi.fn()
       }))
     });
+    const terminalManager = new ProjectTerminalManager({
+      ptyFactory: vi.fn(() => ({
+        onData: vi.fn(),
+        onExit: vi.fn(),
+        write: terminalWrite,
+        resize: terminalResize,
+        kill: terminalKill
+      }))
+    });
 
     registerCompanionIpc({
       ipcMain,
       window: { webContents: { send } },
       rootPath: root,
       ptyManager,
+      terminalManager,
       clipboard: { readImage: () => ({ isEmpty: () => true }) },
       shell: { openPath: vi.fn(), showItemInFolder: vi.fn() },
       openTerminalFolder
@@ -70,9 +84,19 @@ describe("registerCompanionIpc", () => {
       COMPANION_IPC.claudeWrite,
       expect.any(Function)
     );
+    expect(ipcMain.handle).toHaveBeenCalledWith(
+      COMPANION_IPC.terminalStart,
+      expect.any(Function)
+    );
+    expect(ipcMain.on).toHaveBeenCalledWith(
+      COMPANION_IPC.terminalWrite,
+      expect.any(Function)
+    );
 
     ptyManager.emit("data", "session-1", "chunk");
     ptyManager.emit("exit", "session-1", 0);
+    terminalManager.emit("data", "term-1", "prompt");
+    terminalManager.emit("exit", "term-1", 1);
 
     expect(send).toHaveBeenCalledWith(COMPANION_IPC.claudeData, {
       sessionId: "session-1",
@@ -81,6 +105,15 @@ describe("registerCompanionIpc", () => {
     expect(send).toHaveBeenCalledWith(COMPANION_IPC.claudeExit, {
       sessionId: "session-1",
       exitCode: 0,
+      signal: undefined
+    });
+    expect(send).toHaveBeenCalledWith(COMPANION_IPC.terminalData, {
+      sessionId: "term-1",
+      data: "prompt"
+    });
+    expect(send).toHaveBeenCalledWith(COMPANION_IPC.terminalExit, {
+      sessionId: "term-1",
+      exitCode: 1,
       signal: undefined
     });
 
@@ -92,6 +125,16 @@ describe("registerCompanionIpc", () => {
     await expect(
       ipcMain.handlers.get(COMPANION_IPC.claudeStart)?.({}, { cwd: ".." })
     ).rejects.toThrow("Path is outside the allowed root");
+    const terminalStarted = (await ipcMain.handlers.get(COMPANION_IPC.terminalStart)?.(
+      {},
+      { cwd: ".", shell: "cmd" }
+    )) as { sessionId: string };
+    ipcMain.listeners.get(COMPANION_IPC.terminalWrite)?.({}, terminalStarted.sessionId, "dir\r");
+    ipcMain.listeners.get(COMPANION_IPC.terminalResize)?.({}, terminalStarted.sessionId, 80, 24);
+    ipcMain.listeners.get(COMPANION_IPC.terminalKill)?.({}, terminalStarted.sessionId);
+    expect(terminalWrite).toHaveBeenCalledWith("dir\r");
+    expect(terminalResize).toHaveBeenCalledWith(80, 24);
+    expect(terminalKill).toHaveBeenCalledTimes(1);
   });
 
   it("writes a renderer image data URL to the native clipboard before pasting", async () => {

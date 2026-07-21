@@ -4,7 +4,54 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { readUsageCache, writeMergedUsageCache } from "../src/io/usage-cache";
+import {
+  parseOmcUsageCache,
+  readUsageCache,
+  writeMergedUsageCache
+} from "../src/io/usage-cache";
+
+describe("parseOmcUsageCache", () => {
+  it("converts OMC's fresh Anthropic cache to the local usage schema", () => {
+    const nowMs = 1_700_000_000_000;
+    expect(
+      parseOmcUsageCache(
+        {
+          timestamp: nowMs - 1_000,
+          lastSuccessAt: nowMs - 1_000,
+          source: "anthropic",
+          data: {
+            fiveHourPercent: 43,
+            fiveHourResetsAt: "2026-07-21T09:49:59.638Z",
+            weeklyPercent: 50,
+            weeklyResetsAt: "2026-07-21T19:59:59.638Z"
+          }
+        },
+        nowMs
+      )
+    ).toMatchObject({
+      capturedAt: nowMs - 1_000,
+      rateLimits: {
+        fiveHour: { usedPercentage: 43 },
+        sevenDay: { usedPercentage: 50 }
+      }
+    });
+  });
+
+  it("rejects stale, failed, or non-Anthropic caches", () => {
+    const nowMs = 1_700_000_000_000;
+    const base = {
+      timestamp: nowMs - 1_000,
+      source: "anthropic",
+      data: {
+        fiveHourPercent: 43,
+        fiveHourResetsAt: "2026-07-21T09:49:59.638Z"
+      }
+    };
+    expect(parseOmcUsageCache({ ...base, timestamp: nowMs - 700_000 }, nowMs)).toBeUndefined();
+    expect(parseOmcUsageCache({ ...base, error: true }, nowMs)).toBeUndefined();
+    expect(parseOmcUsageCache({ ...base, source: "zai" }, nowMs)).toBeUndefined();
+  });
+});
 
 describe("writeMergedUsageCache", () => {
   it("re-reads inside an exclusive lock before a stale lower update writes", async () => {
