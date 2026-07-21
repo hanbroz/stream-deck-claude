@@ -36,7 +36,10 @@ export const COMPANION_IPC = {
   pathCreateFile: "companion:path:create-file",
   pathOpen: "companion:path:open",
   pathReveal: "companion:path:reveal",
-  terminalOpenFolder: "companion:terminal:open-folder"
+  terminalOpenFolder: "companion:terminal:open-folder",
+  windowMinimize: "companion:window:minimize",
+  windowToggleMaximize: "companion:window:toggle-maximize",
+  windowClose: "companion:window:close"
 } as const;
 
 export type CompanionIpcChannel =

@@ -46,11 +46,11 @@ function companionCandidates(options: CompanionLookupOptions = {}): string[] {
   const pluginRoot = options.pluginRoot ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   return [
     env.CLAUDE_DECK_COMPANION_PATH,
+    path.join(pluginRoot, "companion", "win-unpacked", COMPANION_EXE_NAME),
+    path.join(pluginRoot, "..", "dist", "companion", "win-unpacked", COMPANION_EXE_NAME),
     localAppData
       ? path.join(localAppData, "Programs", "Claude Deck Companion", COMPANION_EXE_NAME)
-      : undefined,
-    path.join(pluginRoot, "companion", "win-unpacked", COMPANION_EXE_NAME),
-    path.join(pluginRoot, "..", "dist", "companion", "win-unpacked", COMPANION_EXE_NAME)
+      : undefined
   ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0);
 }
 

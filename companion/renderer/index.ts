@@ -67,6 +67,9 @@ const openExplorerButton = mustElement<HTMLButtonElement>("open-explorer");
 const openTerminalButton = mustElement<HTMLButtonElement>("open-terminal");
 const explorerRail = mustElement<HTMLButtonElement>("explorer-rail");
 const explorerToggle = mustElement<HTMLButtonElement>("explorer-toggle");
+const windowMinimize = mustElement<HTMLButtonElement>("window-minimize");
+const windowMaximize = mustElement<HTMLButtonElement>("window-maximize");
+const windowClose = mustElement<HTMLButtonElement>("window-close");
 const terminalSplitToggle = mustElement<HTMLButtonElement>("terminal-split-toggle");
 const terminalPanelClose = mustElement<HTMLButtonElement>("terminal-panel-close");
 const terminalSplitSign = mustElement<HTMLElement>("terminal-split-sign");
@@ -145,6 +148,18 @@ explorerToggle.addEventListener("click", () => {
 
 explorerRail.addEventListener("click", () => {
   setExplorerCollapsed(false);
+});
+
+windowMinimize.addEventListener("click", () => {
+  void api?.windowControls.minimize();
+});
+
+windowMaximize.addEventListener("click", () => {
+  void api?.windowControls.toggleMaximize();
+});
+
+windowClose.addEventListener("click", () => {
+  void api?.windowControls.close();
 });
 
 terminalSplitToggle.addEventListener("click", () => {

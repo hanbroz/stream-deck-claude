@@ -113,6 +113,7 @@ button:disabled {
   justify-content: space-between;
   background: var(--panel-2);
   user-select: none;
+  -webkit-app-region: drag;
 }
 
 .titlebar__brand {
@@ -150,57 +151,30 @@ button:disabled {
   height: 100%;
 }
 
-.window-controls span {
-  position: relative;
+.window-control {
+  display: grid;
   width: 46px;
+  height: 100%;
+  place-items: center;
+  color: var(--text-soft);
+  -webkit-app-region: no-drag;
 }
 
-.window-controls span:hover {
+.window-control:hover {
   background: #3a3a3a;
 }
 
-.window-controls span:nth-child(1)::before {
-  content: "";
-  position: absolute;
-  top: 20px;
-  left: 18px;
+.window-control svg {
   width: 11px;
-  height: 1px;
-  background: currentColor;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
 }
 
-.window-controls span:nth-child(2)::before {
-  content: "";
-  position: absolute;
-  top: 15px;
-  left: 18px;
-  width: 9px;
-  height: 9px;
-  border: 1px solid currentColor;
-}
-
-.window-controls span:nth-child(3)::before,
-.window-controls span:nth-child(3)::after {
-  content: "";
-  position: absolute;
-  top: 14px;
-  left: 22px;
-  width: 1px;
-  height: 13px;
-  background: currentColor;
-}
-
-.window-controls span:nth-child(3):hover {
+.window-control:last-child:hover {
   background: #c42b1c;
   color: #ffffff;
-}
-
-.window-controls span:nth-child(3)::before {
-  transform: rotate(45deg);
-}
-
-.window-controls span:nth-child(3)::after {
-  transform: rotate(-45deg);
 }
 
 .body-shell {

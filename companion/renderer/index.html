@@ -16,10 +16,16 @@
           <span class="titlebar__divider">-</span>
           <strong id="title-project-name">project</strong>
         </div>
-        <div class="window-controls" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
+        <div class="window-controls" aria-label="창 제어">
+          <button id="window-minimize" class="window-control" type="button" title="최소화" aria-label="최소화">
+            <svg viewBox="0 0 11 11" aria-hidden="true"><path d="M0 5.5h11" /></svg>
+          </button>
+          <button id="window-maximize" class="window-control" type="button" title="최대화" aria-label="최대화">
+            <svg viewBox="0 0 10 10" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9" /></svg>
+          </button>
+          <button id="window-close" class="window-control" type="button" title="닫기" aria-label="닫기">
+            <svg viewBox="0 0 11 11" aria-hidden="true"><path d="M0 0 11 11M11 0 0 11" /></svg>
+          </button>
         </div>
       </header>
 

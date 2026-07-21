@@ -31,6 +31,11 @@ export type CompanionIpcDependencies = {
     webContents: {
       send(channel: string, ...args: unknown[]): void;
     };
+    minimize?(): void;
+    maximize?(): void;
+    unmaximize?(): void;
+    isMaximized?(): boolean;
+    close?(): void;
   };
   rootPath: string;
   ptyManager?: ClaudePtyManager;
@@ -165,6 +170,19 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   });
   deps.ipcMain.handle(COMPANION_IPC.terminalOpenFolder, async (_event: SenderEvent, path: unknown) => {
     openTerminal(await resolveContainedDirectory(deps.rootPath, requireString(path, "path")));
+  });
+  deps.ipcMain.handle(COMPANION_IPC.windowMinimize, () => {
+    deps.window.minimize?.();
+  });
+  deps.ipcMain.handle(COMPANION_IPC.windowToggleMaximize, () => {
+    if (deps.window.isMaximized?.()) {
+      deps.window.unmaximize?.();
+    } else {
+      deps.window.maximize?.();
+    }
+  });
+  deps.ipcMain.handle(COMPANION_IPC.windowClose, () => {
+    deps.window.close?.();
   });
 
   deps.ipcMain.on(COMPANION_IPC.claudeWrite, (_event: SenderEvent, sessionId, data) => {

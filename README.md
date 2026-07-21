@@ -62,6 +62,8 @@ The Companion renderer follows the imported Claude Design screen in [`companion/
 
 The maintained visual contract is documented in [`DESIGN.md`](DESIGN.md). The renderer keeps the reference's 40px title bar, 36px session tabs, 260px explorer, Cascadia Code console, resizable split handles, 150px composer dock, and orange focus states; runtime-only controls are kept in compact explorer actions or context menus so they do not displace the reference layout.
 
+If Code Start still opens the previous dark console window with a native `File / Edit / View / Window` menu, the old Companion installer is still being used. Install the current `Claude Deck Companion Setup 0.6.1.exe` from the release bundle, then restart Stream Deck. Code Start resolves the repository's current Companion artifact before the per-user installed copy during development, while installed releases use the bundled version.
+
 Usage keys check the local cache every second and skip unchanged images. These refreshes do not send Claude requests or consume usage. The value can still trail the web dashboard until Claude Code publishes a newer `rate_limits` payload; if a reset time passes first, the key displays `REFRESH` instead of a stale percentage.
 
 ### Local development

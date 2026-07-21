@@ -66,9 +66,7 @@ describe("resolveCompanionExecutable", () => {
   });
 
   it("falls through to the repo development artifact after installed path misses", async () => {
-    accessMock
-      .mockRejectedValueOnce(Object.assign(new Error("missing"), { code: "ENOENT" }))
-      .mockResolvedValueOnce(undefined);
+    accessMock.mockResolvedValueOnce(undefined);
 
     await expect(
       resolveCompanionExecutable({
@@ -77,6 +75,20 @@ describe("resolveCompanionExecutable", () => {
         pluginRoot: "D:\\Plugin"
       })
     ).resolves.toBe("D:\\Plugin\\companion\\win-unpacked\\Claude Deck Companion.exe");
+  });
+
+  it("prefers the current repo release artifact over a stale installed Companion", async () => {
+    accessMock
+      .mockRejectedValueOnce(Object.assign(new Error("missing"), { code: "ENOENT" }))
+      .mockResolvedValueOnce(undefined);
+
+    await expect(
+      resolveCompanionExecutable({
+        env: {},
+        localAppData: "C:\\Users\\Me\\AppData\\Local",
+        pluginRoot: "D:\\repo\\com.hanbroz.claude-usage.sdPlugin"
+      })
+    ).resolves.toBe("D:\\repo\\dist\\companion\\win-unpacked\\Claude Deck Companion.exe");
   });
 
   it("also checks the release dist artifact promised by Code Start", async () => {

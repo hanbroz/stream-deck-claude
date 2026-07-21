@@ -4,6 +4,11 @@ export type BrowserWindowLike = {
   loadFile(filePath: string): Promise<void>;
   loadURL(url: string): Promise<void>;
   show(): void;
+  minimize?(): void;
+  maximize?(): void;
+  unmaximize?(): void;
+  isMaximized?(): boolean;
+  close?(): void;
   webContents: {
     send(channel: string, ...args: unknown[]): void;
     setWindowOpenHandler(handler: () => { action: "deny" }): void;
@@ -32,6 +37,8 @@ export function companionWindowOptions(
     minWidth: 920,
     minHeight: 640,
     show: false,
+    frame: false,
+    titleBarStyle: "hidden",
     backgroundColor: "#101418",
     webPreferences: {
       preload: preloadPath,

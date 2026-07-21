@@ -37,6 +37,11 @@ export type ClaudeCompanionApi = {
   terminal: {
     openFolder(path: string): Promise<void>;
   };
+  windowControls: {
+    minimize(): Promise<void>;
+    toggleMaximize(): Promise<void>;
+    close(): Promise<void>;
+  };
 };
 
 function subscribe<T>(
@@ -78,6 +83,11 @@ const api: ClaudeCompanionApi = {
   },
   terminal: {
     openFolder: (path) => ipcRenderer.invoke(COMPANION_IPC.terminalOpenFolder, path)
+  },
+  windowControls: {
+    minimize: () => ipcRenderer.invoke(COMPANION_IPC.windowMinimize),
+    toggleMaximize: () => ipcRenderer.invoke(COMPANION_IPC.windowToggleMaximize),
+    close: () => ipcRenderer.invoke(COMPANION_IPC.windowClose)
   }
 };
 
