@@ -420,25 +420,17 @@ button:disabled {
   display: grid;
   place-items: center;
   color: var(--muted);
-  font-size: 10px;
-  transition: transform 120ms ease;
-}
-
-.tree-row__chevron.is-expanded {
-  transform: rotate(90deg);
+  width: 16px;
+  height: 16px;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .tree-row__icon {
-  color: #9aa0a6;
-  font-size: 14px;
-}
-
-.tree-row__icon.is-folder {
-  color: #d7ba7d;
-}
-
-.tree-row__icon.is-code {
-  color: #4fc3f7;
+  display: block;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
 }
 
 .tree-row__name {

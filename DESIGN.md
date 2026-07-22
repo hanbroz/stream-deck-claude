@@ -44,7 +44,7 @@
 - Spacing/layout rhythm: 40px title bar, 36px session tabs, 260px explorer default, 23px tree rows, 34% bottom composer dock (180px minimum)
 - Shape/radius/elevation: 5-12px restrained radii, 1px separators, dark 8-28px context/toast shadows
 - Motion: caret blink and short toast fade only
-- Imagery/iconography: compact inline SVG/icons; no emoji-dependent navigation
+- Imagery/iconography: compact local SVG icons; the explorer uses VS Code-like `›`/`⌄` chevrons and a vendored Material Icon Theme subset for files/folders, with no emoji-dependent navigation
 
 ## Components
 
@@ -88,6 +88,7 @@
 - Design-token constraints: preserve the dc.html palette and measurements; do not add a second visual theme
 - Performance constraints: lazy-load file children and keep terminal rendering in xterm
 - Compatibility constraints: Windows 10+, Electron 43, Windows Terminal `wt.exe`, secure preload IPC
+- Explorer icon constraints: resolve icons locally from `companion/renderer/assets/material-icons`; keep the upstream MIT notice with the vendored SVGs and never require a runtime CDN
 - Test/screenshot expectations: run Companion tests, typecheck, build, and inspect the built renderer HTML/CSS before release
 
 ## Runtime notes

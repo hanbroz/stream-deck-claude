@@ -29,6 +29,7 @@ import {
   type TreeNode,
   type TreeNodeKind
 } from "../shared/tree-state";
+import { explorerChevron, explorerIconPath } from "./explorer-icons";
 
 type SessionStatus = {
   state: "idle" | "running" | "waiting" | "ended";
@@ -379,12 +380,14 @@ function renderTree(): void {
 
     const chevron = document.createElement("span");
     chevron.className = "tree-row__chevron";
-    chevron.textContent = row.node.kind === "directory" ? (row.node.loading ? "..." : ">") : "";
-    chevron.classList.toggle("is-expanded", row.node.kind === "directory" && Boolean(row.node.expanded));
+    chevron.textContent = explorerChevron(row.node.kind, Boolean(row.node.expanded), Boolean(row.node.loading));
+    chevron.setAttribute("aria-hidden", "true");
 
-    const icon = document.createElement("span");
-    icon.className = `tree-row__icon${row.node.kind === "directory" ? " is-folder" : isCodeFile(row.node.name) ? " is-code" : ""}`;
-    icon.textContent = row.node.kind === "directory" ? "[]" : fileIcon(row.node.name);
+    const icon = document.createElement("img");
+    icon.className = "tree-row__icon";
+    icon.src = explorerIconPath(row.node.name, row.node.kind);
+    icon.alt = "";
+    icon.setAttribute("aria-hidden", "true");
 
     const name = document.createElement("span");
     name.className = "tree-row__name";
@@ -729,25 +732,6 @@ function entryToNode(entry: DirectoryEntry): TreeNode {
     path: entry.path,
     kind: entry.isDirectory ? "directory" : "file"
   };
-}
-
-function fileIcon(name: string): string {
-  const extension = name.split(".").pop()?.toLowerCase();
-  if (extension === "json") {
-    return "{}";
-  }
-  if (extension === "md") {
-    return "M";
-  }
-  if (extension === "css") {
-    return "#";
-  }
-  return "*";
-}
-
-function isCodeFile(name: string): boolean {
-  const extension = name.split(".").pop()?.toLowerCase();
-  return extension === "ts" || extension === "tsx" || extension === "js";
 }
 
 function cssEscape(value: string): string {

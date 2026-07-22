@@ -58,6 +58,8 @@ Requirements: Windows 10 or later, Stream Deck 7.1 or later, Claude Code, and Wi
 
 The Companion includes an explorer for the configured project root and a terminal-open action that runs `wt.exe -d <project-folder>` without starting Claude. File operations stay inside the configured root.
 
+The explorer follows the VS Code tree convention: directories use `›`/`⌄` chevrons, nested rows keep their indentation, and files use a vendored subset of the [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme/tree/main/icons). The SVG subset and its MIT notice are packaged locally under `companion/renderer/assets/material-icons`, so installed Companion windows do not depend on a network request for icons.
+
 The Companion renderer follows the imported Claude Design screen in [`companion/ClaudeCodeApp.dc.html`](companion/ClaudeCodeApp.dc.html): an orange-accented Visual Studio-style title bar, project explorer, session tabs, terminal split, context menu, and chat dock. The Electron renderer translates that design into regular DOM/CSS while retaining the live Claude PTY and project-file operations.
 
 The maintained visual contract is documented in [`DESIGN.md`](DESIGN.md). The renderer keeps the reference's 40px title bar, 36px session tabs, 260px explorer, Cascadia Code console, optional embedded terminal split, bottom composer dock, and orange focus states; runtime-only controls are kept in compact explorer actions or context menus so they do not displace the reference layout. The Claude output area is selectable/read-only, while the composer accepts Korean text, clipboard images, Enter-to-send, and Shift+Enter newlines.
