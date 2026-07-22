@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { ensureBridgeInstalled } from "../bridge/installer";
 import { defaultClaudeSettingsPath, defaultUsageDataDir } from "../bridge/paths";
 import type {
+  claudeConversationExists,
+  clearContextSessionResumePointer,
   readContextSessionResumePointer,
   writeActiveLaunch
 } from "../io/context-session-cache";
@@ -37,6 +39,8 @@ export type CodeStartLaunchDependencies = {
   defaultUsageDataDir: typeof defaultUsageDataDir;
   ensureBridgeInstalled: typeof ensureBridgeInstalled;
   launchClaudeCompanion: typeof launchClaudeCompanion;
+  claudeConversationExists: typeof claudeConversationExists;
+  clearContextSessionResumePointer: typeof clearContextSessionResumePointer;
   readContextSessionResumePointer: typeof readContextSessionResumePointer;
   renderCodeStartKeyImage: typeof renderCodeStartKeyImage;
   validateLaunchFolder: typeof validateLaunchFolder;
@@ -75,7 +79,8 @@ export function configuredBindingId(settings: CodeStartLaunchSettings): string |
 export function defaultCodeStartLaunchDependencies(
   overrides: Pick<
     CodeStartLaunchDependencies,
-    "ensureBridgeInstalled" | "launchClaudeCompanion" | "readContextSessionResumePointer" |
+    "ensureBridgeInstalled" | "launchClaudeCompanion" | "claudeConversationExists" |
+      "clearContextSessionResumePointer" | "readContextSessionResumePointer" |
       "renderCodeStartKeyImage" | "validateLaunchFolder" | "writeActiveLaunch" | "logger"
   >
 ): CodeStartLaunchDependencies {
@@ -135,11 +140,26 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
       bindingId,
       folder
     );
+    let resumeSessionId: string | undefined;
+    if (resumePointer) {
+      if (await dependencies.claudeConversationExists(folder, resumePointer.sessionId)) {
+        resumeSessionId = resumePointer.sessionId;
+      } else {
+        await dependencies.clearContextSessionResumePointer(
+          dependencies.defaultUsageDataDir(),
+          bindingId,
+          folder
+        );
+        dependencies.logger.info(
+          "Ignored a stale Code Start resume pointer because its Claude conversation is absent."
+        );
+      }
+    }
     const launch = await dependencies.launchClaudeCompanion(
       folder,
       bindingId,
       launchId,
-      resumePointer?.sessionId,
+      resumeSessionId,
       projectName
     );
     await dependencies.writeActiveLaunch(dependencies.defaultUsageDataDir(), {

@@ -18,6 +18,8 @@ import {
 import { ensureBridgeInstalled } from "../bridge/installer";
 import { defaultClaudeSettingsPath, defaultUsageDataDir } from "../bridge/paths";
 import {
+  claudeConversationExists,
+  clearContextSessionResumePointer,
   findReconnectableBindingId,
   loadCodeStartDisplayState,
   readContextSessionResumePointer,
@@ -95,6 +97,8 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
       launchGuard: this.launchGuard,
       bridgeSourcePath,
       dependencies: defaultCodeStartLaunchDependencies({
+        claudeConversationExists,
+        clearContextSessionResumePointer,
         ensureBridgeInstalled,
         launchClaudeCompanion,
         logger: streamDeck.logger,

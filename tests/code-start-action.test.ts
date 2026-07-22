@@ -51,6 +51,12 @@ function createDependencies() {
     vi.fn<CodeStartLaunchDependencies["readContextSessionResumePointer"]>(
       async () => undefined
     );
+  const claudeConversationExists =
+    vi.fn<CodeStartLaunchDependencies["claudeConversationExists"]>(async () => false);
+  const clearContextSessionResumePointer =
+    vi.fn<CodeStartLaunchDependencies["clearContextSessionResumePointer"]>(
+      async () => undefined
+    );
   const writeActiveLaunch = vi.fn(async () => undefined);
   const renderCodeStartKeyImage = vi.fn((projectName: string, state: { kind: string; activity: string }) =>
     `${projectName}:${state.kind}:${state.activity}`
@@ -60,6 +66,8 @@ function createDependencies() {
     defaultUsageDataDir: () => "D:\\Data\\ClaudeUsageDeck",
     ensureBridgeInstalled,
     launchClaudeCompanion,
+    claudeConversationExists,
+    clearContextSessionResumePointer,
     readContextSessionResumePointer,
     renderCodeStartKeyImage,
     validateLaunchFolder,
@@ -74,6 +82,8 @@ function createDependencies() {
     ensureBridgeInstalled,
     validateLaunchFolder,
     launchClaudeCompanion,
+    claudeConversationExists,
+    clearContextSessionResumePointer,
     readContextSessionResumePointer,
     writeActiveLaunch,
     renderCodeStartKeyImage,
@@ -223,6 +233,7 @@ describe("Code Start relaunch guard", () => {
       sourceLaunchId: "launch-old",
       capturedAt: 123
     });
+    harness.claudeConversationExists.mockResolvedValue(true);
     const action = createAction();
 
     await launchConfiguredCodeStart({
@@ -244,5 +255,48 @@ describe("Code Start relaunch guard", () => {
       "session-resume",
       "Demo"
     );
+  });
+
+  it("starts a new conversation without warning when the saved pointer is stale", async () => {
+    const harness = createDependencies();
+    harness.readContextSessionResumePointer.mockResolvedValue({
+      schemaVersion: 1,
+      actionId: "binding-1",
+      folder: "D:\\Projects\\Demo",
+      sessionId: "missing-session",
+      sourceLaunchId: "launch-old",
+      capturedAt: 123
+    });
+    const action = createAction();
+
+    await launchConfiguredCodeStart({
+      action,
+      settings: {
+        bindingId: "binding-1",
+        folder: "D:\\Projects\\Demo",
+        projectName: "Demo"
+      },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    });
+
+    expect(harness.claudeConversationExists).toHaveBeenCalledWith(
+      "D:\\Projects\\Demo",
+      "missing-session"
+    );
+    expect(harness.clearContextSessionResumePointer).toHaveBeenCalledWith(
+      "D:\\Data\\ClaudeUsageDeck",
+      "binding-1",
+      "D:\\Projects\\Demo"
+    );
+    expect(harness.launchClaudeCompanion).toHaveBeenCalledWith(
+      "D:\\Projects\\Demo",
+      "binding-1",
+      "launch-123",
+      undefined,
+      "Demo"
+    );
+    expect(action.showAlert).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,15 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, realpath, rename, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile
+} from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import type {
@@ -74,6 +84,68 @@ export function contextSessionResumePointerPath(
     "resumes",
     `${digest(canonicalProjectFolder)}.json`
   );
+}
+
+function claudeProjectDirectoryName(folder: string): string {
+  return folder.replace(/[^a-zA-Z0-9]/g, "-");
+}
+
+function defaultClaudeProjectsDir(): string {
+  const configDir =
+    process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), ".claude");
+  return path.join(configDir, "projects");
+}
+
+/**
+ * Claude Code stores one JSONL transcript per session under a directory whose
+ * name is the project path with non-alphanumeric characters replaced by `-`.
+ * Keep this check at the Code Start boundary so a stale local pointer does not
+ * trigger a needless `/resume` failure in Companion.
+ */
+export async function claudeConversationExists(
+  folder: string,
+  sessionId: string,
+  projectsDir = defaultClaudeProjectsDir()
+): Promise<boolean> {
+  if (
+    sessionId.length === 0 ||
+    sessionId.includes("/") ||
+    sessionId.includes("\\")
+  ) {
+    return false;
+  }
+
+  try {
+    const canonicalProjectFolder = await canonicalFolder(folder);
+    const transcriptPath = path.join(
+      projectsDir,
+      claudeProjectDirectoryName(canonicalProjectFolder),
+      `${sessionId}.jsonl`
+    );
+    const info = await stat(transcriptPath);
+    return info.isFile();
+  } catch (error) {
+    // A missing transcript means there is no previous conversation to resume.
+    // Preserve the pointer for non-ENOENT failures so a permissions/configuration
+    // problem remains visible to the normal Companion recovery path.
+    return (error as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+}
+
+export async function clearContextSessionResumePointer(
+  dataDir: string,
+  actionId: string,
+  folder: string
+): Promise<void> {
+  try {
+    const canonicalProjectFolder = await canonicalFolder(folder);
+    await rm(
+      contextSessionResumePointerPath(dataDir, actionId, canonicalProjectFolder),
+      { force: true }
+    );
+  } catch {
+    // A stale pointer must never prevent a fresh Code Start launch.
+  }
 }
 
 async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {

@@ -5,6 +5,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  claudeConversationExists,
+  clearContextSessionResumePointer,
   contextSessionRuntimePath,
   contextSessionSnapshotPath,
   findReconnectableBindingId,
@@ -143,6 +145,45 @@ describe("context session cache", () => {
     });
     await expect(
       readContextSessionResumePointer(root, "other-action", folder)
+    ).resolves.toBeUndefined();
+  });
+
+  it("recognizes Claude JSONL conversations and rejects missing transcripts", async () => {
+    const projectsDir = await mkdtemp(path.join(os.tmpdir(), "claude-projects-"));
+    const folder = await mkdtemp(path.join(os.tmpdir(), "claude-project-"));
+    const encodedFolder = folder.replace(/[^a-zA-Z0-9]/g, "-");
+    const sessionId = "session-1";
+    await mkdir(path.join(projectsDir, encodedFolder), { recursive: true });
+    await writeFile(
+      path.join(projectsDir, encodedFolder, `${sessionId}.jsonl`),
+      "{}\n",
+      "utf8"
+    );
+
+    await expect(
+      claudeConversationExists(folder, sessionId, projectsDir)
+    ).resolves.toBe(true);
+    await expect(
+      claudeConversationExists(folder, "missing-session", projectsDir)
+    ).resolves.toBe(false);
+  });
+
+  it("clears a stale resume pointer without failing when the folder is unavailable", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    const folder = await mkdtemp(path.join(os.tmpdir(), "claude-project-"));
+    await writeContextSessionResumePointer(root, {
+      actionId: "action-1",
+      folder,
+      sessionId: "session-1",
+      sourceLaunchId: "launch-1",
+      capturedAt: 123
+    });
+
+    await expect(
+      clearContextSessionResumePointer(root, "action-1", folder)
+    ).resolves.toBeUndefined();
+    await expect(
+      readContextSessionResumePointer(root, "action-1", folder)
     ).resolves.toBeUndefined();
   });
 
