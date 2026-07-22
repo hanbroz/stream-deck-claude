@@ -845,14 +845,7 @@ async function sendIntent(intent: SubmitIntent): Promise<void> {
     return;
   }
 
-  for (const image of intent.images) {
-    appendConsoleOutput(`[image attached: ${image.name}]\n`);
-  }
-
   if (intent.text.length > 0 || intent.images.length > 0) {
-    if (intent.text.length > 0) {
-      appendConsoleOutput(`> ${intent.text}\n`);
-    }
     api.claude.write(
       activeClaudeSession.sessionId,
       intent.text,
