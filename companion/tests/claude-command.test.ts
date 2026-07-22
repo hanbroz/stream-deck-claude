@@ -15,7 +15,8 @@ describe("createClaudeCommandArgs", () => {
       "stream-json",
       "--output-format",
       "stream-json",
-      "--include-partial-messages"
+      "--include-partial-messages",
+      "--verbose"
     ]);
   });
 
@@ -34,6 +35,7 @@ describe("createClaudeCommandArgs", () => {
       "--output-format",
       "stream-json",
       "--include-partial-messages",
+      "--verbose",
       "--resume",
       "session-123"
     ]);

@@ -65,7 +65,8 @@ describe("ClaudePtyManager", () => {
         "stream-json",
         "--output-format",
         "stream-json",
-        "--include-partial-messages"
+        "--include-partial-messages",
+        "--verbose"
       ],
       expect.objectContaining({
         cwd: "D:\\repo",

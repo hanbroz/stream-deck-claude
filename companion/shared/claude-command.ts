@@ -96,7 +96,8 @@ export function createClaudeCommandArgs(request: ClaudeCommandRequest): string[]
     "stream-json",
     "--output-format",
     "stream-json",
-    "--include-partial-messages"
+    "--include-partial-messages",
+    "--verbose"
   ];
 
   if (mode === "resume") {
