@@ -86,6 +86,7 @@ const terminalPanelElement = mustElement<HTMLElement>("terminal-panel");
 const terminalResizer = mustElement<HTMLDivElement>("terminal-resizer");
 const composerPanel = mustElement<HTMLElement>("composer");
 const composerResizer = mustElement<HTMLDivElement>("composer-resizer");
+const sendPromptButton = mustElement<HTMLButtonElement>("send-prompt");
 const windowMinimize = mustElement<HTMLButtonElement>("window-minimize");
 const windowMaximize = mustElement<HTMLButtonElement>("window-maximize");
 const windowClose = mustElement<HTMLButtonElement>("window-close");
@@ -103,6 +104,7 @@ let composer: ComposerState = createComposerState();
 let activeClaudeSession: ClaudeSessionStarted | undefined;
 let claudeStartPromise: Promise<void> | undefined;
 const pendingClaudeOutput = new Map<string, string[]>();
+const pendingResumeIntents = new Map<string, SubmitIntent[]>();
 const abandonedClaudeSessions = new Set<string>();
 let resumeRecoveryPromise: Promise<void> | undefined;
 let terminalSessionId: string | undefined;
@@ -194,14 +196,19 @@ api?.claude.onData((message) => {
     isMissingClaudeConversationError(message.data)
   ) {
     const failedSession = activeClaudeSession;
+    const retryIntents = pendingResumeIntents.get(failedSession.sessionId) ?? [];
+    pendingResumeIntents.delete(failedSession.sessionId);
     abandonedClaudeSessions.add(failedSession.sessionId);
     activeClaudeSession = undefined;
     pendingClaudeOutput.delete(failedSession.sessionId);
-    void recoverFromMissingResume(failedSession.cwd);
+    void recoverFromMissingResume(failedSession.cwd, retryIntents);
     return;
   }
   if (!activeClaudeSession || message.sessionId === activeClaudeSession.sessionId) {
     if (activeClaudeSession) {
+      if (activeClaudeSession.mode === "resume") {
+        pendingResumeIntents.delete(activeClaudeSession.sessionId);
+      }
       appendConsoleOutput(message.data);
     } else {
       pendingClaudeOutput.set(message.sessionId, [
@@ -302,6 +309,10 @@ promptInput.addEventListener("keydown", (event) => {
     event.preventDefault();
     submitPrompt();
   }
+});
+
+sendPromptButton.addEventListener("click", () => {
+  submitPrompt();
 });
 
 promptInput.addEventListener("paste", (event) => {
@@ -845,7 +856,7 @@ async function startClaudeSession(sessionId?: string): Promise<void> {
   }
 }
 
-async function recoverFromMissingResume(cwd: string): Promise<void> {
+async function recoverFromMissingResume(cwd: string, retryIntents: SubmitIntent[] = []): Promise<void> {
   if (resumeRecoveryPromise) {
     await resumeRecoveryPromise;
     return;
@@ -858,6 +869,9 @@ async function recoverFromMissingResume(cwd: string): Promise<void> {
     showToast("Saved Claude session was unavailable. Started a new session.");
     try {
       await startClaudeSession();
+      for (const intent of retryIntents) {
+        await sendIntent(intent);
+      }
     } catch (error) {
       renderStatus({ state: "ended", cwd });
       appendConsoleOutput(`[Claude Code failed to start: ${error instanceof Error ? error.message : "unknown error"}]\n`);
@@ -882,20 +896,47 @@ async function resumeSession(): Promise<void> {
 }
 
 async function sendIntent(intent: SubmitIntent): Promise<void> {
-  if (!activeClaudeSession) {
-    await startClaudeSession();
-  }
+  try {
+    if (!activeClaudeSession) {
+      await startClaudeSession();
+    }
 
-  if (!api || !activeClaudeSession) {
-    return;
-  }
+    if (!api || !activeClaudeSession) {
+      throw new Error("Claude session is not available");
+    }
 
-  if (intent.text.length > 0 || intent.images.length > 0) {
-    api.claude.write(
-      activeClaudeSession.sessionId,
-      intent.text,
-      intent.images.map((image) => image.dataUrl)
-    );
+    const session = activeClaudeSession;
+    if (session.mode === "resume") {
+      pendingResumeIntents.set(session.sessionId, [
+        ...(pendingResumeIntents.get(session.sessionId) ?? []),
+        intent
+      ]);
+    }
+
+    if (intent.text.length > 0 || intent.images.length > 0) {
+      try {
+        await api.claude.write(
+          session.sessionId,
+          intent.text,
+          intent.images.map((image) => image.dataUrl)
+        );
+      } catch (error) {
+        if (session.mode === "resume") {
+          const queued = pendingResumeIntents.get(session.sessionId) ?? [];
+          const remaining = queued.filter((queuedIntent) => queuedIntent !== intent);
+          if (remaining.length > 0) {
+            pendingResumeIntents.set(session.sessionId, remaining);
+          } else {
+            pendingResumeIntents.delete(session.sessionId);
+          }
+        }
+        throw error;
+      }
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown error";
+    appendConsoleOutput(`[Claude Code error] Message was not sent: ${reason}\n`);
+    showToast("Claude message was not sent.");
   }
 }
 

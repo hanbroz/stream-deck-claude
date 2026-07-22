@@ -55,6 +55,7 @@ function spawnClaudeProcess(
     },
     onError(listener) {
       child.stderr.on("data", (data: Buffer | string) => listener(data.toString()));
+      child.stdin.on("error", (error) => listener(error.message));
       child.on("error", (error) => listener(error.message));
     },
     onExit(listener) {

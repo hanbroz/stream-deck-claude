@@ -408,10 +408,14 @@ body.is-split-resizing.is-resizing-rows * {
 .resume-panel button,
 .tree-toolbar button,
 #send-prompt {
+  align-self: end;
+  min-width: 58px;
   min-height: 30px;
+  border: 0;
   border-radius: 6px;
   background: #303030;
   color: var(--text);
+  cursor: pointer;
   padding: 0 10px;
   font-size: 12px;
 }
@@ -768,7 +772,7 @@ body.is-split-resizing.is-resizing-rows * {
 
 .composer__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 0;
   flex: 1;
   gap: 10px;

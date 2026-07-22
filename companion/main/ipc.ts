@@ -254,7 +254,7 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
     deps.window.close?.();
   });
 
-  deps.ipcMain.on(COMPANION_IPC.claudeWrite, (_event: SenderEvent, sessionId, data, imageDataUrls) => {
+  deps.ipcMain.handle(COMPANION_IPC.claudeWrite, (_event: SenderEvent, sessionId, data, imageDataUrls) => {
     ptyManager.write(
       requireString(sessionId, "sessionId"),
       requireString(data, "data"),

@@ -43,11 +43,12 @@ describe("registerCompanionIpc", () => {
     const terminalWrite = vi.fn();
     const terminalResize = vi.fn();
     const terminalKill = vi.fn();
+    const claudeWrite = vi.fn();
     const ptyManager = new ClaudePtyManager({
       ptyFactory: vi.fn(() => ({
         onData: vi.fn(),
         onExit: vi.fn(),
-        write: vi.fn(),
+        write: claudeWrite,
         resize: vi.fn(),
         kill: vi.fn()
       }))
@@ -81,7 +82,7 @@ describe("registerCompanionIpc", () => {
       COMPANION_IPC.pathCreateFile,
       expect.any(Function)
     );
-    expect(ipcMain.on).toHaveBeenCalledWith(
+    expect(ipcMain.handle).toHaveBeenCalledWith(
       COMPANION_IPC.claudeWrite,
       expect.any(Function)
     );
@@ -126,6 +127,16 @@ describe("registerCompanionIpc", () => {
     await expect(
       ipcMain.handlers.get(COMPANION_IPC.claudeStart)?.({}, { cwd: ".." })
     ).rejects.toThrow("Path is outside the allowed root");
+    const claudeStarted = (await ipcMain.handlers.get(COMPANION_IPC.claudeStart)?.(
+      {},
+      { cwd: "." }
+    )) as { sessionId: string };
+    await ipcMain.handlers.get(COMPANION_IPC.claudeWrite)?.(
+      {},
+      claudeStarted.sessionId,
+      "hello"
+    );
+    expect(claudeWrite).toHaveBeenCalledWith(encodeClaudeUserMessage("hello"));
     const terminalStarted = (await ipcMain.handlers.get(COMPANION_IPC.terminalStart)?.(
       {},
       { cwd: ".", shell: "cmd" }
