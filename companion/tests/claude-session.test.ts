@@ -7,21 +7,26 @@ import { encodeClaudeUserMessage } from "../shared/claude-stream";
 
 type FakePty = {
   onData(listener: (data: string) => void): void;
+  onError(listener: (data: string) => void): void;
   onExit(listener: (event: { exitCode: number; signal?: number }) => void): void;
   write: ReturnType<typeof vi.fn<(data: string) => void>>;
   resize: ReturnType<typeof vi.fn<(cols: number, rows: number) => void>>;
   kill: ReturnType<typeof vi.fn<() => void>>;
   data: EventEmitter;
+  error: EventEmitter;
   exit: EventEmitter;
 };
 
 function fakePty(): FakePty {
   const data = new EventEmitter();
+  const error = new EventEmitter();
   const exit = new EventEmitter();
   return {
     data,
+    error,
     exit,
     onData: (listener) => data.on("data", listener),
+    onError: (listener) => error.on("error", listener),
     onExit: (listener) => exit.on("exit", listener),
     write: vi.fn<(data: string) => void>(),
     resize: vi.fn<(cols: number, rows: number) => void>(),
@@ -72,6 +77,23 @@ describe("ClaudePtyManager", () => {
     expect(data).toHaveBeenCalledWith(started.sessionId, "hello\n");
     expect(exit).toHaveBeenCalledWith(started.sessionId, 0, undefined);
     expect(manager.has(started.sessionId)).toBe(false);
+  });
+
+  it("surfaces process diagnostics without leaking raw terminal output", () => {
+    const terminal = fakePty();
+    const manager = new ClaudePtyManager({
+      ptyFactory: vi.fn(() => terminal) as never
+    });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    const started = manager.start({ cwd: "D:\\repo" });
+    terminal.error.emit("error", "Input must be provided");
+
+    expect(data).toHaveBeenCalledWith(
+      started.sessionId,
+      "[Claude Code error] Input must be provided\n"
+    );
   });
 
   it("uses resume args, supports stream writes, resize/kill, and clipboard images", () => {

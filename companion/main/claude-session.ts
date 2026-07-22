@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-
-import * as pty from "node-pty";
 
 import {
   createClaudeCommandArgs,
@@ -31,11 +30,47 @@ export type PtyFactory = (
 
 export type PtyLike = {
   onData(listener: (data: string) => void): void;
+  onError?(listener: (data: string) => void): void;
   onExit(listener: (event: { exitCode: number; signal?: number }) => void): void;
   write(data: string): void;
   resize(cols: number, rows: number): void;
   kill(): void;
 };
+
+function spawnClaudeProcess(
+  file: string,
+  args: string[],
+  options: Parameters<PtyFactory>[2]
+): PtyLike {
+  const child = spawn(file, args, {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true
+  });
+
+  return {
+    onData(listener) {
+      child.stdout.on("data", (data: Buffer | string) => listener(data.toString()));
+    },
+    onError(listener) {
+      child.stderr.on("data", (data: Buffer | string) => listener(data.toString()));
+      child.on("error", (error) => listener(error.message));
+    },
+    onExit(listener) {
+      child.on("close", (exitCode) => listener({ exitCode: exitCode ?? 1 }));
+    },
+    write(data) {
+      child.stdin.write(data);
+    },
+    resize() {
+      // Claude's structured stream is pipe-based and does not have terminal dimensions.
+    },
+    kill() {
+      child.kill();
+    }
+  };
+}
 
 export type ClaudePtyManagerOptions = {
   ptyFactory?: PtyFactory;
@@ -63,7 +98,7 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
 
   constructor(options: ClaudePtyManagerOptions = {}) {
     super();
-    this.ptyFactory = options.ptyFactory ?? pty.spawn;
+    this.ptyFactory = options.ptyFactory ?? spawnClaudeProcess;
     this.command = options.command ?? "claude";
     this.env = options.env ?? process.env;
   }
@@ -84,6 +119,12 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
       const conversation = output.push(data);
       if (conversation.length > 0) {
         this.emit("data", sessionId, conversation);
+      }
+    });
+    terminal.onError?.((data) => {
+      const message = data.trim();
+      if (message.length > 0) {
+        this.emit("data", sessionId, `[Claude Code error] ${message}\n`);
       }
     });
     terminal.onExit(({ exitCode, signal }) => {
