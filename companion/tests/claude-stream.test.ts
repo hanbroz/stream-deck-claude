@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { ClaudeStreamParser, encodeClaudeUserMessage } from "../shared/claude-stream";
+import {
+  ClaudeStreamParser,
+  encodeClaudeUserMessage,
+  isMissingClaudeConversationError
+} from "../shared/claude-stream";
 
 describe("Claude stream protocol", () => {
   it("encodes text and image turns as stream-json user messages", () => {
@@ -48,5 +52,12 @@ describe("Claude stream protocol", () => {
     const line = JSON.stringify({ type: "result", is_error: true, result: "auth failed" });
     expect(parser.push(line.slice(0, 10))).toBe("");
     expect(parser.push(`${line.slice(10)}\n`)).toBe("[Claude Code error] auth failed\n");
+  });
+
+  it("identifies stale resume-session errors", () => {
+    expect(isMissingClaudeConversationError(
+      "[Claude Code error] No conversation found with session ID: stale-session"
+    )).toBe(true);
+    expect(isMissingClaudeConversationError("[Claude Code error] auth failed")).toBe(false);
   });
 });

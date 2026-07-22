@@ -29,6 +29,7 @@ import {
   type TreeNode,
   type TreeNodeKind
 } from "../shared/tree-state";
+import { isMissingClaudeConversationError } from "../shared/claude-stream";
 import { explorerChevron, explorerIconPath } from "./explorer-icons";
 import { adjustSplitForKey, clampSplit, type SplitterOrientation } from "./splitter";
 
@@ -102,6 +103,8 @@ let composer: ComposerState = createComposerState();
 let activeClaudeSession: ClaudeSessionStarted | undefined;
 let claudeStartPromise: Promise<void> | undefined;
 const pendingClaudeOutput = new Map<string, string[]>();
+const abandonedClaudeSessions = new Set<string>();
+let resumeRecoveryPromise: Promise<void> | undefined;
 let terminalSessionId: string | undefined;
 let terminalStarting = false;
 let sessionStatusTimer: ReturnType<typeof setInterval> | undefined;
@@ -182,6 +185,21 @@ api?.terminal.onExit((message) => {
 });
 
 api?.claude.onData((message) => {
+  if (abandonedClaudeSessions.has(message.sessionId)) {
+    return;
+  }
+  if (
+    activeClaudeSession?.sessionId === message.sessionId &&
+    activeClaudeSession.mode === "resume" &&
+    isMissingClaudeConversationError(message.data)
+  ) {
+    const failedSession = activeClaudeSession;
+    abandonedClaudeSessions.add(failedSession.sessionId);
+    activeClaudeSession = undefined;
+    pendingClaudeOutput.delete(failedSession.sessionId);
+    void recoverFromMissingResume(failedSession.cwd);
+    return;
+  }
   if (!activeClaudeSession || message.sessionId === activeClaudeSession.sessionId) {
     if (activeClaudeSession) {
       appendConsoleOutput(message.data);
@@ -195,6 +213,7 @@ api?.claude.onData((message) => {
 });
 
 api?.claude.onExit((message) => {
+  abandonedClaudeSessions.delete(message.sessionId);
   if (activeClaudeSession?.sessionId === message.sessionId) {
     renderStatus({ state: "ended", cwd: activeClaudeSession.cwd });
     activeClaudeSession = undefined;
@@ -823,6 +842,32 @@ async function startClaudeSession(sessionId?: string): Promise<void> {
     await claudeStartPromise;
   } finally {
     claudeStartPromise = undefined;
+  }
+}
+
+async function recoverFromMissingResume(cwd: string): Promise<void> {
+  if (resumeRecoveryPromise) {
+    await resumeRecoveryPromise;
+    return;
+  }
+
+  resumeRecoveryPromise = (async () => {
+    resumeSessionInput.value = "";
+    clearConsoleOutput();
+    renderStatus({ state: "idle", cwd });
+    showToast("Saved Claude session was unavailable. Started a new session.");
+    try {
+      await startClaudeSession();
+    } catch (error) {
+      renderStatus({ state: "ended", cwd });
+      appendConsoleOutput(`[Claude Code failed to start: ${error instanceof Error ? error.message : "unknown error"}]\n`);
+    }
+  })();
+
+  try {
+    await resumeRecoveryPromise;
+  } finally {
+    resumeRecoveryPromise = undefined;
   }
 }
 

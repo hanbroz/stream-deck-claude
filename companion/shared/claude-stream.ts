@@ -78,6 +78,10 @@ export function encodeClaudeUserMessage(
   })}\n`;
 }
 
+export function isMissingClaudeConversationError(data: string): boolean {
+  return /\[Claude Code error\]\s*No conversation found with session ID:/iu.test(data);
+}
+
 export class ClaudeStreamParser {
   private buffer = "";
   private hasPartialAssistantText = false;
