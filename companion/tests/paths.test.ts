@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -14,6 +14,7 @@ import {
   COMPANION_PROJECT_NAME_ENV,
   COMPANION_RESUME_ENV,
   COMPANION_RESUME_SESSION_ID_ENV,
+  claudeConversationExists,
   listContainedDirectory,
   openContainedPath,
   resolveCompanionRuntimeEnv,
@@ -47,7 +48,20 @@ describe("resolveContainedPath", () => {
 describe("contained path operations", () => {
   it("parses the configured root and companion launch env without a silent fallback", async () => {
     const configured = path.join(root, "configured");
+    const configDir = path.join(root, "claude-config");
     await mkdir(configured);
+    const encodedFolder = (await realpath(configured)).replace(/[^a-zA-Z0-9]/g, "-");
+    await mkdir(path.join(configDir, "projects", encodedFolder), { recursive: true });
+    await writeFile(
+      path.join(configDir, "projects", encodedFolder, "resume-session.jsonl"),
+      "{}\n",
+      "utf8"
+    );
+    await writeFile(
+      path.join(configDir, "projects", encodedFolder, "legacy-resume-session.jsonl"),
+      "{}\n",
+      "utf8"
+    );
 
     await expect(
       resolveCompanionRoot({ [COMPANION_FOLDER_ENV]: configured })
@@ -59,7 +73,8 @@ describe("contained path operations", () => {
         [COMPANION_PROJECT_NAME_ENV]: "Demo Project",
         [COMPANION_MODEL_ENV]: "Opus 4.8",
         [COMPANION_CONTEXT_PERCENT_ENV]: "43.7",
-        [COMPANION_RESUME_ENV]: "resume-session"
+        [COMPANION_RESUME_ENV]: "resume-session",
+        CLAUDE_CONFIG_DIR: configDir
       })
     ).resolves.toEqual({
       rootPath: await realpath(configured),
@@ -81,11 +96,55 @@ describe("contained path operations", () => {
     );
     await expect(resolveCompanionRuntimeEnv({
       [COMPANION_FOLDER_ENV]: configured,
-      [COMPANION_RESUME_SESSION_ID_ENV]: "legacy-resume-session"
+      [COMPANION_RESUME_SESSION_ID_ENV]: "legacy-resume-session",
+      CLAUDE_CONFIG_DIR: configDir
     })).resolves.toMatchObject({
       metadata: { projectName: path.basename(configured) },
       resumeSessionId: "legacy-resume-session"
     });
+  });
+
+  it("only forwards a resume ID when Claude has a matching transcript", async () => {
+    const configured = path.join(root, "configured");
+    const configDir = path.join(root, "claude-config");
+    await mkdir(configured);
+    const encodedFolder = (await realpath(configured)).replace(/[^a-zA-Z0-9]/g, "-");
+    await mkdir(path.join(configDir, "projects", encodedFolder), { recursive: true });
+    await writeFile(
+      path.join(configDir, "projects", encodedFolder, "valid-session.jsonl"),
+      "{}\n",
+      "utf8"
+    );
+
+    await expect(
+      claudeConversationExists(
+        { CLAUDE_CONFIG_DIR: configDir },
+        await realpath(configured),
+        "valid-session"
+      )
+    ).resolves.toBe(true);
+    await expect(
+      claudeConversationExists(
+        { CLAUDE_CONFIG_DIR: configDir },
+        await realpath(configured),
+        "missing-session"
+      )
+    ).resolves.toBe(false);
+
+    await expect(
+      resolveCompanionRuntimeEnv({
+        [COMPANION_FOLDER_ENV]: configured,
+        [COMPANION_RESUME_SESSION_ID_ENV]: "missing-session",
+        CLAUDE_CONFIG_DIR: configDir
+      })
+    ).resolves.toMatchObject({ resumeSessionId: undefined, metadata: { resumeSessionId: undefined } });
+    await expect(
+      resolveCompanionRuntimeEnv({
+        [COMPANION_FOLDER_ENV]: configured,
+        [COMPANION_RESUME_SESSION_ID_ENV]: "valid-session",
+        CLAUDE_CONFIG_DIR: configDir
+      })
+    ).resolves.toMatchObject({ resumeSessionId: "valid-session", metadata: { resumeSessionId: "valid-session" } });
   });
 
   it("lists directories before files and creates child folders/files", async () => {

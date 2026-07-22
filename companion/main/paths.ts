@@ -1,4 +1,5 @@
 import { mkdir, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import type { DirectoryEntry } from "../shared/claude-command";
@@ -28,6 +29,51 @@ export type CompanionRuntimeEnv = {
   usageDataDir: string;
   resumeSessionId?: string;
 };
+
+function claudeProjectDirectoryName(folder: string): string {
+  return folder.replace(/[^a-zA-Z0-9]/g, "-");
+}
+
+function claudeProjectsDirectory(env: NodeJS.ProcessEnv): string {
+  const configDir = env.CLAUDE_CONFIG_DIR?.trim() || path.join(
+    env.USERPROFILE?.trim() || os.homedir(),
+    ".claude"
+  );
+  return path.join(configDir, "projects");
+}
+
+/**
+ * Validate resume IDs again inside Companion. This protects users running a
+ * previously installed Stream Deck plugin whose Code Start preflight is not
+ * yet updated, and keeps a stale pointer from producing a recovery toast.
+ */
+export async function claudeConversationExists(
+  env: NodeJS.ProcessEnv,
+  folder: string,
+  sessionId: string
+): Promise<boolean> {
+  if (
+    sessionId.length === 0 ||
+    sessionId.includes("/") ||
+    sessionId.includes("\\")
+  ) {
+    return false;
+  }
+
+  try {
+    const transcriptPath = path.join(
+      claudeProjectsDirectory(env),
+      claudeProjectDirectoryName(folder),
+      `${sessionId}.jsonl`
+    );
+    const info = await stat(transcriptPath);
+    return info.isFile();
+  } catch (error) {
+    // Missing transcript means there is no previous conversation. Preserve
+    // non-ENOENT failures so permission/configuration problems remain visible.
+    return (error as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+}
 
 function isContainedPath(root: string, target: string): boolean {
   const relative = path.relative(root, target);
@@ -79,9 +125,13 @@ export async function resolveCompanionRuntimeEnv(
   env: NodeJS.ProcessEnv
 ): Promise<CompanionRuntimeEnv> {
   const rootPath = await resolveCompanionRoot(env);
-  const resumeSessionId =
+  const requestedResumeSessionId =
     cleanEnvValue(env[COMPANION_RESUME_ENV], COMPANION_RESUME_ENV) ??
     cleanEnvValue(env[COMPANION_RESUME_SESSION_ID_ENV], COMPANION_RESUME_SESSION_ID_ENV);
+  const hasValidResumeSession =
+    requestedResumeSessionId !== undefined &&
+    await claudeConversationExists(env, rootPath, requestedResumeSessionId);
+  const resumeSessionId = hasValidResumeSession ? requestedResumeSessionId : undefined;
   const contextPercent = parseContextPercent(env[COMPANION_CONTEXT_PERCENT_ENV]);
   const localAppData = env.LOCALAPPDATA ?? path.join(env.USERPROFILE ?? process.cwd(), "AppData", "Local");
   return {
