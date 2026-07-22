@@ -399,10 +399,11 @@ function explorerBounds(): SplitBounds {
 function terminalBounds(): SplitBounds {
   const minimumConsoleWidth = 300;
   const availableWidth = workSplitElement.clientWidth;
+  const separatorWidth = terminalResizer.offsetWidth || 2;
   return {
     minimum: 260,
     maximum: availableWidth > 0
-      ? Math.max(260, availableWidth - minimumConsoleWidth - 5)
+      ? Math.max(260, availableWidth - minimumConsoleWidth - separatorWidth)
       : 520
   };
 }
@@ -411,10 +412,11 @@ function composerBounds(): SplitBounds {
   const minimumWorkHeight = 180;
   const sessionTabs = workspaceElement.querySelector<HTMLElement>(".session-tabs");
   const availableHeight = workspaceElement.clientHeight;
+  const separatorHeight = composerResizer.offsetHeight || 2;
   return {
     minimum: 180,
     maximum: availableHeight > 0
-      ? Math.max(180, availableHeight - (sessionTabs?.offsetHeight ?? 36) - 6 - minimumWorkHeight)
+      ? Math.max(180, availableHeight - (sessionTabs?.offsetHeight ?? 36) - separatorHeight - minimumWorkHeight)
       : 640
   };
 }
