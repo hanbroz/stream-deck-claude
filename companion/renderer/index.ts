@@ -100,6 +100,7 @@ let selectedPath: string | undefined;
 let contextPath: string | undefined;
 let composer: ComposerState = createComposerState();
 let activeClaudeSession: ClaudeSessionStarted | undefined;
+let claudeStartPromise: Promise<void> | undefined;
 const pendingClaudeOutput = new Map<string, string[]>();
 let terminalSessionId: string | undefined;
 let terminalStarting = false;
@@ -351,14 +352,15 @@ async function initialize(): Promise<void> {
   selectedPath = projectRoot;
   renderTree();
 
-  if (api?.runtime.resumeSessionId && api.runtime.folder) {
-    resumeSessionInput.value = api.runtime.resumeSessionId;
-    try {
-      await startClaudeSession(api.runtime.resumeSessionId);
-    } catch (error) {
-      renderStatus({ state: "ended" });
-      appendConsoleOutput(`[resume failed: ${error instanceof Error ? error.message : "unknown error"}]\n`);
-    }
+  const resumeSessionId = api?.runtime.resumeSessionId;
+  if (resumeSessionId && api.runtime.folder) {
+    resumeSessionInput.value = resumeSessionId;
+  }
+  try {
+    await startClaudeSession(resumeSessionId);
+  } catch (error) {
+    renderStatus({ state: "ended" });
+    appendConsoleOutput(`[Claude Code failed to start: ${error instanceof Error ? error.message : "unknown error"}]\n`);
   }
 }
 
@@ -796,20 +798,33 @@ async function startClaudeSession(sessionId?: string): Promise<void> {
     return;
   }
 
-  clearConsoleOutput();
-  activeClaudeSession = await api.claude.start({
-    cwd: projectRoot,
-    mode: sessionId ? "resume" : "new",
-    sessionId
-  });
-  renderStatus({ state: "running", cwd: activeClaudeSession.cwd });
-  const pending = pendingClaudeOutput.get(activeClaudeSession.sessionId);
-  pendingClaudeOutput.delete(activeClaudeSession.sessionId);
-  for (const output of pending ?? []) {
-    appendConsoleOutput(output);
+  if (claudeStartPromise) {
+    await claudeStartPromise;
+    return;
   }
-  appendConsoleOutput(sessionId ? "[session resumed]\n" : "[new session started]\n");
-  promptInput.focus();
+
+  claudeStartPromise = (async () => {
+    clearConsoleOutput();
+    activeClaudeSession = await api.claude.start({
+      cwd: projectRoot,
+      mode: sessionId ? "resume" : "new",
+      sessionId
+    });
+    renderStatus({ state: "running", cwd: activeClaudeSession.cwd });
+    const pending = pendingClaudeOutput.get(activeClaudeSession.sessionId);
+    pendingClaudeOutput.delete(activeClaudeSession.sessionId);
+    for (const output of pending ?? []) {
+      appendConsoleOutput(output);
+    }
+    appendConsoleOutput(sessionId ? "[session resumed]\n" : "[new session started]\n");
+    promptInput.focus();
+  })();
+
+  try {
+    await claudeStartPromise;
+  } finally {
+    claudeStartPromise = undefined;
+  }
 }
 
 async function resumeSession(): Promise<void> {

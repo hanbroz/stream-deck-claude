@@ -42,7 +42,7 @@
 - Color: `#1f1f1f` shell, `#252526` panels, `#1e1e1e` workspace, `#d97757` orange accent, `#3fb950` running state, `#569cd6` informational state
 - Typography: Segoe UI Variable for chrome and Cascadia Code for console/terminal content
 - Spacing/layout rhythm: 40px title bar, 36px session tabs, 260px explorer default, 23px tree rows, 34% bottom composer dock (180px minimum)
-- Shape/radius/elevation: 5-12px restrained radii, 1px separators, dark 8-28px context/toast shadows
+- Shape/radius/elevation: 5-12px restrained radii, 2px draggable split rules, dark 8-28px context/toast shadows
 - Motion: caret blink and short toast fade only
 - Imagery/iconography: compact local SVG icons; the explorer uses VS Code-like `›`/`⌄` chevrons and a vendored Material Icon Theme subset for files/folders, with no emoji-dependent navigation
 
@@ -93,7 +93,8 @@
 
 ## Runtime notes
 
-- The top `TERMINAL` tab opens an embedded PowerShell PTY rooted at the configured project and accepts normal commands.
+- Companion startup launches `claude --dangerously-skip-permissions` in the configured project root; its PTY output is rendered in the read-only Claude Console, while prompts are sent from the bottom composer.
+- The top `TERMINAL` tab opens an embedded PowerShell PTY rooted at the configured project and accepts normal commands as a separate optional split.
 - The explorer terminal action still opens an external Windows Terminal window with `wt.exe -d <project-root>`.
 - The Claude console is intentionally selectable/read-only; prompts are entered only in the bottom composer.
 - The header reads the project name from Code Start metadata and polls the current model/context snapshot without taking over another status-line owner.

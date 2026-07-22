@@ -56,7 +56,7 @@ Requirements: Windows 10 or later, Stream Deck 7.1 or later, Claude Code, and Wi
 4. Press the key once. Claude Deck Companion opens for that folder, the plugin backs up `~/.claude/settings.json`, installs the bridge and lifecycle hooks, and preserves existing status-line commands and hooks.
 5. Send one Claude Code message. Usage keys display current percentages and reset countdowns, while Code Start displays the launched session's current model and context usage bar.
 
-The Companion includes an explorer for the configured project root and a terminal-open action that runs `wt.exe -d <project-folder>` without starting Claude. File operations stay inside the configured root.
+When Companion opens, it automatically starts `claude --dangerously-skip-permissions` in the configured project root. The Claude PTY output is rendered in the read-only `Claude Console`; prompts and clipboard images are sent only from the bottom composer. The explorer also includes a terminal-open action that runs `wt.exe -d <project-folder>` as a separate external terminal. File operations stay inside the configured root.
 
 The explorer follows the VS Code tree convention: directories use `›`/`⌄` chevrons, nested rows keep their indentation, and files use a vendored subset of the [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme/tree/main/icons). The SVG subset and its MIT notice are packaged locally under `companion/renderer/assets/material-icons`, so installed Companion windows do not depend on a network request for icons.
 
