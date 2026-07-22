@@ -49,14 +49,14 @@
 ## Components
 
 - Existing components to reuse: `ClaudePtyManager`, secure path IPC, composer state, tree state, xterm terminal
-- New/changed components: reference-faithful title bar, resizable explorer, session tab strip, console/terminal split, dock composer, context menu, toast
+- New/changed components: reference-faithful title bar, resizable explorer, session tab strip, independently resizable console/terminal split, resizable chat composer dock, context menu, toast
 - Variants and states: explorer collapsed, terminal split open/closed, session idle/running/waiting/closed, focused composer, context menu open
 - Token/component ownership: `companion/renderer/styles.css` owns visual tokens; `companion/renderer/index.ts` owns interaction state
 
 ## Accessibility
 
 - Target standard: keyboard-operable desktop controls with semantic labels
-- Keyboard/focus behavior: Enter sends, Shift+Enter inserts a newline, Escape cancels inline creation/context menus, focus returns to the composer after session start
+- Keyboard/focus behavior: Enter sends, Shift+Enter inserts a newline, Escape cancels inline creation/context menus, splitter handles expose keyboard arrows/Home/End, focus returns to the composer after session start
 - Contrast/readability: preserve the dark reference palette with readable muted text and visible orange focus borders
 - Screen-reader semantics: buttons, nav/section labels, live toast, and image preview alt text
 - Reduced motion and sensory considerations: no motion beyond caret/toast; system color scheme remains dark
@@ -64,7 +64,7 @@
 ## Responsive behavior
 
 - Supported breakpoints/devices: desktop Electron window, minimum 960x640
-- Layout adaptations: explorer collapses to a 40px rail; terminal split uses the remaining workspace; composer wraps image chips
+- Layout adaptations: explorer collapses to a 40px rail; explorer, console/terminal, and composer splitters respect minimum sizes; terminal split uses the remaining workspace; composer wraps image chips
 - Touch/hover differences: hover states remain supplemental; all actions have click/keyboard paths
 
 ## Interaction states

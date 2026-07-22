@@ -29,7 +29,7 @@
         </div>
       </header>
 
-      <div class="body-shell">
+      <div id="body-shell" class="body-shell">
         <button id="explorer-rail" class="explorer-rail" type="button" title="Open explorer" aria-label="Open explorer" hidden>
           <span aria-hidden="true">EX</span>
         </button>
@@ -66,9 +66,19 @@
 
           <section id="tree" class="tree" aria-label="File tree"></section>
         </aside>
-        <div id="explorer-resizer" class="explorer-resizer" aria-hidden="true"></div>
+        <div
+          id="explorer-resizer"
+          class="explorer-resizer"
+          role="separator"
+          tabindex="0"
+          aria-label="Resize project explorer"
+          aria-orientation="vertical"
+          aria-valuemin="210"
+          aria-valuemax="380"
+          aria-valuenow="260"
+        ></div>
 
-        <section class="workspace" aria-label="Claude Code workspace">
+        <section id="workspace" class="workspace" aria-label="Claude Code workspace">
           <nav class="session-tabs" aria-label="Session header">
             <div class="session-tab session-tab--active">
               <span id="session-tab-dot" class="tab-dot"></span>
@@ -85,12 +95,22 @@
             </div>
           </nav>
 
-          <div class="work-split">
+          <div id="work-split" class="work-split">
             <section class="console-pane" aria-label="Read-only Claude console">
               <div id="console-log" class="console-log" aria-live="polite" aria-readonly="true"></div>
             </section>
 
-            <div id="terminal-resizer" class="terminal-resizer" aria-hidden="true"></div>
+            <div
+              id="terminal-resizer"
+              class="terminal-resizer"
+              role="separator"
+              tabindex="0"
+              aria-label="Resize console and terminal"
+              aria-orientation="vertical"
+              aria-valuemin="260"
+              aria-valuemax="520"
+              aria-valuenow="380"
+            ></div>
 
             <section id="terminal-panel" class="terminal-panel" aria-label="Embedded terminal">
               <header class="terminal-panel__header">
@@ -103,7 +123,19 @@
             </section>
           </div>
 
-          <footer class="composer" aria-label="Prompt composer">
+          <div
+            id="composer-resizer"
+            class="composer-resizer"
+            role="separator"
+            tabindex="0"
+            aria-label="Resize chat composer"
+            aria-orientation="horizontal"
+            aria-valuemin="180"
+            aria-valuemax="640"
+            aria-valuenow="280"
+          ></div>
+
+          <footer id="composer" class="composer" aria-label="Prompt composer">
             <div id="image-preview" class="image-preview" aria-live="polite"></div>
             <div class="composer__row">
               <textarea

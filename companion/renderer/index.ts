@@ -30,6 +30,7 @@ import {
   type TreeNodeKind
 } from "../shared/tree-state";
 import { explorerChevron, explorerIconPath } from "./explorer-icons";
+import { adjustSplitForKey, clampSplit, type SplitterOrientation } from "./splitter";
 
 type SessionStatus = {
   state: "idle" | "running" | "waiting" | "ended";
@@ -53,6 +54,7 @@ declare global {
 
 const api = window.claudeCompanion;
 const appShell = mustElement<HTMLElement>("app-shell");
+const bodyShell = mustElement<HTMLElement>("body-shell");
 const titleProjectName = mustElement<HTMLElement>("title-project-name");
 const explorerProjectName = mustElement<HTMLElement>("explorer-project-name");
 const tabProjectName = mustElement<HTMLElement>("tab-project-name");
@@ -76,6 +78,13 @@ const openExplorerButton = mustElement<HTMLButtonElement>("open-explorer");
 const openTerminalButton = mustElement<HTMLButtonElement>("open-terminal");
 const explorerRail = mustElement<HTMLButtonElement>("explorer-rail");
 const explorerToggle = mustElement<HTMLButtonElement>("explorer-toggle");
+const explorerResizer = mustElement<HTMLDivElement>("explorer-resizer");
+const workspaceElement = mustElement<HTMLElement>("workspace");
+const workSplitElement = mustElement<HTMLElement>("work-split");
+const terminalPanelElement = mustElement<HTMLElement>("terminal-panel");
+const terminalResizer = mustElement<HTMLDivElement>("terminal-resizer");
+const composerPanel = mustElement<HTMLElement>("composer");
+const composerResizer = mustElement<HTMLDivElement>("composer-resizer");
 const windowMinimize = mustElement<HTMLButtonElement>("window-minimize");
 const windowMaximize = mustElement<HTMLButtonElement>("window-maximize");
 const windowClose = mustElement<HTMLButtonElement>("window-close");
@@ -97,6 +106,15 @@ let terminalStarting = false;
 let sessionStatusTimer: ReturnType<typeof setInterval> | undefined;
 let lastSessionState: SessionStatus["state"] = "idle";
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+let terminalsReady = false;
+let explorerWidth = readSplitSetting("explorer-width", 260);
+let terminalWidth = readSplitSetting("terminal-width", 380);
+let composerHeight = readSplitSetting("composer-height", 280);
+
+applyExplorerWidth(explorerWidth, false);
+applyTerminalWidth(terminalWidth, false);
+applyComposerHeight(composerHeight, false);
+installSplitters();
 
 const terminal = new Terminal({
   allowProposedApi: false,
@@ -130,6 +148,7 @@ const consoleTerminal = new Terminal({
 const consoleFitAddon = new FitAddon();
 consoleTerminal.loadAddon(consoleFitAddon);
 consoleTerminal.open(consoleElement);
+terminalsReady = true;
 fitTerminals();
 consoleTerminal.attachCustomKeyEventHandler((event) => {
   if (event.type !== "keydown") {
@@ -182,7 +201,12 @@ api?.claude.onExit((message) => {
   }
 });
 
-window.addEventListener("resize", fitTerminals);
+window.addEventListener("resize", () => {
+  applyExplorerWidth(explorerWidth, false);
+  applyTerminalWidth(terminalWidth, false);
+  applyComposerHeight(composerHeight, false);
+  fitTerminals();
+});
 document.addEventListener("click", () => hideContextMenu());
 
 newSessionButton.addEventListener("click", () => {
@@ -336,6 +360,187 @@ async function initialize(): Promise<void> {
       appendConsoleOutput(`[resume failed: ${error instanceof Error ? error.message : "unknown error"}]\n`);
     }
   }
+}
+
+type SplitBounds = {
+  minimum: number;
+  maximum: number;
+};
+
+function readSplitSetting(name: string, fallback: number): number {
+  try {
+    const raw = window.localStorage.getItem(`claude-companion:split:${name}`);
+    const value = raw === null ? fallback : Number(raw);
+    return Number.isFinite(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSplitSetting(name: string, value: number): void {
+  try {
+    window.localStorage.setItem(`claude-companion:split:${name}`, String(Math.round(value)));
+  } catch {
+    // A locked-down renderer can still resize; persistence is supplemental.
+  }
+}
+
+function updateSplitterAria(separator: HTMLElement, value: number, bounds: SplitBounds): void {
+  separator.setAttribute("aria-valuemin", String(Math.round(bounds.minimum)));
+  separator.setAttribute("aria-valuemax", String(Math.round(bounds.maximum)));
+  separator.setAttribute("aria-valuenow", String(Math.round(value)));
+  separator.setAttribute("aria-valuetext", `${Math.round(value)} pixels`);
+}
+
+function explorerBounds(): SplitBounds {
+  return { minimum: 210, maximum: 380 };
+}
+
+function terminalBounds(): SplitBounds {
+  const minimumConsoleWidth = 300;
+  const availableWidth = workSplitElement.clientWidth;
+  return {
+    minimum: 260,
+    maximum: availableWidth > 0
+      ? Math.max(260, availableWidth - minimumConsoleWidth - 5)
+      : 520
+  };
+}
+
+function composerBounds(): SplitBounds {
+  const minimumWorkHeight = 180;
+  const sessionTabs = workspaceElement.querySelector<HTMLElement>(".session-tabs");
+  const availableHeight = workspaceElement.clientHeight;
+  return {
+    minimum: 180,
+    maximum: availableHeight > 0
+      ? Math.max(180, availableHeight - (sessionTabs?.offsetHeight ?? 36) - 6 - minimumWorkHeight)
+      : 640
+  };
+}
+
+function applyExplorerWidth(value: number, persist: boolean): void {
+  explorerWidth = clampSplit(value, explorerBounds().minimum, explorerBounds().maximum);
+  sidebar.style.width = `${explorerWidth}px`;
+  sidebar.style.flexBasis = `${explorerWidth}px`;
+  updateSplitterAria(explorerResizer, explorerWidth, explorerBounds());
+  if (persist) {
+    writeSplitSetting("explorer-width", explorerWidth);
+  }
+  if (terminalsReady) {
+    fitTerminals();
+  }
+}
+
+function applyTerminalWidth(value: number, persist: boolean): void {
+  const bounds = terminalBounds();
+  terminalWidth = clampSplit(value, bounds.minimum, bounds.maximum);
+  terminalPanelElement.style.width = `${terminalWidth}px`;
+  terminalPanelElement.style.flexBasis = `${terminalWidth}px`;
+  updateSplitterAria(terminalResizer, terminalWidth, bounds);
+  if (persist) {
+    writeSplitSetting("terminal-width", terminalWidth);
+  }
+  if (terminalsReady) {
+    fitTerminals();
+  }
+}
+
+function applyComposerHeight(value: number, persist: boolean): void {
+  const bounds = composerBounds();
+  composerHeight = clampSplit(value, bounds.minimum, bounds.maximum);
+  composerPanel.style.flexBasis = `${composerHeight}px`;
+  updateSplitterAria(composerResizer, composerHeight, bounds);
+  if (persist) {
+    writeSplitSetting("composer-height", composerHeight);
+  }
+  if (terminalsReady) {
+    fitTerminals();
+  }
+}
+
+function installSplitter(
+  separator: HTMLDivElement,
+  orientation: SplitterOrientation,
+  getValue: () => number,
+  getBounds: () => SplitBounds,
+  setValue: (value: number, persist: boolean) => void,
+  pointerValue: (event: PointerEvent) => number
+): void {
+  const updateAria = (): void => {
+    updateSplitterAria(separator, getValue(), getBounds());
+  };
+
+  separator.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 && event.pointerType !== "touch") {
+      return;
+    }
+
+    event.preventDefault();
+    separator.focus();
+    separator.setPointerCapture(event.pointerId);
+    document.body.classList.add("is-split-resizing", orientation === "vertical" ? "is-resizing-columns" : "is-resizing-rows");
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      const bounds = getBounds();
+      setValue(clampSplit(pointerValue(moveEvent), bounds.minimum, bounds.maximum), true);
+    };
+    const onEnd = (): void => {
+      separator.removeEventListener("pointermove", onMove);
+      separator.removeEventListener("pointerup", onEnd);
+      separator.removeEventListener("pointercancel", onEnd);
+      separator.removeEventListener("lostpointercapture", onEnd);
+      document.body.classList.remove("is-split-resizing", "is-resizing-columns", "is-resizing-rows");
+      if (separator.hasPointerCapture(event.pointerId)) {
+        separator.releasePointerCapture(event.pointerId);
+      }
+    };
+
+    separator.addEventListener("pointermove", onMove);
+    separator.addEventListener("pointerup", onEnd);
+    separator.addEventListener("pointercancel", onEnd);
+    separator.addEventListener("lostpointercapture", onEnd);
+  });
+
+  separator.addEventListener("keydown", (event) => {
+    const bounds = getBounds();
+    const next = adjustSplitForKey(event.key, orientation, getValue(), bounds.minimum, bounds.maximum);
+    if (next === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    setValue(next, true);
+  });
+
+  updateAria();
+}
+
+function installSplitters(): void {
+  installSplitter(
+    explorerResizer,
+    "vertical",
+    () => explorerWidth,
+    explorerBounds,
+    applyExplorerWidth,
+    (event) => event.clientX - bodyShell.getBoundingClientRect().left
+  );
+  installSplitter(
+    terminalResizer,
+    "vertical",
+    () => terminalWidth,
+    terminalBounds,
+    applyTerminalWidth,
+    (event) => workSplitElement.getBoundingClientRect().right - event.clientX
+  );
+  installSplitter(
+    composerResizer,
+    "horizontal",
+    () => composerHeight,
+    composerBounds,
+    applyComposerHeight,
+    (event) => workspaceElement.getBoundingClientRect().bottom - event.clientY
+  );
 }
 
 function fitTerminal(): void {
@@ -639,9 +844,10 @@ async function setTerminalSplit(open: boolean, cwd = terminalCwdForSelection()):
   appShell.classList.toggle("is-terminal-split", open);
   terminalSplitSign.textContent = open ? "x" : "+";
   if (open) {
+    applyTerminalWidth(terminalWidth, false);
     await ensureProjectTerminal(cwd);
   }
-  window.setTimeout(fitTerminal, 0);
+  window.setTimeout(fitTerminals, 0);
 }
 
 function terminalCwdForSelection(): string {

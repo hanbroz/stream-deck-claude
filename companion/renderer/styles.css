@@ -183,6 +183,20 @@ button:disabled {
   flex: 1;
 }
 
+body.is-split-resizing {
+  user-select: none;
+}
+
+body.is-split-resizing.is-resizing-columns,
+body.is-split-resizing.is-resizing-columns * {
+  cursor: col-resize !important;
+}
+
+body.is-split-resizing.is-resizing-rows,
+body.is-split-resizing.is-resizing-rows * {
+  cursor: row-resize !important;
+}
+
 .explorer-rail {
   width: 40px;
   flex: 0 0 auto;
@@ -198,10 +212,10 @@ button:disabled {
 
 .sidebar {
   display: flex;
-  width: 260px;
+  width: var(--explorer-width, 260px);
   min-width: 210px;
   max-width: 380px;
-  flex: 0 0 260px;
+  flex: 0 0 var(--explorer-width, 260px);
   flex-direction: column;
   border-right: 1px solid var(--line-strong);
   background: var(--panel);
@@ -216,17 +230,30 @@ button:disabled {
 }
 
 .explorer-resizer {
-  display: none;
+  display: block;
   width: 5px;
   flex: 0 0 5px;
   cursor: col-resize;
   background: transparent;
   position: relative;
   z-index: 5;
+  touch-action: none;
 }
 
 .explorer-resizer:hover {
   background: var(--accent);
+}
+
+.explorer-resizer:focus-visible,
+.terminal-resizer:focus-visible,
+.composer-resizer:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  background: var(--accent);
+}
+
+.app-shell.is-explorer-collapsed .explorer-resizer {
+  display: none;
 }
 
 .sidebar__header {
@@ -530,6 +557,7 @@ button:disabled {
 
 .work-split {
   display: flex;
+  min-width: 0;
   min-height: 0;
   flex: 1;
 }
@@ -537,7 +565,7 @@ button:disabled {
 .console-pane {
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-width: 300px;
   flex: 1;
   overflow: hidden;
   padding: 18px 22px;
@@ -593,9 +621,9 @@ button:disabled {
 
 .terminal-panel {
   display: flex;
-  width: min(42vw, 520px);
-  min-width: 320px;
-  flex: 0 0 min(42vw, 520px);
+  width: var(--terminal-width, min(42vw, 520px));
+  min-width: 260px;
+  flex: 0 0 var(--terminal-width, min(42vw, 520px));
   flex-direction: column;
   background: #181818;
 }
@@ -604,16 +632,17 @@ button:disabled {
   display: none;
 }
 
-.app-shell:not(.is-terminal-split) .terminal-resizer {
-  display: none;
-}
-
 .terminal-resizer {
-  display: none;
+  display: block;
   width: 5px;
   flex: 0 0 5px;
   cursor: col-resize;
   background: #333333;
+  touch-action: none;
+}
+
+.app-shell:not(.is-terminal-split) .terminal-resizer {
+  display: none;
 }
 
 .terminal-resizer:hover {
@@ -693,12 +722,25 @@ button:disabled {
 
 .composer {
   display: flex;
-  flex: 0 0 34%;
+  flex: 0 0 var(--composer-height, 34%);
   min-height: 180px;
-  border-top: 6px solid #333333;
+  border-top: 0;
   background: var(--surface);
   padding: 10px 16px 14px;
   flex-direction: column;
+}
+
+.composer-resizer {
+  display: block;
+  height: 6px;
+  flex: 0 0 6px;
+  cursor: row-resize;
+  background: #333333;
+  touch-action: none;
+}
+
+.composer-resizer:hover {
+  background: var(--accent);
 }
 
 .composer__row {
