@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 
 import { ClaudePtyManager } from "../main/claude-session";
+import { encodeClaudeUserMessage } from "../shared/claude-stream";
 
 type FakePty = {
   onData(listener: (data: string) => void): void;
@@ -43,13 +44,24 @@ describe("ClaudePtyManager", () => {
     manager.on("exit", exit);
 
     const started = manager.start({ cwd: "D:\\repo", cols: 100, rows: 40 });
-    terminal.data.emit("data", "hello");
+    terminal.data.emit("data", `${JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "hello" }] }
+    })}\n`);
     terminal.exit.emit("exit", { exitCode: 0 });
 
     expect(started).toMatchObject({ cwd: "D:\\repo", mode: "new" });
     expect(ptyFactory).toHaveBeenCalledWith(
       "claude.exe",
-      ["--dangerously-skip-permissions"],
+      [
+        "--dangerously-skip-permissions",
+        "--print",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages"
+      ],
       expect.objectContaining({
         cwd: "D:\\repo",
         cols: 100,
@@ -57,12 +69,12 @@ describe("ClaudePtyManager", () => {
         env: expect.objectContaining({ Path: "test-bin", TERM: "xterm-256color" })
       })
     );
-    expect(data).toHaveBeenCalledWith(started.sessionId, "hello");
+    expect(data).toHaveBeenCalledWith(started.sessionId, "hello\n");
     expect(exit).toHaveBeenCalledWith(started.sessionId, 0, undefined);
     expect(manager.has(started.sessionId)).toBe(false);
   });
 
-  it("uses resume args, supports write/resize/kill, and sends ESC-v for clipboard images", () => {
+  it("uses resume args, supports stream writes, resize/kill, and clipboard images", () => {
     const terminal = fakePty();
     const manager = new ClaudePtyManager({
       ptyFactory: vi.fn(() => terminal) as never,
@@ -77,18 +89,24 @@ describe("ClaudePtyManager", () => {
     manager.write(started.sessionId, "input");
     manager.resize(started.sessionId, 80, 24);
     const pasted = manager.pasteClipboardImage(started.sessionId, {
-      readImage: () => ({ isEmpty: () => false })
+      readImage: () => ({
+        isEmpty: () => false,
+        toDataURL: () => "data:image/png;base64,AAAA"
+      })
     });
     manager.kill(started.sessionId);
 
-    expect(terminal.write).toHaveBeenNthCalledWith(1, "input");
-    expect(terminal.write).toHaveBeenNthCalledWith(2, "\u001bv");
+    expect(terminal.write).toHaveBeenNthCalledWith(1, encodeClaudeUserMessage("input"));
+    expect(terminal.write).toHaveBeenNthCalledWith(
+      2,
+      encodeClaudeUserMessage("", ["data:image/png;base64,AAAA"])
+    );
     expect(terminal.resize).toHaveBeenCalledWith(80, 24);
     expect(pasted).toBe(true);
     expect(terminal.kill).toHaveBeenCalledTimes(1);
   });
 
-  it("does not write ESC-v when the clipboard has no image", () => {
+  it("does not write a message when the clipboard has no image", () => {
     const terminal = fakePty();
     const manager = new ClaudePtyManager({
       ptyFactory: vi.fn(() => terminal) as never

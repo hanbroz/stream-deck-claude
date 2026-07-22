@@ -93,7 +93,7 @@
 
 ## Runtime notes
 
-- Companion startup launches `claude --dangerously-skip-permissions` in the configured project root; its PTY output is rendered in the read-only Claude Console, while prompts are sent from the bottom composer.
+- Companion startup launches Claude in structured streaming mode in the configured project root; only conversation text is rendered in the read-only Claude Console, while prompts and images are sent from the bottom composer.
 - The top `TERMINAL` tab opens an embedded PowerShell PTY rooted at the configured project and accepts normal commands as a separate optional split.
 - The explorer terminal action still opens an external Windows Terminal window with `wt.exe -d <project-root>`.
 - The Claude console is intentionally selectable/read-only; prompts are entered only in the bottom composer.

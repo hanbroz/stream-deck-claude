@@ -89,7 +89,15 @@ function assertPlainValue(value: string, label: string): void {
 export function createClaudeCommandArgs(request: ClaudeCommandRequest): string[] {
   assertPlainValue(request.cwd, "cwd");
   const mode = request.mode ?? "new";
-  const args = ["--dangerously-skip-permissions"];
+  const args = [
+    "--dangerously-skip-permissions",
+    "--print",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--include-partial-messages"
+  ];
 
   if (mode === "resume") {
     if (!request.sessionId) {

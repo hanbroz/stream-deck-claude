@@ -8,6 +8,7 @@ import { ClaudePtyManager } from "../main/claude-session";
 import { registerCompanionIpc } from "../main/ipc";
 import { ProjectTerminalManager } from "../main/terminal-session";
 import { COMPANION_IPC } from "../shared/claude-command";
+import { encodeClaudeUserMessage } from "../shared/claude-stream";
 
 let root: string;
 
@@ -158,7 +159,10 @@ describe("registerCompanionIpc", () => {
       rootPath: root,
       ptyManager,
       clipboard: {
-        readImage: () => ({ isEmpty: () => false }),
+        readImage: () => ({
+          isEmpty: () => false,
+          toDataURL: () => "data:image/png;base64,AAAA"
+        }),
         writeImage
       },
       nativeImage: { createFromDataURL },
@@ -176,6 +180,6 @@ describe("registerCompanionIpc", () => {
 
     expect(createFromDataURL).toHaveBeenCalledWith("data:image/png;base64,AAAA");
     expect(writeImage).toHaveBeenCalledWith({ native: true });
-    expect(write).toHaveBeenCalledWith("\u001bv");
+    expect(write).toHaveBeenCalledWith(encodeClaudeUserMessage("", ["data:image/png;base64,AAAA"]));
   });
 });

@@ -7,9 +7,15 @@ import {
 } from "../shared/claude-command";
 
 describe("createClaudeCommandArgs", () => {
-  it("starts a new Claude session with skip-permissions only", () => {
+  it("starts a new Claude session in structured streaming mode", () => {
     expect(createClaudeCommandArgs({ cwd: "D:\\repo", mode: "new" })).toEqual([
-      "--dangerously-skip-permissions"
+      "--dangerously-skip-permissions",
+      "--print",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--include-partial-messages"
     ]);
   });
 
@@ -20,7 +26,17 @@ describe("createClaudeCommandArgs", () => {
         mode: "resume",
         sessionId: "session-123"
       })
-    ).toEqual(["--dangerously-skip-permissions", "--resume", "session-123"]);
+    ).toEqual([
+      "--dangerously-skip-permissions",
+      "--print",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--include-partial-messages",
+      "--resume",
+      "session-123"
+    ]);
   });
 
   it("rejects invalid resume requests", () => {

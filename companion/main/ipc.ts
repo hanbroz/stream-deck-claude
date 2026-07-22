@@ -83,6 +83,22 @@ function optionalImageDataUrl(value: unknown): string | undefined {
   return dataUrl;
 }
 
+function optionalImageDataUrls(value: unknown): string[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("imageDataUrls must be an array");
+  }
+  return value.map((entry) => {
+    const dataUrl = optionalImageDataUrl(entry);
+    if (!dataUrl) {
+      throw new Error("imageDataUrls must contain image data URLs");
+    }
+    return dataUrl;
+  });
+}
+
 function requireClaudeStartRequest(value: unknown): ClaudeSessionStartRequest {
   if (typeof value !== "object" || value === null) {
     throw new Error("Claude start request must be an object");
@@ -238,8 +254,12 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
     deps.window.close?.();
   });
 
-  deps.ipcMain.on(COMPANION_IPC.claudeWrite, (_event: SenderEvent, sessionId, data) => {
-    ptyManager.write(requireString(sessionId, "sessionId"), requireString(data, "data"));
+  deps.ipcMain.on(COMPANION_IPC.claudeWrite, (_event: SenderEvent, sessionId, data, imageDataUrls) => {
+    ptyManager.write(
+      requireString(sessionId, "sessionId"),
+      requireString(data, "data"),
+      optionalImageDataUrls(imageDataUrls)
+    );
   });
   deps.ipcMain.on(COMPANION_IPC.claudeResize, (_event: SenderEvent, sessionId, cols, rows) => {
     if (typeof cols !== "number" || typeof rows !== "number") {

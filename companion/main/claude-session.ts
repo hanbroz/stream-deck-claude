@@ -9,12 +9,12 @@ import {
   type ClaudeSessionStartRequest,
   type ClaudeSessionStarted
 } from "../shared/claude-command";
-
-const PASTE_CLIPBOARD_IMAGE_SEQUENCE = "\u001bv";
+import { ClaudeStreamParser, encodeClaudeUserMessage } from "../shared/claude-stream";
 
 export type ClipboardImageReader = {
   readImage(): {
     isEmpty(): boolean;
+    toDataURL?(): string;
   };
 };
 
@@ -52,6 +52,7 @@ type StoredSession = {
   cwd: string;
   mode: ClaudeLaunchMode;
   terminal: PtyLike;
+  output: ClaudeStreamParser;
 };
 
 export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
@@ -78,18 +79,28 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
       rows: request.rows ?? 30
     });
 
-    terminal.onData((data) => this.emit("data", sessionId, data));
+    const output = new ClaudeStreamParser();
+    terminal.onData((data) => {
+      const conversation = output.push(data);
+      if (conversation.length > 0) {
+        this.emit("data", sessionId, conversation);
+      }
+    });
     terminal.onExit(({ exitCode, signal }) => {
+      const conversation = output.flush();
+      if (conversation.length > 0) {
+        this.emit("data", sessionId, conversation);
+      }
       this.sessions.delete(sessionId);
       this.emit("exit", sessionId, exitCode, signal);
     });
 
-    this.sessions.set(sessionId, { cwd: request.cwd, mode, terminal });
+    this.sessions.set(sessionId, { cwd: request.cwd, mode, terminal, output });
     return { sessionId, cwd: request.cwd, mode };
   }
 
-  write(sessionId: string, data: string): void {
-    this.session(sessionId).terminal.write(data);
+  write(sessionId: string, data: string, imageDataUrls: readonly string[] = []): void {
+    this.session(sessionId).terminal.write(encodeClaudeUserMessage(data, imageDataUrls));
   }
 
   resize(sessionId: string, cols: number, rows: number): void {
@@ -104,10 +115,11 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
 
   pasteClipboardImage(sessionId: string, clipboard: ClipboardImageReader): boolean {
     const image = clipboard.readImage();
-    if (image.isEmpty()) {
+    const dataUrl = image.isEmpty() ? undefined : image.toDataURL?.();
+    if (!dataUrl) {
       return false;
     }
-    this.write(sessionId, PASTE_CLIPBOARD_IMAGE_SEQUENCE);
+    this.write(sessionId, "", [dataUrl]);
     return true;
   }
 

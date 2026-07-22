@@ -816,7 +816,6 @@ async function startClaudeSession(sessionId?: string): Promise<void> {
     for (const output of pending ?? []) {
       appendConsoleOutput(output);
     }
-    appendConsoleOutput(sessionId ? "[session resumed]\n" : "[new session started]\n");
     promptInput.focus();
   })();
 
@@ -847,13 +846,18 @@ async function sendIntent(intent: SubmitIntent): Promise<void> {
   }
 
   for (const image of intent.images) {
-    await api.claude.pasteClipboardImage(activeClaudeSession.sessionId, image.dataUrl);
     appendConsoleOutput(`[image attached: ${image.name}]\n`);
   }
 
-  if (intent.text.length > 0) {
-    appendConsoleOutput(`> ${intent.text}\n`);
-    api.claude.write(activeClaudeSession.sessionId, `${intent.text}\r`);
+  if (intent.text.length > 0 || intent.images.length > 0) {
+    if (intent.text.length > 0) {
+      appendConsoleOutput(`> ${intent.text}\n`);
+    }
+    api.claude.write(
+      activeClaudeSession.sessionId,
+      intent.text,
+      intent.images.map((image) => image.dataUrl)
+    );
   }
 }
 
