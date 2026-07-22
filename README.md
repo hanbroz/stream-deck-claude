@@ -77,6 +77,8 @@ npm run companion:dir
 npm exec -- streamdeck restart com.hanbroz.claude-usage
 ```
 
+For the current Claude Console input/output investigation, see [`docs/CLAUDE_COMPANION_HANDOFF_20260722.md`](docs/CLAUDE_COMPANION_HANDOFF_20260722.md). It records the verified commits, test evidence, runtime boundaries, and the exact prompt for a fresh Claude Code session.
+
 Usage keys check the local cache every second and skip unchanged images. These refreshes do not send Claude requests or consume usage. The value can still trail the web dashboard until Claude Code publishes a newer `rate_limits` payload; if a reset time passes first, the key displays `REFRESH` instead of a stale percentage.
 
 ### Local development
