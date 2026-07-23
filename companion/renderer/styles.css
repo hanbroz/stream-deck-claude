@@ -204,13 +204,23 @@ body.is-split-resizing.is-resizing-rows * {
   cursor: row-resize !important;
 }
 
+/* No display here: [hidden] must keep winning; the collapsed rule shows it. */
 .explorer-rail {
   width: 40px;
   flex: 0 0 auto;
   border-right: 1px solid var(--line-strong);
   background: var(--panel-2);
   color: #9a9a9a;
-  font-size: 20px;
+}
+
+.explorer-rail svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .explorer-rail:hover {
@@ -233,7 +243,8 @@ body.is-split-resizing.is-resizing-rows * {
 }
 
 .app-shell.is-explorer-collapsed .explorer-rail {
-  display: block;
+  display: grid;
+  place-items: center;
 }
 
 .explorer-resizer {
@@ -306,6 +317,17 @@ body.is-split-resizing.is-resizing-rows * {
   align-items: center;
   gap: 4px;
   text-align: left;
+}
+
+.explorer-title svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .explorer-title strong {
@@ -470,8 +492,23 @@ body.is-split-resizing.is-resizing-rows * {
   color: var(--muted);
   width: 16px;
   height: 16px;
-  font-size: 16px;
+  font-size: 12px;
   line-height: 1;
+}
+
+.tree-row__chevron svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.1s ease;
+}
+
+.tree-row__chevron.is-expanded svg {
+  transform: rotate(90deg);
 }
 
 .tree-row__icon {

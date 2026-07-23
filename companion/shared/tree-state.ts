@@ -85,6 +85,19 @@ export function setNodeLoading(nodes: TreeNode[], nodePath: string, loading: boo
   }));
 }
 
+/**
+ * Merge a fresh directory listing with the nodes already shown: entries that
+ * still exist keep their expanded/loaded state and children, so a refresh
+ * (e.g. right after creating a file) does not collapse the tree under the user.
+ */
+export function mergeFreshChildren(previous: TreeNode[] | undefined, fresh: TreeNode[]): TreeNode[] {
+  const byPath = new Map((previous ?? []).map((node) => [node.path, node]));
+  return fresh.map((node) => {
+    const existing = byPath.get(node.path);
+    return existing && existing.kind === node.kind ? cloneNode(existing) : cloneNode(node);
+  });
+}
+
 export function findNode(nodes: TreeNode[], nodePath: string): TreeNode | undefined {
   for (const node of nodes) {
     if (node.path === nodePath) {

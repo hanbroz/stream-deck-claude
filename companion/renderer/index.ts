@@ -35,6 +35,7 @@ import {
 import {
   createTargetFor,
   findNode,
+  mergeFreshChildren,
   parentPathOf,
   replaceRoots,
   setNodeChildren,
@@ -48,7 +49,7 @@ import type { ClaudeEvent, ClaudePhase } from "../shared/claude-stream";
 import { diag, setDiagSink } from "../shared/diag";
 import { createTurn, paintTurn, type Turn, type TurnRole } from "./transcript";
 import { companionBuildVersion } from "../shared/build-version";
-import { explorerChevron, explorerIconPath } from "./explorer-icons";
+import { explorerIconPath } from "./explorer-icons";
 import { adjustSplitForKey, clampSplit, type SplitterOrientation } from "./splitter";
 
 type SessionStatus = {
@@ -562,13 +563,26 @@ promptInput.addEventListener("paste", (event) => {
   }
 });
 
+// Right-clicking the empty area below the rows targets the project folder
+// itself, which no longer has a row of its own.
+treeElement.addEventListener("contextmenu", (event) => {
+  if ((event.target as HTMLElement).closest(".tree-row")) {
+    return; // the row's own handler already opened the menu
+  }
+  event.preventDefault();
+  selectedPath = projectRoot;
+  contextPath = projectRoot;
+  renderTree();
+  showContextMenu(event.clientX, event.clientY);
+});
+
 contextMenu.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-action]");
   if (!button || !contextPath) {
     return;
   }
 
-  const node = findNode(treeRoots, contextPath);
+  const node = nodeAt(contextPath);
   if (!node) {
     return;
   }
@@ -606,16 +620,10 @@ async function initialize(): Promise<void> {
   sessionStatusTimer = setInterval(() => {
     void refreshSessionStatus();
   }, 1_000);
+  // VS Code-style explorer: the header names the project FOLDER and the tree
+  // lists its contents directly — no synthetic root row duplicating the name.
   const rootChildren = entriesToNodes((await api?.paths.list(projectRoot)) ?? []);
-  treeRoots = replaceRoots([{
-    id: projectRoot,
-    name: projectNameFromPath(projectRoot),
-    path: projectRoot,
-    kind: "directory",
-    expanded: true,
-    loaded: true,
-    children: rootChildren
-  }]);
+  treeRoots = replaceRoots(rootChildren);
   selectedPath = projectRoot;
   renderTree();
 
@@ -871,6 +879,35 @@ function renderContextMeter(status: SessionStatus): void {
   ctxMeter.setAttribute("aria-valuenow", percent === null ? "0" : String(percent));
 }
 
+/**
+ * The project folder itself has no tree row (its children are the top level),
+ * so root-level operations use this synthetic node.
+ */
+function projectRootNode(): TreeNode {
+  return {
+    id: projectRoot,
+    name: projectNameFromPath(projectRoot),
+    path: projectRoot,
+    kind: "directory",
+    expanded: true,
+    loaded: true,
+    children: treeRoots
+  };
+}
+
+function nodeAt(path: string): TreeNode | undefined {
+  return path === projectRoot ? projectRootNode() : findNode(treeRoots, path);
+}
+
+function chevronSvg(): SVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M6 4l4 4-4 4");
+  svg.append(path);
+  return svg;
+}
+
 function renderTree(): void {
   treeElement.replaceChildren();
 
@@ -882,10 +919,22 @@ function renderTree(): void {
     item.dataset.path = row.node.path;
     item.setAttribute("aria-label", row.node.name);
 
+    // An SVG chevron centres in the 16px cell regardless of font metrics; the
+    // old text glyphs ("›"/"⌄") sat on the text baseline and drifted out of
+    // line with the row icon.
     const chevron = document.createElement("span");
     chevron.className = "tree-row__chevron";
-    chevron.textContent = explorerChevron(row.node.kind, Boolean(row.node.expanded), Boolean(row.node.loading));
     chevron.setAttribute("aria-hidden", "true");
+    if (row.node.kind === "directory") {
+      if (row.node.loading) {
+        chevron.textContent = "…";
+      } else {
+        if (row.node.expanded) {
+          chevron.classList.add("is-expanded");
+        }
+        chevron.append(chevronSvg());
+      }
+    }
 
     const icon = document.createElement("img");
     icon.className = "tree-row__icon";
@@ -943,17 +992,25 @@ async function toggleDirectory(node: TreeNode): Promise<void> {
   }
 }
 
+/**
+ * Re-list a directory from disk and swap it into the tree, keeping the
+ * expanded state of entries that still exist. The project root swaps the
+ * top-level list itself since it has no node of its own.
+ */
+async function refreshPath(directoryPath: string): Promise<void> {
+  const fresh = entriesToNodes((await api?.paths.list(directoryPath)) ?? []);
+  if (directoryPath === projectRoot) {
+    treeRoots = replaceRoots(mergeFreshChildren(treeRoots, fresh));
+  } else {
+    const current = findNode(treeRoots, directoryPath);
+    treeRoots = setNodeChildren(treeRoots, directoryPath, mergeFreshChildren(current?.children, fresh));
+  }
+  renderTree();
+}
+
 async function refreshNode(node: TreeNode): Promise<void> {
-  const requestedPath = node.kind === "directory" ? node.path : parentPathOf(node.path);
   try {
-    const entries = entriesToNodes((await api?.paths.list(requestedPath)) ?? []);
-    if (node.kind === "directory") {
-      treeRoots = setNodeChildren(treeRoots, node.path, entries);
-    } else {
-      const parent = findNode(treeRoots, requestedPath);
-      treeRoots = parent?.kind === "directory" ? setNodeChildren(treeRoots, requestedPath, entries) : replaceRoots(entries);
-    }
-    renderTree();
+    await refreshPath(node.kind === "directory" ? node.path : parentPathOf(node.path));
     showToast("Explorer refreshed.");
   } catch {
     showToast("Refresh failed.");
@@ -973,33 +1030,48 @@ function hideContextMenu(): void {
 
 function startInlineCreate(node: TreeNode, kind: TreeNodeKind): void {
   const row = treeElement.querySelector<HTMLElement>(`[data-path="${cssEscape(node.path)}"]`);
-  if (!row) {
-    return;
-  }
-
   const input = document.createElement("input");
   input.className = "inline-create";
   input.placeholder = kind === "directory" ? "New folder name" : "New file name";
-  row.insertAdjacentElement("afterend", input);
+  if (row) {
+    row.insertAdjacentElement("afterend", input);
+  } else {
+    // The project root has no row; creating at the top level puts the input
+    // at the head of the tree.
+    treeElement.prepend(input);
+  }
   input.focus();
 
+  // Removing a focused input fires a synchronous blur; detaching the blur
+  // listener FIRST prevents the re-entrant remove() that used to throw inside
+  // commitInlineCreate and silently skip the tree refresh after a create.
+  function dispose(): void {
+    input.removeEventListener("blur", onBlur);
+    input.remove();
+  }
+  function onBlur(): void {
+    dispose();
+  }
+  input.addEventListener("blur", onBlur);
   input.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      input.remove();
+      dispose();
     } else if (event.key === "Enter") {
       event.preventDefault();
-      void commitInlineCreate(node, kind, input);
+      void commitInlineCreate(node, kind, input, dispose);
     }
-  });
-  input.addEventListener("blur", () => {
-    input.remove();
   });
 }
 
-async function commitInlineCreate(node: TreeNode, kind: TreeNodeKind, input: HTMLInputElement): Promise<void> {
+async function commitInlineCreate(
+  node: TreeNode,
+  kind: TreeNodeKind,
+  input: HTMLInputElement,
+  dispose: () => void
+): Promise<void> {
   const request = createTargetFor(node, kind, input.value, node.kind === "directory");
   if (request.name.length === 0) {
-    input.remove();
+    dispose();
     return;
   }
 
@@ -1011,19 +1083,21 @@ async function commitInlineCreate(node: TreeNode, kind: TreeNodeKind, input: HTM
   } catch {
     showToast("Create failed.");
   } finally {
-    input.remove();
+    dispose();
   }
 
-  if (createdPath && node.kind === "directory") {
-    const current = findNode(treeRoots, node.path);
-    treeRoots = setNodeChildren(treeRoots, node.path, [...(current?.children ?? []), entryToNode({
-      name: request.name,
-      path: createdPath,
-      isDirectory: kind === "directory"
-    })]);
-    renderTree();
-  } else if (createdPath) {
-    await refreshNode(node);
+  if (createdPath) {
+    // Always re-list the parent from disk so the new entry appears immediately
+    // (sorted in place) without a manual refresh.
+    selectedPath = createdPath;
+    if (request.parentPath !== projectRoot) {
+      treeRoots = setNodeExpanded(treeRoots, request.parentPath, true);
+    }
+    try {
+      await refreshPath(request.parentPath);
+    } catch {
+      showToast("Refresh failed.");
+    }
   }
 }
 
@@ -1401,7 +1475,9 @@ function setExplorerCollapsed(collapsed: boolean): void {
 
 function updateProjectName(sourcePath: string): void {
   titleProjectName.textContent = sourcePath;
-  explorerProjectName.textContent = sourcePath;
+  // The explorer header names the project FOLDER (like a VS Code workspace),
+  // not the Stream Deck project label — the folder is the tree's top level.
+  explorerProjectName.textContent = projectNameFromPath(projectRoot);
 }
 
 function showToast(message: string): void {

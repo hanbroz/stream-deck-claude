@@ -111,18 +111,3 @@ export function explorerIconPath(name: string, kind: "directory" | "file"): stri
       "document.svg"
   );
 }
-
-/** Uses VS Code-like chevrons while keeping the loading state explicit. */
-export function explorerChevron(
-  kind: "directory" | "file",
-  expanded = false,
-  loading = false
-): string {
-  if (kind !== "directory") {
-    return "";
-  }
-  if (loading) {
-    return "…";
-  }
-  return expanded ? "⌄" : "›";
-}
