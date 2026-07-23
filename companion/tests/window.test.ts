@@ -23,9 +23,10 @@ describe("companionWindowOptions", () => {
     expect(options.icon).toBeUndefined();
   });
 
-  it("sets the window icon only when a path is provided", () => {
-    expect(companionWindowOptions("D:\\app\\preload.cjs", undefined, "D:\\app\\assets\\icon.png").icon)
-      .toBe("D:\\app\\assets\\icon.png");
+  it("sets the window icon only when one is provided", () => {
+    const icon = { fake: "nativeImage" } as never;
+    expect(companionWindowOptions("D:\\app\\preload.cjs", undefined, icon).icon).toBe(icon);
+    expect(companionWindowOptions("D:\\app\\preload.cjs").icon).toBeUndefined();
   });
 
   it("passes runtime metadata through additional preload arguments", () => {

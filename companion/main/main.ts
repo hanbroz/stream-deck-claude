@@ -56,7 +56,16 @@ async function start(): Promise<void> {
   const diagFile = installDiagFileSink();
   const preloadPath = path.join(__dirname, "..", "preload", "index.cjs");
   const indexPath = path.join(__dirname, "..", "renderer", "index.html");
-  const iconPath = path.join(__dirname, "..", "assets", "icon.png");
+  // Load the window icon as a NativeImage rather than passing the path string:
+  // the asset lives inside app.asar and Windows' native icon loader cannot read
+  // an asar path, which made the window fall back to the default Electron icon.
+  // nativeImage.createFromPath reads through Electron's asar-aware fs.
+  const icon = nativeImage.createFromPath(path.join(__dirname, "..", "assets", "icon.png"));
+  const windowIcon = icon.isEmpty() ? undefined : icon;
+  // Windows groups taskbar buttons (and their icon) by AppUserModelID.
+  if (process.platform === "win32") {
+    app.setAppUserModelId("com.hanbroz.claudedeck.companion");
+  }
   const runtimeEnv = await resolveCompanionRuntimeEnv(process.env);
   const configDir = process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(
     process.env.USERPROFILE?.trim() || os.homedir(),
@@ -79,7 +88,7 @@ async function start(): Promise<void> {
     preloadPath,
     runtimeMetadata: runtimeEnv.metadata,
     indexPath,
-    iconPath,
+    icon: windowIcon,
     beforeLoad: (createdWindow) => {
       registerCompanionIpc({
         ipcMain,

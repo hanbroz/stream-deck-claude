@@ -31,14 +31,14 @@ export type CompanionWindowOptions = {
   runtimeMetadata?: RuntimeProjectMetadata;
   indexPath?: string;
   devServerUrl?: string;
-  iconPath?: string;
+  icon?: BrowserWindowConstructorOptions["icon"];
   beforeLoad?: (window: BrowserWindowLike) => void | Promise<void>;
 };
 
 export function companionWindowOptions(
   preloadPath: string,
   runtimeMetadata?: RuntimeProjectMetadata,
-  iconPath?: string
+  icon?: BrowserWindowConstructorOptions["icon"]
 ): BrowserWindowConstructorOptions {
   return {
     width: 1280,
@@ -49,7 +49,7 @@ export function companionWindowOptions(
     frame: false,
     titleBarStyle: "hidden",
     backgroundColor: "#101418",
-    ...(iconPath ? { icon: iconPath } : {}),
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -68,7 +68,7 @@ export async function createCompanionWindow(
   options: CompanionWindowOptions
 ): Promise<BrowserWindowLike> {
   const window = new options.BrowserWindow(
-    companionWindowOptions(options.preloadPath, options.runtimeMetadata, options.iconPath)
+    companionWindowOptions(options.preloadPath, options.runtimeMetadata, options.icon)
   );
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
