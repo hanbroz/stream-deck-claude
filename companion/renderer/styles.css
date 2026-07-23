@@ -146,6 +146,13 @@ button:disabled {
   color: #6e6e6e;
 }
 
+.titlebar__version {
+  margin-left: 8px;
+  color: #8a8a8a;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .window-controls {
   display: flex;
   height: 100%;
@@ -541,32 +548,66 @@ body.is-split-resizing.is-resizing-rows * {
   min-width: 0;
   flex: 1;
   align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
-  padding-right: 16px;
+  padding: 0 16px;
+}
+
+/* CTX meter fills all tab-bar space left by the two tabs. */
+.ctx-meter {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.ctx-meter__label {
+  flex: 0 0 auto;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
-.session-tabs__meta span {
+.ctx-meter__track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 12px;
+  border-radius: 6px;
   overflow: hidden;
-  max-width: 220px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /*
+   * A green->red spectrum fixed to the full track width. The cover hides the
+   * unused right portion, so the visible left slice runs green at 0% toward
+   * red as usage grows — the bar reddens the fuller the context gets.
+   */
+  background: linear-gradient(
+    to right,
+    #3fb950 0%,
+    #86c33f 25%,
+    #d4c13f 50%,
+    #e0902f 75%,
+    #d64524 100%
+  );
 }
 
-.session-tabs__meta span:last-child {
-  border-radius: 5px;
+.ctx-meter__cover {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: 0;
   background: #2d2d2d;
-  color: #a0a0a0;
-  padding: 2px 8px;
+  transition: left 0.35s ease;
 }
 
-#tab-context {
-  border-radius: 5px;
-  background: #2d2d2d;
+.ctx-meter__value {
+  flex: 0 0 auto;
+  min-width: 40px;
   color: var(--accent);
-  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .work-split {
@@ -590,6 +631,190 @@ body.is-split-resizing.is-resizing-rows * {
     monospace;
   font-size: 13px;
   line-height: 1.7;
+}
+
+/* Conversation transcript ------------------------------------------------- */
+
+.turn {
+  margin: 0 0 16px;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.turn__role {
+  margin-bottom: 4px;
+  color: #8a8a8a;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.turn--user .turn__role {
+  color: var(--accent, #d97757);
+}
+
+.turn--user .turn__body {
+  padding: 8px 12px;
+  border-left: 2px solid var(--accent, #d97757);
+  border-radius: 0 6px 6px 0;
+  background: #242424;
+  color: #d8d8d8;
+  white-space: pre-wrap;
+}
+
+.turn--error .turn__role {
+  color: #c8553d;
+}
+
+.turn--error .turn__body {
+  color: #e0846f;
+}
+
+.md-paragraph {
+  margin: 0 0 8px;
+}
+
+.md-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.md-heading {
+  margin: 14px 0 6px;
+  color: #f0f0f0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.md-list {
+  margin: 0 0 8px;
+  padding-left: 22px;
+}
+
+.md-list li {
+  margin-bottom: 3px;
+}
+
+.md-quote {
+  margin: 0 0 8px;
+  padding-left: 10px;
+  border-left: 2px solid #4a4a4a;
+  color: #a8a8a8;
+}
+
+.md-code-inline {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #2d2d2d;
+  color: #e6b9a3;
+  font-size: 0.92em;
+}
+
+.md-code-block {
+  margin: 0 0 10px;
+  overflow: hidden;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #161616;
+}
+
+.md-code-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border-bottom: 1px solid #333;
+  background: #1f1f1f;
+  color: #8a8a8a;
+  font-size: 11px;
+}
+
+.md-code-block__copy {
+  padding: 2px 8px;
+  border: 1px solid #3d3d3d;
+  border-radius: 4px;
+  background: transparent;
+  color: #b0b0b0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.md-code-block__copy:hover {
+  border-color: var(--accent, #d97757);
+  color: #e8e8e8;
+}
+
+.md-code-block pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+.md-code-block code {
+  color: #dcdcdc;
+  font-family: "Cascadia Code", "D2Coding", Consolas, monospace;
+  white-space: pre;
+}
+
+.claude-status {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #2b2b2b;
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+
+.claude-status__dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6e6e6e;
+  transform: translateY(-1px);
+}
+
+/* Busy phases pulse so a multi-second wait reads as progress, not a freeze. */
+.claude-status[data-busy="true"] .claude-status__dot {
+  background: var(--accent, #d97757);
+  animation: claude-status-pulse 1.2s ease-in-out infinite;
+}
+
+.claude-status[data-phase="waiting"] .claude-status__dot,
+.claude-status[data-phase="ready"] .claude-status__dot {
+  background: #4f9d69;
+}
+
+.claude-status[data-phase="error"] .claude-status__dot {
+  background: #c8553d;
+  animation: none;
+}
+
+.claude-status__text {
+  color: #c9c9c9;
+}
+
+.claude-status__detail {
+  overflow: hidden;
+  color: #7d7d7d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes claude-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claude-status[data-busy="true"] .claude-status__dot {
+    animation: none;
+  }
 }
 
 .console-log {
@@ -681,6 +906,7 @@ body.is-split-resizing.is-resizing-rows * {
 }
 
 .terminal-panel__content {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
@@ -690,6 +916,28 @@ body.is-split-resizing.is-resizing-rows * {
   font-family: "Cascadia Code", "D2Coding", Consolas, monospace;
   font-size: 12.5px;
   line-height: 1.65;
+}
+
+/* Brief "copied" confirmation under the terminal, fading in and out. */
+.terminal-copy-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%) translateY(6px);
+  padding: 5px 14px;
+  border: 1px solid #3d3d3d;
+  border-radius: 14px;
+  background: rgba(30, 30, 30, 0.94);
+  color: #e8e8e8;
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.terminal-copy-toast.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .terminal-panel__content p {
@@ -771,12 +1019,9 @@ body.is-split-resizing.is-resizing-rows * {
 }
 
 .composer__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: block;
   min-height: 0;
   flex: 1;
-  gap: 10px;
-  align-items: stretch;
   border: 1px solid #3a3a3a;
   border-radius: 12px;
   background: var(--surface-2);
@@ -785,6 +1030,66 @@ body.is-split-resizing.is-resizing-rows * {
 
 .composer__row:focus-within {
   border-color: var(--accent);
+}
+
+.composer__controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.composer__controls-left {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.composer__control {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #9a9a9a;
+  font-size: 12px;
+}
+
+.composer__control-label {
+  color: #7d7d7d;
+}
+
+.composer__control select {
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: #e0e0e0;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.composer__control select:hover,
+.composer__control select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.composer__clear {
+  padding: 5px 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: transparent;
+  color: #c0c0c0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.composer__clear:hover {
+  border-color: var(--accent);
+  color: #f0f0f0;
 }
 
 textarea {
@@ -798,7 +1103,10 @@ textarea {
   color: #e6e6e6;
   outline: none;
   padding: 0;
-  line-height: 1.5;
+  /* Match the Console transcript so input and output read as one surface. */
+  font-family: "Cascadia Code", "D2Coding", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .image-preview {

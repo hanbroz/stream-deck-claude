@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Backstop against a future markup regression: scripts are restricted to
+      the bundle ('self'), remote/object sources are denied. 'unsafe-inline'
+      stays for style because xterm.js injects its stylesheet at runtime.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;" />
     <title>Claude Companion</title>
     <link rel="stylesheet" href="./index.css" />
     <link rel="stylesheet" href="./styles.css" />
@@ -15,6 +21,7 @@
           <span>STREAM DECK TERMINAL</span>
           <span class="titlebar__divider">-</span>
           <strong id="title-project-name">project</strong>
+          <span id="title-build-version" class="titlebar__version" title="Companion build time"></span>
         </div>
         <div class="window-controls" aria-label="Window controls">
           <button id="window-minimize" class="window-control" type="button" title="Minimize" aria-label="Minimize">
@@ -47,7 +54,6 @@
               <button id="open-terminal" class="icon-button icon-button--small" type="button" title="Open project terminal" aria-label="Open project terminal">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4M12 16h7" /></svg>
               </button>
-              <button id="new-session" class="icon-button icon-button--small" type="button" title="New Claude session" aria-label="New Claude session">+</button>
             </div>
           </header>
 
@@ -89,15 +95,24 @@
               <span id="terminal-split-sign">+</span>
             </button>
             <div class="session-tabs__meta">
-              <span id="tab-model">Claude Code</span>
-              <span id="tab-context">CTX --</span>
-              <span id="tab-project-name">project</span>
+              <div id="ctx-meter" class="ctx-meter" role="progressbar" aria-label="컨텍스트 사용률" aria-valuemin="0" aria-valuemax="100">
+                <span class="ctx-meter__label">CTX</span>
+                <div class="ctx-meter__track">
+                  <div id="ctx-meter-cover" class="ctx-meter__cover"></div>
+                </div>
+                <span id="ctx-meter-value" class="ctx-meter__value">--</span>
+              </div>
             </div>
           </nav>
 
           <div id="work-split" class="work-split">
             <section class="console-pane" aria-label="Read-only Claude console">
               <div id="console-log" class="console-log" aria-live="polite" aria-readonly="true"></div>
+              <div id="claude-status" class="claude-status" role="status" aria-live="polite">
+                <span id="claude-status-dot" class="claude-status__dot"></span>
+                <span id="claude-status-text" class="claude-status__text">메시지를 입력하세요</span>
+                <span id="claude-status-detail" class="claude-status__detail"></span>
+              </div>
             </section>
 
             <div
@@ -114,11 +129,12 @@
 
             <section id="terminal-panel" class="terminal-panel" aria-label="Embedded terminal">
               <header class="terminal-panel__header">
-                <span>Embedded terminal</span>
+                <span id="terminal-panel-title">PowerShell</span>
                 <button id="terminal-panel-close" class="icon-button icon-button--small" type="button" title="Close terminal panel" aria-label="Close terminal panel">x</button>
               </header>
               <div class="terminal-panel__content">
                 <div id="terminal" class="terminal" aria-label="Interactive embedded terminal"></div>
+                <div id="terminal-copy-toast" class="terminal-copy-toast" role="status" aria-live="polite" hidden>클립보드에 복사되었습니다</div>
               </div>
             </section>
           </div>
@@ -142,10 +158,33 @@
                 id="prompt-input"
                 rows="8"
                 spellcheck="false"
-                placeholder="Write to Claude Code. Enter sends, Shift+Enter inserts a new line."
+                placeholder="Claude Code에 입력하세요. Enter 전송, Shift+Enter 줄바꿈."
                 aria-label="Prompt input"
               ></textarea>
-              <button id="send-prompt" type="button" title="Send message" aria-label="Send message">전송</button>
+            </div>
+            <div class="composer__controls">
+              <div class="composer__controls-left">
+                <label class="composer__control">
+                  <span class="composer__control-label">Model</span>
+                  <select id="model-select" aria-label="Claude 모델">
+                    <option value="opus">Opus 4.8</option>
+                    <option value="sonnet">Sonnet 5</option>
+                    <option value="haiku">Haiku 4.5</option>
+                    <option value="fable">Fable 5</option>
+                  </select>
+                </label>
+                <label class="composer__control">
+                  <span class="composer__control-label">Effort</span>
+                  <select id="effort-select" aria-label="Effort 수준">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="xhigh">Xhigh</option>
+                    <option value="max">Max</option>
+                  </select>
+                </label>
+              </div>
+              <button id="clear-session" type="button" class="composer__clear" title="새 대화 시작 (/clear)">Clear</button>
             </div>
           </footer>
         </section>

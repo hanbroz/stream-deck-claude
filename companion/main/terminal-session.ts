@@ -8,7 +8,7 @@ import type {
   TerminalSessionStartRequest,
   TerminalShell
 } from "../shared/claude-command";
-import type { PtyFactory, PtyLike } from "./claude-session";
+import type { PtyFactory, PtyLike } from "./pty-types";
 
 export type ProjectTerminalEvents = {
   data: [sessionId: string, data: string];
@@ -26,11 +26,30 @@ export type ProjectTerminalManagerOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
-function commandForShell(shell: TerminalShell): { file: string; args: string[] } {
+/**
+ * Replace PowerShell's default full-path prompt with one relative to the
+ * project root, e.g. `> ` at the root and `\raw> ` inside a subfolder. The root
+ * arrives as an environment variable so its Korean/space/backslash characters
+ * never have to survive command-line quoting.
+ */
+export const POWERSHELL_PROMPT_SCRIPT =
+  "$global:CompanionRoot=$env:CLAUDE_TERMINAL_ROOT; " +
+  "function prompt { $r=$global:CompanionRoot; $p=(Get-Location).Path; " +
+  "if($r -and $p.ToLower().StartsWith($r.ToLower())){ $rel=$p.Substring($r.Length); " +
+  "if([string]::IsNullOrEmpty($rel)){'> '}else{ $rel+'> ' } } else { $p+'> ' } }";
+
+function commandForShell(
+  shell: TerminalShell,
+  hasPromptRoot: boolean
+): { file: string; args: string[] } {
   if (shell === "cmd") {
     return { file: "cmd.exe", args: [] };
   }
-  return { file: "powershell.exe", args: ["-NoLogo"] };
+  // -NoExit keeps the shell interactive after the prompt override runs.
+  const args = hasPromptRoot
+    ? ["-NoLogo", "-NoExit", "-Command", POWERSHELL_PROMPT_SCRIPT]
+    : ["-NoLogo"];
+  return { file: "powershell.exe", args };
 }
 
 export class ProjectTerminalManager extends EventEmitter<ProjectTerminalEvents> {
@@ -44,13 +63,20 @@ export class ProjectTerminalManager extends EventEmitter<ProjectTerminalEvents> 
     this.env = options.env ?? process.env;
   }
 
-  start(request: TerminalSessionStartRequest & { cwd: string }): TerminalSessionStarted {
+  start(
+    request: TerminalSessionStartRequest & { cwd: string; promptRoot?: string }
+  ): TerminalSessionStarted {
     const shell = request.shell ?? "powershell";
-    const command = commandForShell(shell);
+    const promptRoot = request.promptRoot;
+    const command = commandForShell(shell, promptRoot !== undefined);
     const sessionId = randomUUID();
     const terminal = this.ptyFactory(command.file, command.args, {
       cwd: request.cwd,
-      env: { ...this.env, TERM: this.env.TERM ?? "xterm-256color" },
+      env: {
+        ...this.env,
+        TERM: this.env.TERM ?? "xterm-256color",
+        ...(promptRoot !== undefined ? { CLAUDE_TERMINAL_ROOT: promptRoot } : {})
+      },
       cols: request.cols ?? 120,
       rows: request.rows ?? 30
     });

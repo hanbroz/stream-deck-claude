@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { ProjectTerminalManager } from "../main/terminal-session";
+import { POWERSHELL_PROMPT_SCRIPT, ProjectTerminalManager } from "../main/terminal-session";
 
 function fakePty() {
   const data = new EventEmitter();
@@ -52,6 +52,22 @@ describe("ProjectTerminalManager", () => {
     );
     expect(data).toHaveBeenCalledWith(started.sessionId, "ready");
     expect(exit).toHaveBeenCalledWith(started.sessionId, 0, undefined);
+  });
+
+  it("injects a project-relative prompt and passes the root via the environment", () => {
+    const terminal = fakePty();
+    const ptyFactory = vi.fn(() => terminal);
+    const manager = new ProjectTerminalManager({ ptyFactory, env: { Path: "test-bin" } });
+
+    manager.start({ cwd: "G:\\내 드라이브\\2ndBrain\\2ndBrain", promptRoot: "G:\\내 드라이브\\2ndBrain\\2ndBrain" });
+
+    const call = ptyFactory.mock.calls[0] as unknown as [string, string[], { env: Record<string, string> }];
+    expect(call[0]).toBe("powershell.exe");
+    // -NoExit keeps it interactive after the prompt override; the root is not on
+    // the command line, so its Korean/space/backslash chars avoid quoting.
+    expect(call[1]).toEqual(["-NoLogo", "-NoExit", "-Command", POWERSHELL_PROMPT_SCRIPT]);
+    expect(call[1].join(" ")).not.toContain("2ndBrain");
+    expect(call[2].env.CLAUDE_TERMINAL_ROOT).toBe("G:\\내 드라이브\\2ndBrain\\2ndBrain");
   });
 
   it("supports cmd sessions plus write, resize, and kill", () => {

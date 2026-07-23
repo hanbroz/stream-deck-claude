@@ -1,15 +1,22 @@
 export type ClaudeLaunchMode = "new" | "resume";
 
+export type ClaudeModel = "opus" | "sonnet" | "haiku" | "fable";
+export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+export const CLAUDE_MODELS: readonly ClaudeModel[] = ["opus", "sonnet", "haiku", "fable"];
+export const CLAUDE_EFFORTS: readonly ClaudeEffort[] = ["low", "medium", "high", "xhigh", "max"];
+
 export type ClaudeCommandRequest = {
   cwd: string;
   mode?: ClaudeLaunchMode;
   sessionId?: string;
+  model?: ClaudeModel;
+  effort?: ClaudeEffort;
 };
 
-export type ClaudeSessionStartRequest = ClaudeCommandRequest & {
-  cols?: number;
-  rows?: number;
-};
+// A per-message `claude --print` run has no PTY, so it carries no terminal
+// dimensions — the start request is just the command request.
+export type ClaudeSessionStartRequest = ClaudeCommandRequest;
 
 export type ClaudeSessionStarted = {
   sessionId: string;
@@ -49,7 +56,8 @@ export type DirectoryEntry = {
 export const COMPANION_IPC = {
   claudeStart: "companion:claude:start",
   claudeWrite: "companion:claude:write",
-  claudeResize: "companion:claude:resize",
+  claudeConfigure: "companion:claude:configure",
+  claudeClear: "companion:claude:clear",
   claudeKill: "companion:claude:kill",
   claudePasteClipboardImage: "companion:claude:paste-clipboard-image",
   claudeData: "companion:claude:data",
@@ -67,7 +75,10 @@ export const COMPANION_IPC = {
   pathOpen: "companion:path:open",
   pathReveal: "companion:path:reveal",
   terminalOpenFolder: "companion:terminal:open-folder",
+  diag: "companion:diag",
+  claudeHistory: "companion:claude:history",
   windowMinimize: "companion:window:minimize",
+  // (claude resize removed: the per-message --print run has no PTY)
   windowToggleMaximize: "companion:window:toggle-maximize",
   windowClose: "companion:window:close"
 } as const;
@@ -84,6 +95,15 @@ function assertPlainValue(value: string, label: string): void {
   if (/[\u0000\r\n]/u.test(value)) {
     throw new Error(`${label} contains unsupported characters`);
   }
+}
+
+/**
+ * A Claude conversation id is a UUID-like token. Restricting it to this
+ * allowlist keeps it safe both as a single `--resume` argv and as a filename
+ * segment when reading transcripts (defense-in-depth over the separator checks).
+ */
+export function isSafeClaudeSessionId(value: string): boolean {
+  return /^[A-Za-z0-9._-]{1,128}$/u.test(value);
 }
 
 export function createClaudeCommandArgs(request: ClaudeCommandRequest): string[] {
@@ -104,8 +124,25 @@ export function createClaudeCommandArgs(request: ClaudeCommandRequest): string[]
     if (!request.sessionId) {
       throw new Error("sessionId is required to resume Claude");
     }
-    assertPlainValue(request.sessionId, "sessionId");
+    if (!isSafeClaudeSessionId(request.sessionId)) {
+      throw new Error("sessionId contains unsupported characters");
+    }
     args.push("--resume", request.sessionId);
+  }
+
+  // Model and effort are applied per message, so a change takes effect on the
+  // next send without restarting a long-lived session.
+  if (request.model) {
+    if (!CLAUDE_MODELS.includes(request.model)) {
+      throw new Error("Unsupported Claude model");
+    }
+    args.push("--model", request.model);
+  }
+  if (request.effort) {
+    if (!CLAUDE_EFFORTS.includes(request.effort)) {
+      throw new Error("Unsupported Claude effort");
+    }
+    args.push("--effort", request.effort);
   }
 
   return args;

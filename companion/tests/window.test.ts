@@ -20,6 +20,12 @@ describe("companionWindowOptions", () => {
       allowRunningInsecureContent: false
     });
     expect(options.webPreferences?.additionalArguments).toEqual([]);
+    expect(options.icon).toBeUndefined();
+  });
+
+  it("sets the window icon only when a path is provided", () => {
+    expect(companionWindowOptions("D:\\app\\preload.cjs", undefined, "D:\\app\\assets\\icon.png").icon)
+      .toBe("D:\\app\\assets\\icon.png");
   });
 
   it("passes runtime metadata through additional preload arguments", () => {
@@ -47,6 +53,8 @@ describe("createCompanionWindow", () => {
     const loadFile = vi.fn().mockResolvedValue(undefined);
     const loadURL = vi.fn().mockResolvedValue(undefined);
     const show = vi.fn();
+    const focus = vi.fn();
+    const setAlwaysOnTop = vi.fn();
     const beforeLoad = vi.fn();
     class FakeBrowserWindow implements BrowserWindowLike {
       public readonly webContents = {
@@ -58,6 +66,8 @@ describe("createCompanionWindow", () => {
       public loadFile = loadFile;
       public loadURL = loadURL;
       public show = show;
+      public focus = focus;
+      public setAlwaysOnTop = setAlwaysOnTop;
     }
 
     await createCompanionWindow({
@@ -73,5 +83,9 @@ describe("createCompanionWindow", () => {
     expect(beforeLoad).toHaveBeenCalledTimes(1);
     expect(loadFile).toHaveBeenCalledWith("D:\\app\\index.html");
     expect(show).toHaveBeenCalledTimes(1);
+    // Foreground the window past Windows' foreground lock: focus, then toggle
+    // always-on-top on and back off.
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(setAlwaysOnTop.mock.calls).toEqual([[true], [false]]);
   });
 });

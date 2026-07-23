@@ -131,13 +131,15 @@ describe("contained path operations", () => {
       )
     ).resolves.toBe(false);
 
+    // An invalid explicit id falls back to the folder's newest transcript
+    // rather than starting cold — Code Start should continue the last session.
     await expect(
       resolveCompanionRuntimeEnv({
         [COMPANION_FOLDER_ENV]: configured,
         [COMPANION_RESUME_SESSION_ID_ENV]: "missing-session",
         CLAUDE_CONFIG_DIR: configDir
       })
-    ).resolves.toMatchObject({ resumeSessionId: undefined, metadata: { resumeSessionId: undefined } });
+    ).resolves.toMatchObject({ resumeSessionId: "valid-session" });
     await expect(
       resolveCompanionRuntimeEnv({
         [COMPANION_FOLDER_ENV]: configured,
@@ -145,6 +147,31 @@ describe("contained path operations", () => {
         CLAUDE_CONFIG_DIR: configDir
       })
     ).resolves.toMatchObject({ resumeSessionId: "valid-session", metadata: { resumeSessionId: "valid-session" } });
+  });
+
+  it("resumes the newest transcript when Code Start passes no id", async () => {
+    const configured = path.join(root, "auto-resume");
+    const configDir = path.join(root, "auto-config");
+    await mkdir(configured);
+    const encodedFolder = (await realpath(configured)).replace(/[^a-zA-Z0-9]/g, "-");
+    const projectDir = path.join(configDir, "projects", encodedFolder);
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(path.join(projectDir, "older.jsonl"), "{}\n", "utf8");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await writeFile(path.join(projectDir, "newer.jsonl"), "{}\n", "utf8");
+
+    await expect(
+      resolveCompanionRuntimeEnv({ [COMPANION_FOLDER_ENV]: configured, CLAUDE_CONFIG_DIR: configDir })
+    ).resolves.toMatchObject({ resumeSessionId: "newer" });
+  });
+
+  it("starts fresh when the folder has no saved conversation", async () => {
+    const configured = path.join(root, "empty-project");
+    const configDir = path.join(root, "empty-config");
+    await mkdir(configured);
+    await expect(
+      resolveCompanionRuntimeEnv({ [COMPANION_FOLDER_ENV]: configured, CLAUDE_CONFIG_DIR: configDir })
+    ).resolves.toMatchObject({ resumeSessionId: undefined });
   });
 
   it("lists directories before files and creates child folders/files", async () => {

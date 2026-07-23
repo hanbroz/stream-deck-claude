@@ -46,6 +46,21 @@ describe("createClaudeCommandArgs", () => {
       "sessionId is required"
     );
   });
+
+  it("appends model and effort flags when provided", () => {
+    const args = createClaudeCommandArgs({ cwd: "D:\\repo", model: "sonnet", effort: "max" });
+    expect(args).toEqual(expect.arrayContaining(["--model", "sonnet", "--effort", "max"]));
+    expect(args).not.toContain("--resume");
+  });
+
+  it("rejects unknown model or effort values", () => {
+    expect(() => createClaudeCommandArgs({ cwd: "D:\\repo", model: "gpt" as never })).toThrow(
+      "Unsupported Claude model"
+    );
+    expect(() => createClaudeCommandArgs({ cwd: "D:\\repo", effort: "turbo" as never })).toThrow(
+      "Unsupported Claude effort"
+    );
+  });
 });
 
 describe("runtime metadata args", () => {

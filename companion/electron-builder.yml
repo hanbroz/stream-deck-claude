@@ -14,6 +14,7 @@ asarUnpack:
 # an Electron-matched native module.
 npmRebuild: false
 win:
+  icon: companion/assets/icon.ico
   target:
     - target: nsis
       arch:

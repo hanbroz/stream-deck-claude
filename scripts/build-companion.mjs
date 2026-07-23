@@ -24,12 +24,26 @@ for (const [label, filePath] of Object.entries(requiredFiles)) {
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(path.join(outputRoot, "renderer"), { recursive: true });
 
+// Keep in sync with formatBuildVersion() in companion/shared/build-version.ts.
+const buildDate = new Date();
+const pad = (value) => String(value).padStart(2, "0");
+const buildVersion = [
+  `ver. ${buildDate.getFullYear()}`,
+  pad(buildDate.getMonth() + 1),
+  pad(buildDate.getDate()),
+  pad(buildDate.getHours()),
+  pad(buildDate.getMinutes()),
+].join(".");
+
+const define = { __COMPANION_BUILD_VERSION__: JSON.stringify(buildVersion) };
+
 const common = {
   bundle: true,
   sourcemap: true,
   target: "node20",
   platform: "node",
   logLevel: "info",
+  define,
 };
 
 await build({
@@ -63,6 +77,7 @@ if (existsSync(rendererEntry)) {
     entryPoints: [rendererEntry],
     outfile: path.join(outputRoot, "renderer", "index.js"),
     logLevel: "info",
+    define,
   });
 }
 
@@ -73,4 +88,11 @@ await cp(path.join(companionRoot, "renderer"), path.join(outputRoot, "renderer")
   },
 });
 
-console.log(`Companion app built at ${path.relative(projectRoot, outputRoot)}`);
+// App icon, loaded by the main process for the window/taskbar at runtime.
+if (existsSync(path.join(companionRoot, "assets"))) {
+  await cp(path.join(companionRoot, "assets"), path.join(outputRoot, "assets"), {
+    recursive: true,
+  });
+}
+
+console.log(`Companion app built at ${path.relative(projectRoot, outputRoot)} (${buildVersion})`);

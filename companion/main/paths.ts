@@ -1,4 +1,5 @@
 import { mkdir, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { Dirent } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -40,6 +41,43 @@ function claudeProjectsDirectory(env: NodeJS.ProcessEnv): string {
     ".claude"
   );
   return path.join(configDir, "projects");
+}
+
+/**
+ * The id of the folder's most recently modified saved conversation, or
+ * undefined when the project has none. Code Start uses this so pressing it
+ * continues where the last session left off without the user pasting an id.
+ */
+export async function newestClaudeConversationId(
+  env: NodeJS.ProcessEnv,
+  folder: string
+): Promise<string | undefined> {
+  const directory = path.join(
+    claudeProjectsDirectory(env),
+    claudeProjectDirectoryName(folder)
+  );
+  let entries: Dirent[];
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+
+  let newest: { id: string; mtimeMs: number } | undefined;
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) {
+      continue;
+    }
+    try {
+      const info = await stat(path.join(directory, entry.name));
+      if (!newest || info.mtimeMs > newest.mtimeMs) {
+        newest = { id: entry.name.slice(0, -".jsonl".length), mtimeMs: info.mtimeMs };
+      }
+    } catch {
+      // A file that vanished mid-scan simply is not a resume candidate.
+    }
+  }
+  return newest?.id;
 }
 
 /**
@@ -128,10 +166,14 @@ export async function resolveCompanionRuntimeEnv(
   const requestedResumeSessionId =
     cleanEnvValue(env[COMPANION_RESUME_ENV], COMPANION_RESUME_ENV) ??
     cleanEnvValue(env[COMPANION_RESUME_SESSION_ID_ENV], COMPANION_RESUME_SESSION_ID_ENV);
-  const hasValidResumeSession =
+  const explicitResume =
     requestedResumeSessionId !== undefined &&
-    await claudeConversationExists(env, rootPath, requestedResumeSessionId);
-  const resumeSessionId = hasValidResumeSession ? requestedResumeSessionId : undefined;
+    await claudeConversationExists(env, rootPath, requestedResumeSessionId)
+      ? requestedResumeSessionId
+      : undefined;
+  // Code Start continues the folder's most recent conversation when it did not
+  // pass an explicit id, so opening a project resumes where it left off.
+  const resumeSessionId = explicitResume ?? await newestClaudeConversationId(env, rootPath);
   const contextPercent = parseContextPercent(env[COMPANION_CONTEXT_PERCENT_ENV]);
   const localAppData = env.LOCALAPPDATA ?? path.join(env.USERPROFILE ?? process.cwd(), "AppData", "Local");
   return {

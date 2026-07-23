@@ -6,6 +6,9 @@ export type BrowserWindowLike = {
   loadFile(filePath: string): Promise<void>;
   loadURL(url: string): Promise<void>;
   show(): void;
+  focus?(): void;
+  moveTop?(): void;
+  setAlwaysOnTop?(flag: boolean): void;
   minimize?(): void;
   maximize?(): void;
   unmaximize?(): void;
@@ -28,12 +31,14 @@ export type CompanionWindowOptions = {
   runtimeMetadata?: RuntimeProjectMetadata;
   indexPath?: string;
   devServerUrl?: string;
+  iconPath?: string;
   beforeLoad?: (window: BrowserWindowLike) => void | Promise<void>;
 };
 
 export function companionWindowOptions(
   preloadPath: string,
-  runtimeMetadata?: RuntimeProjectMetadata
+  runtimeMetadata?: RuntimeProjectMetadata,
+  iconPath?: string
 ): BrowserWindowConstructorOptions {
   return {
     width: 1280,
@@ -44,6 +49,7 @@ export function companionWindowOptions(
     frame: false,
     titleBarStyle: "hidden",
     backgroundColor: "#101418",
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -62,7 +68,7 @@ export async function createCompanionWindow(
   options: CompanionWindowOptions
 ): Promise<BrowserWindowLike> {
   const window = new options.BrowserWindow(
-    companionWindowOptions(options.preloadPath, options.runtimeMetadata)
+    companionWindowOptions(options.preloadPath, options.runtimeMetadata, options.iconPath)
   );
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -79,7 +85,14 @@ export async function createCompanionWindow(
   } else {
     await window.loadURL("about:blank");
   }
+  // Stream Deck spawns the Companion, so Windows' foreground lock leaves the
+  // window behind the active app. Briefly forcing always-on-top pulls it to the
+  // front, then releasing lets it behave like a normal window.
   window.show();
+  window.moveTop?.();
+  window.focus?.();
+  window.setAlwaysOnTop?.(true);
+  window.setAlwaysOnTop?.(false);
 
   return window;
 }

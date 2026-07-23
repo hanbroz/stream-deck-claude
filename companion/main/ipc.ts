@@ -1,11 +1,16 @@
 import type { WebContents } from "electron";
 
 import {
+  CLAUDE_EFFORTS,
+  CLAUDE_MODELS,
   COMPANION_IPC,
+  type ClaudeEffort,
+  type ClaudeModel,
   type ClaudeSessionStartRequest,
   type TerminalSessionStartRequest
 } from "../shared/claude-command";
 import { ClaudePtyManager, type ClipboardImageReader } from "./claude-session";
+import { diag, emitDiagLine } from "../shared/diag";
 import {
   createContainedDirectory,
   createContainedFile,
@@ -16,6 +21,7 @@ import {
   type PathShell
 } from "./paths";
 import { ProjectTerminalManager } from "./terminal-session";
+import type { ConversationHistoryReader, HistoryPage } from "./transcript-history";
 import type { CompanionSessionStatus } from "./session-status";
 import { openWindowsTerminalFolder } from "./windows-terminal";
 
@@ -52,6 +58,7 @@ export type CompanionIpcDependencies = {
   shell: PathShell;
   openTerminalFolder?: (folder: string) => unknown;
   sessionStatus?: () => Promise<CompanionSessionStatus> | CompanionSessionStatus;
+  historyReader?: ConversationHistoryReader;
 };
 
 type SenderEvent = {
@@ -99,6 +106,20 @@ function optionalImageDataUrls(value: unknown): string[] {
   });
 }
 
+function requireClaudeModel(value: unknown): ClaudeModel {
+  if (typeof value !== "string" || !CLAUDE_MODELS.includes(value as ClaudeModel)) {
+    throw new Error("model is invalid");
+  }
+  return value as ClaudeModel;
+}
+
+function requireClaudeEffort(value: unknown): ClaudeEffort {
+  if (typeof value !== "string" || !CLAUDE_EFFORTS.includes(value as ClaudeEffort)) {
+    throw new Error("effort is invalid");
+  }
+  return value as ClaudeEffort;
+}
+
 function requireClaudeStartRequest(value: unknown): ClaudeSessionStartRequest {
   if (typeof value !== "object" || value === null) {
     throw new Error("Claude start request must be an object");
@@ -108,20 +129,12 @@ function requireClaudeStartRequest(value: unknown): ClaudeSessionStartRequest {
   if (mode !== undefined && mode !== "new" && mode !== "resume") {
     throw new Error("Claude launch mode is invalid");
   }
-  const cols = request.cols;
-  const rows = request.rows;
-  if (cols !== undefined && typeof cols !== "number") {
-    throw new Error("cols must be a number");
-  }
-  if (rows !== undefined && typeof rows !== "number") {
-    throw new Error("rows must be a number");
-  }
   return {
     cwd: requireString(request.cwd, "cwd"),
     mode,
     sessionId: optionalString(request.sessionId, "sessionId"),
-    cols,
-    rows
+    model: request.model === undefined ? undefined : requireClaudeModel(request.model),
+    effort: request.effort === undefined ? undefined : requireClaudeEffort(request.effort)
   };
 }
 
@@ -158,8 +171,9 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   const terminalManager = deps.terminalManager ?? new ProjectTerminalManager();
   const openTerminal = deps.openTerminalFolder ?? openWindowsTerminalFolder;
 
-  ptyManager.on("data", (sessionId, data) => {
-    deps.window.webContents.send(COMPANION_IPC.claudeData, { sessionId, data });
+  ptyManager.on("data", (sessionId, events) => {
+    diag("main.ipc.claudeData.send", { sessionId, eventCount: events.length });
+    deps.window.webContents.send(COMPANION_IPC.claudeData, { sessionId, events });
   });
   ptyManager.on("exit", (sessionId, exitCode, signal) => {
     deps.window.webContents.send(COMPANION_IPC.claudeExit, {
@@ -236,7 +250,8 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
     async (_event: SenderEvent, request: unknown) => {
       const validated = requireTerminalStartRequest(request);
       const cwd = await resolveContainedDirectory(deps.rootPath, validated.cwd ?? ".");
-      return terminalManager.start({ ...validated, cwd });
+      // The prompt shows paths relative to the project root.
+      return terminalManager.start({ ...validated, cwd, promptRoot: deps.rootPath });
     }
   );
   deps.ipcMain.handle(COMPANION_IPC.sessionStatus, () => deps.sessionStatus?.() ?? {});
@@ -255,18 +270,50 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   });
 
   deps.ipcMain.handle(COMPANION_IPC.claudeWrite, (_event: SenderEvent, sessionId, data, imageDataUrls) => {
-    ptyManager.write(
-      requireString(sessionId, "sessionId"),
-      requireString(data, "data"),
-      optionalImageDataUrls(imageDataUrls)
-    );
-  });
-  deps.ipcMain.on(COMPANION_IPC.claudeResize, (_event: SenderEvent, sessionId, cols, rows) => {
-    if (typeof cols !== "number" || typeof rows !== "number") {
-      throw new Error("PTY dimensions must be numbers");
+    diag("main.ipc.claudeWrite", {
+      sessionId: typeof sessionId === "string" ? sessionId : typeof sessionId,
+      dataLength: typeof data === "string" ? data.length : -1
+    });
+    try {
+      ptyManager.write(
+        requireString(sessionId, "sessionId"),
+        requireString(data, "data"),
+        optionalImageDataUrls(imageDataUrls)
+      );
+    } catch (error) {
+      diag("main.ipc.claudeWrite.error", {
+        reason: error instanceof Error ? error.message : "unknown"
+      });
+      throw error;
     }
-    ptyManager.resize(requireString(sessionId, "sessionId"), cols, rows);
   });
+  deps.ipcMain.on(COMPANION_IPC.diag, (_event: SenderEvent, line) => {
+    if (typeof line === "string") {
+      emitDiagLine(line);
+    }
+  });
+  deps.ipcMain.handle(COMPANION_IPC.claudeConfigure, (_event: SenderEvent, sessionId, options) => {
+    const config = (options ?? {}) as { model?: unknown; effort?: unknown };
+    ptyManager.configure(requireString(sessionId, "sessionId"), {
+      model: config.model === undefined ? undefined : requireClaudeModel(config.model),
+      effort: config.effort === undefined ? undefined : requireClaudeEffort(config.effort)
+    });
+  });
+  deps.ipcMain.handle(COMPANION_IPC.claudeClear, (_event: SenderEvent, sessionId) => {
+    ptyManager.clear(requireString(sessionId, "sessionId"));
+  });
+  deps.ipcMain.handle(
+    COMPANION_IPC.claudeHistory,
+    async (_event: SenderEvent, sessionId, offset, limit): Promise<HistoryPage> => {
+      if (!deps.historyReader) {
+        return { messages: [], total: 0, hasMore: false };
+      }
+      const safeOffset = typeof offset === "number" && offset >= 0 ? Math.floor(offset) : 0;
+      // Cap the window so a bad caller cannot request an unbounded slice.
+      const safeLimit = typeof limit === "number" ? Math.min(Math.max(Math.floor(limit), 1), 200) : 20;
+      return deps.historyReader.page(requireString(sessionId, "sessionId"), safeOffset, safeLimit);
+    }
+  );
   deps.ipcMain.on(COMPANION_IPC.claudeKill, (_event: SenderEvent, sessionId) => {
     ptyManager.kill(requireString(sessionId, "sessionId"));
   });

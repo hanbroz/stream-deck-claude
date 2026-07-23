@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   COMPANION_IPC,
   readRuntimeProjectMetadataArg,
+  type ClaudeEffort,
+  type ClaudeModel,
   type ClaudeSessionStartRequest,
   type ClaudeSessionStarted,
   type DirectoryEntry,
@@ -11,6 +13,9 @@ import {
   type TerminalSessionStartRequest
 } from "../shared/claude-command";
 import type { CompanionSessionStatus } from "../main/session-status";
+import type { HistoryPage } from "../main/transcript-history";
+import type { ClaudeEvent } from "../shared/claude-stream";
+import { diag, setDiagSink } from "../shared/diag";
 
 export type ClaudeCompanionApi = {
   runtime: {
@@ -24,10 +29,12 @@ export type ClaudeCompanionApi = {
   claude: {
     start(request: ClaudeSessionStartRequest): Promise<ClaudeSessionStarted>;
     write(sessionId: string, data: string, imageDataUrls?: string[]): Promise<void>;
-    resize(sessionId: string, cols: number, rows: number): void;
+    configure(sessionId: string, options: { model?: ClaudeModel; effort?: ClaudeEffort }): Promise<void>;
+    clear(sessionId: string): Promise<void>;
+    history(sessionId: string, offset: number, limit: number): Promise<HistoryPage>;
     kill(sessionId: string): void;
     pasteClipboardImage(sessionId: string, imageDataUrl?: string): Promise<boolean>;
-    onData(listener: (message: { sessionId: string; data: string }) => void): () => void;
+    onData(listener: (message: { sessionId: string; events: ClaudeEvent[] }) => void): () => void;
     onExit(
       listener: (message: {
         sessionId: string;
@@ -61,6 +68,7 @@ export type ClaudeCompanionApi = {
   session: {
     status(): Promise<CompanionSessionStatus>;
   };
+  diag(line: string): void;
   windowControls: {
     minimize(): Promise<void>;
     toggleMaximize(): Promise<void>;
@@ -79,6 +87,11 @@ function subscribe<T>(
 
 const runtimeMetadata = readRuntimeProjectMetadataArg(process.argv);
 
+const forwardDiag = (line: string): void => {
+  ipcRenderer.send(COMPANION_IPC.diag, line);
+};
+setDiagSink(forwardDiag);
+
 const api: ClaudeCompanionApi = {
   runtime: {
     metadata: runtimeMetadata,
@@ -90,10 +103,31 @@ const api: ClaudeCompanionApi = {
   },
   claude: {
     start: (request) => ipcRenderer.invoke(COMPANION_IPC.claudeStart, request),
-    write: (sessionId, data, imageDataUrls) =>
-      ipcRenderer.invoke(COMPANION_IPC.claudeWrite, sessionId, data, imageDataUrls),
-    resize: (sessionId, cols, rows) =>
-      ipcRenderer.send(COMPANION_IPC.claudeResize, sessionId, cols, rows),
+    write: (sessionId, data, imageDataUrls) => {
+      diag("preload.write.invoke", {
+        sessionId,
+        textLength: data.length,
+        imageCount: imageDataUrls?.length ?? 0
+      });
+      return ipcRenderer
+        .invoke(COMPANION_IPC.claudeWrite, sessionId, data, imageDataUrls)
+        .then((result) => {
+          diag("preload.write.ok", { sessionId });
+          return result;
+        })
+        .catch((error: unknown) => {
+          diag("preload.write.error", {
+            sessionId,
+            reason: error instanceof Error ? error.message : "unknown"
+          });
+          throw error;
+        });
+    },
+    configure: (sessionId, options) =>
+      ipcRenderer.invoke(COMPANION_IPC.claudeConfigure, sessionId, options),
+    clear: (sessionId) => ipcRenderer.invoke(COMPANION_IPC.claudeClear, sessionId),
+    history: (sessionId, offset, limit) =>
+      ipcRenderer.invoke(COMPANION_IPC.claudeHistory, sessionId, offset, limit),
     kill: (sessionId) => ipcRenderer.send(COMPANION_IPC.claudeKill, sessionId),
     pasteClipboardImage: (sessionId, imageDataUrl) =>
       ipcRenderer.invoke(COMPANION_IPC.claudePasteClipboardImage, sessionId, imageDataUrl),
@@ -123,6 +157,7 @@ const api: ClaudeCompanionApi = {
   session: {
     status: () => ipcRenderer.invoke(COMPANION_IPC.sessionStatus)
   },
+  diag: forwardDiag,
   windowControls: {
     minimize: () => ipcRenderer.invoke(COMPANION_IPC.windowMinimize),
     toggleMaximize: () => ipcRenderer.invoke(COMPANION_IPC.windowToggleMaximize),
