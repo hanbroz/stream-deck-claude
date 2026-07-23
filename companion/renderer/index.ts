@@ -180,14 +180,18 @@ terminal.open(terminalElement);
 
 // Copy the selection to the clipboard when a drag ends, and confirm with a
 // brief toast under the terminal — xterm has no copy affordance of its own.
+// The copy goes through the main-process clipboard because the renderer's
+// navigator.clipboard rejects with NotAllowedError when the document is not
+// focused (e.g. mid-drag), which silently dropped both the copy and the toast.
 terminalElement.addEventListener("mouseup", () => {
   const selection = terminal.getSelection();
+  diag("renderer.terminal.copy", { length: selection.length });
   if (selection.trim().length === 0) {
     return;
   }
-  void navigator.clipboard?.writeText(selection).then(
+  void api?.clipboardWriteText(selection).then(
     () => showTerminalCopyToast(),
-    () => { /* clipboard denied: leave the selection for a manual Ctrl+C */ }
+    () => { /* leave the selection for a manual Ctrl+C if the write failed */ }
   );
 });
 

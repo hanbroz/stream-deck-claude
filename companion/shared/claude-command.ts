@@ -77,6 +77,7 @@ export const COMPANION_IPC = {
   terminalOpenFolder: "companion:terminal:open-folder",
   diag: "companion:diag",
   claudeHistory: "companion:claude:history",
+  clipboardWriteText: "companion:clipboard:write-text",
   windowMinimize: "companion:window:minimize",
   // (claude resize removed: the per-message --print run has no PTY)
   windowToggleMaximize: "companion:window:toggle-maximize",

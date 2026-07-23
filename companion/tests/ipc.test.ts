@@ -225,6 +225,15 @@ describe("registerCompanionIpc", () => {
     ).resolves.toEqual({ messages: [], total: 0, hasMore: false });
   });
 
+  it("copies terminal text through the main-process clipboard", () => {
+    const writeText = vi.fn();
+    const ipcMain = registerFor({
+      clipboard: { readImage: () => ({ isEmpty: () => true }), writeText }
+    });
+    ipcMain.handlers.get(COMPANION_IPC.clipboardWriteText)?.({}, "선택한 텍스트");
+    expect(writeText).toHaveBeenCalledWith("선택한 텍스트");
+  });
+
   it("validates model/effort on configure and rejects unknown values", () => {
     const configure = vi.fn();
     const clear = vi.fn();

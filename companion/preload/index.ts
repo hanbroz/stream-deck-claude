@@ -68,6 +68,7 @@ export type ClaudeCompanionApi = {
   session: {
     status(): Promise<CompanionSessionStatus>;
   };
+  clipboardWriteText(text: string): Promise<void>;
   diag(line: string): void;
   windowControls: {
     minimize(): Promise<void>;
@@ -157,6 +158,7 @@ const api: ClaudeCompanionApi = {
   session: {
     status: () => ipcRenderer.invoke(COMPANION_IPC.sessionStatus)
   },
+  clipboardWriteText: (text) => ipcRenderer.invoke(COMPANION_IPC.clipboardWriteText, text),
   diag: forwardDiag,
   windowControls: {
     minimize: () => ipcRenderer.invoke(COMPANION_IPC.windowMinimize),

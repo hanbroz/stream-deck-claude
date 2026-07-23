@@ -51,6 +51,7 @@ export type CompanionIpcDependencies = {
   terminalManager?: ProjectTerminalManager;
   clipboard: ClipboardImageReader & {
     writeImage?: (image: unknown) => void;
+    writeText?: (text: string) => void;
   };
   nativeImage?: {
     createFromDataURL(dataUrl: string): unknown;
@@ -291,6 +292,12 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
     if (typeof line === "string") {
       emitDiagLine(line);
     }
+  });
+  deps.ipcMain.handle(COMPANION_IPC.clipboardWriteText, (_event: SenderEvent, text) => {
+    // navigator.clipboard.writeText rejects in the sandboxed renderer when the
+    // document is not focused, so terminal copy goes through the main-process
+    // clipboard, which has no such restriction.
+    deps.clipboard.writeText?.(requireString(text, "text"));
   });
   deps.ipcMain.handle(COMPANION_IPC.claudeConfigure, (_event: SenderEvent, sessionId, options) => {
     const config = (options ?? {}) as { model?: unknown; effort?: unknown };
