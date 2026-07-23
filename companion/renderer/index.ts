@@ -153,6 +153,10 @@ let sessionStatusTimer: ReturnType<typeof setInterval> | undefined;
 let lastSessionState: SessionStatus["state"] = "idle";
 // Derived from the stream's own usage, because --print never writes a status line.
 let lastContextPercentage: number | undefined;
+// The model id the stream actually ran (init.model), so the status bar shows the
+// real model instead of the OMC statusline bridge cache, which cannot see a
+// --print session and otherwise leaves the bar reading "Claude Code".
+let lastStreamModel: string | undefined;
 let claudeModel: ClaudeModel = "opus";
 let claudeEffort: ClaudeEffort = "high";
 modelSelect.value = claudeModel;
@@ -800,8 +804,13 @@ function renderStatus(status: SessionStatus): void {
       : status.state === "ended"
         ? "Closed"
         : "Idle";
-  const model = formatModelName(status.model);
-  sessionModel.textContent = model;
+  // Truth-of-record for the running model: the stream's init.model wins; before
+  // the first reply, fall back to the dropdown's own label (the model the next
+  // message will use) so the bar never reads a stale bridge value.
+  sessionModel.textContent =
+    parseModelId(lastStreamModel)?.label ??
+    modelSelect.selectedOptions[0]?.textContent ??
+    formatModelName(status.model);
   renderContextMeter(status);
 }
 
@@ -1155,6 +1164,7 @@ async function clearSession(): Promise<void> {
   }
   clearConsoleOutput();
   lastContextPercentage = undefined;
+  lastStreamModel = undefined;
   renderStatus({ state: lastSessionState, contextPercentage: null });
   renderClaudeStatus("ready");
   showToast("새 대화를 시작했습니다.");
@@ -1198,6 +1208,10 @@ async function sendIntent(intent: SubmitIntent): Promise<void> {
     }
 
     const session = activeClaudeSession;
+    // The dropdowns are the source of truth: apply them right before sending so
+    // a change that landed while the session was still starting (or that never
+    // reached configure) always takes effect on this message.
+    await api.claude.configure(session.sessionId, { model: claudeModel, effort: claudeEffort });
     if (session.mode === "resume") {
       pendingResumeIntents.set(session.sessionId, [
         ...(pendingResumeIntents.get(session.sessionId) ?? []),
@@ -1335,6 +1349,9 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       renderClaudeStatus(event.phase, event.detail);
     } else if (event.kind === "context") {
       diag("renderer.context", { usedTokens: event.usedTokens, windowTokens: event.windowTokens });
+      if (event.model) {
+        lastStreamModel = event.model;
+      }
       renderContextUsage(event.usedTokens, event.windowTokens);
       updateModelOptionLabel(event.model);
     } else {
