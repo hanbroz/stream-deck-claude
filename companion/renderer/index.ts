@@ -46,6 +46,11 @@ import {
   type TreeNodeKind
 } from "../shared/tree-state";
 import type { ClaudeEvent, ClaudePhase } from "../shared/claude-stream";
+import {
+  applySlashCommand,
+  filterSlashCommands,
+  type SlashCommand
+} from "../shared/slash-commands";
 import { diag, setDiagSink } from "../shared/diag";
 import { createTurn, paintTurn, type Turn, type TurnRole } from "./transcript";
 import { companionBuildVersion } from "../shared/build-version";
@@ -111,6 +116,7 @@ const composerResizer = mustElement<HTMLDivElement>("composer-resizer");
 const modelSelect = mustElement<HTMLSelectElement>("model-select");
 const effortSelect = mustElement<HTMLSelectElement>("effort-select");
 const applyModelButton = mustElement<HTMLButtonElement>("apply-model");
+const commandMenu = mustElement<HTMLElement>("command-menu");
 const clearSessionButton = mustElement<HTMLButtonElement>("clear-session");
 const windowMinimize = mustElement<HTMLButtonElement>("window-minimize");
 const windowMaximize = mustElement<HTMLButtonElement>("window-maximize");
@@ -450,14 +456,85 @@ promptInput.addEventListener("input", () => {
   composer = setComposerText(composer, promptInput.value);
   // Real typing leaves history navigation and starts a fresh draft.
   historyIndex = inputHistory.length;
+  updateCommandMenu();
 });
+
+// ── Slash command menu ──
+// Typing "/" lists the available commands; picking one stages "/name " with
+// the caret after the space so the user can add arguments, and Enter then
+// sends it like any other message.
+let slashCommands: SlashCommand[] = [];
+let commandMatches: SlashCommand[] = [];
+let commandIndex = 0;
+
+function hideCommandMenu(): void {
+  commandMatches = [];
+  commandMenu.hidden = true;
+}
+
+function updateCommandMenu(): void {
+  const matches = filterSlashCommands(slashCommands, promptInput.value);
+  if (!matches) {
+    hideCommandMenu();
+    return;
+  }
+  commandMatches = matches;
+  commandIndex = Math.min(commandIndex, matches.length - 1);
+  renderCommandMenu();
+}
+
+function renderCommandMenu(): void {
+  commandMenu.replaceChildren();
+  commandMatches.forEach((command, index) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `command-item${index === commandIndex ? " is-active" : ""}`;
+    item.setAttribute("role", "option");
+
+    const name = document.createElement("span");
+    name.className = "command-item__name";
+    name.textContent = `/${command.name}`;
+
+    const description = document.createElement("span");
+    description.className = "command-item__desc";
+    description.textContent = command.description ?? command.source;
+
+    item.append(name, description);
+    // mousedown, not click: click fires after the textarea loses focus.
+    item.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      selectCommand(index);
+    });
+    item.addEventListener("mouseenter", () => {
+      commandIndex = index;
+      renderCommandMenu();
+    });
+    commandMenu.append(item);
+  });
+  commandMenu.hidden = false;
+}
+
+function selectCommand(index: number): void {
+  const command = commandMatches[index];
+  if (!command) {
+    return;
+  }
+  setPromptValue(applySlashCommand(command));
+  hideCommandMenu();
+  promptInput.focus();
+}
 
 function setPromptValue(text: string): void {
   // Programmatic value changes do not fire "input", so update composer here.
   promptInput.value = text;
   composer = setComposerText(composer, text);
   promptInput.setSelectionRange(text.length, text.length);
+  updateCommandMenu();
 }
+
+promptInput.addEventListener("blur", () => {
+  hideCommandMenu();
+});
 
 function caretOnFirstLine(): boolean {
   return !promptInput.value.slice(0, promptInput.selectionStart ?? 0).includes("\n");
@@ -476,6 +553,28 @@ promptInput.addEventListener("compositionend", () => {
 });
 
 promptInput.addEventListener("keydown", (event) => {
+  // While the command menu is open it owns the navigation keys: Enter/Tab pick
+  // (never send), arrows move, Escape closes without interrupting Claude.
+  if (commandMatches.length > 0 && !(event.isComposing || composer.isComposing)) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      commandIndex = (commandIndex + step + commandMatches.length) % commandMatches.length;
+      renderCommandMenu();
+      return;
+    }
+    if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      selectCommand(commandIndex);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      hideCommandMenu();
+      return;
+    }
+  }
   if (shouldSubmitFromKeyboard({ key: event.key, shiftKey: event.shiftKey, isComposing: event.isComposing || composer.isComposing })) {
     event.preventDefault();
     submitPrompt();
@@ -660,6 +759,10 @@ async function initialize(): Promise<void> {
   if (resumeSessionId && api.runtime.folder) {
     resumeSessionInput.value = resumeSessionId;
   }
+  // Load the "/" menu inventory in the background; failure just leaves it empty.
+  void api?.claude.commands().then((commands) => {
+    slashCommands = commands;
+  }).catch(() => {});
   try {
     await startClaudeSession(resumeSessionId);
   } catch (error) {
@@ -1324,6 +1427,13 @@ async function sendIntent(intent: SubmitIntent): Promise<void> {
       textLength: intent.text.length,
       imageCount: intent.images.length
     });
+
+    // /clear is the Companion's own command: start a fresh conversation
+    // instead of sending the text to Claude.
+    if (intent.text.trim() === "/clear" && intent.images.length === 0) {
+      await clearSession();
+      return;
+    }
 
     // Show the question immediately so the transcript reads as a conversation
     // rather than a stream of answers with no prompts.

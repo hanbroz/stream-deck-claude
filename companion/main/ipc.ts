@@ -23,6 +23,7 @@ import {
 } from "./paths";
 import { ProjectTerminalManager } from "./terminal-session";
 import type { ConversationHistoryReader, HistoryPage } from "./transcript-history";
+import type { SlashCommand } from "../shared/slash-commands";
 import type { CompanionSessionStatus } from "./session-status";
 import { openWindowsTerminalFolder } from "./windows-terminal";
 
@@ -64,6 +65,8 @@ export type CompanionIpcDependencies = {
   // Persist the applied model/effort for this folder and refresh the Stream Deck
   // key so it shows the new model without waiting for the next message.
   applyModelPrefs?: (prefs: { model: ClaudeModel; effort: ClaudeEffort }) => Promise<void> | void;
+  // The slash commands the composer's "/" menu offers.
+  slashCommands?: () => Promise<SlashCommand[]> | SlashCommand[];
 };
 
 type SenderEvent = {
@@ -240,6 +243,9 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
         requireString(name, "name"),
         requireString(content, "content")
       )
+  );
+  deps.ipcMain.handle(COMPANION_IPC.claudeCommands, async (): Promise<SlashCommand[]> =>
+    (await deps.slashCommands?.()) ?? []
   );
   deps.ipcMain.handle(COMPANION_IPC.pathDelete, async (_event: SenderEvent, path: unknown) => {
     await deleteContainedPath(deps.rootPath, requireString(path, "path"), deps.shell);

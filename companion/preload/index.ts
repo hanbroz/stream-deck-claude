@@ -15,6 +15,7 @@ import {
 import type { CompanionSessionStatus } from "../main/session-status";
 import type { HistoryPage } from "../main/transcript-history";
 import type { ClaudeEvent } from "../shared/claude-stream";
+import type { SlashCommand } from "../shared/slash-commands";
 import { diag, setDiagSink } from "../shared/diag";
 
 export type ClaudeCompanionApi = {
@@ -32,6 +33,7 @@ export type ClaudeCompanionApi = {
     write(sessionId: string, data: string, imageDataUrls?: string[]): Promise<void>;
     configure(sessionId: string, options: { model?: ClaudeModel; effort?: ClaudeEffort }): Promise<void>;
     apply(sessionId: string, options: { model: ClaudeModel; effort: ClaudeEffort }): Promise<void>;
+    commands(): Promise<SlashCommand[]>;
     clear(sessionId: string): Promise<void>;
     interrupt(sessionId: string): Promise<boolean>;
     history(sessionId: string, offset: number, limit: number): Promise<HistoryPage>;
@@ -133,6 +135,7 @@ const api: ClaudeCompanionApi = {
       ipcRenderer.invoke(COMPANION_IPC.claudeConfigure, sessionId, options),
     apply: (sessionId, options) =>
       ipcRenderer.invoke(COMPANION_IPC.claudeApply, sessionId, options),
+    commands: () => ipcRenderer.invoke(COMPANION_IPC.claudeCommands),
     clear: (sessionId) => ipcRenderer.invoke(COMPANION_IPC.claudeClear, sessionId),
     interrupt: (sessionId) => ipcRenderer.invoke(COMPANION_IPC.claudeInterrupt, sessionId),
     history: (sessionId, offset, limit) =>

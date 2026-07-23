@@ -1011,6 +1011,7 @@ body.is-split-resizing.is-resizing-rows * {
 }
 
 .composer {
+  position: relative; /* anchors the slash-command menu */
   display: flex;
   flex: 0 0 var(--composer-height, 34%);
   min-height: 180px;
@@ -1018,6 +1019,58 @@ body.is-split-resizing.is-resizing-rows * {
   background: var(--surface);
   padding: 10px 16px 14px;
   flex-direction: column;
+}
+
+/* ── Slash command menu ── */
+.command-menu {
+  position: absolute;
+  bottom: calc(100% - 6px);
+  left: 16px;
+  z-index: 40;
+  min-width: 320px;
+  max-width: 480px;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  background: #1f1f1f;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+}
+
+.command-item {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.command-item.is-active {
+  background: #2a2d2e;
+}
+
+.command-item__name {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.command-item__desc {
+  overflow: hidden;
+  color: #9a9a9a;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A leading /command in the user's transcript bubble. */
+.turn__command {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .composer-resizer {

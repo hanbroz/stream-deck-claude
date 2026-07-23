@@ -12,6 +12,7 @@ import os from "node:os";
 import { ClaudePtyManager } from "./claude-session";
 import { writeContextSnapshot } from "./context-snapshot";
 import { writeModelPrefs } from "./model-prefs";
+import { listSlashCommands } from "./slash-commands";
 import { ConversationHistoryReader } from "./transcript-history";
 import { readCompanionSessionStatus } from "./session-status";
 import { diag, setDiagSink } from "../shared/diag";
@@ -173,6 +174,7 @@ async function start(): Promise<void> {
             // The key keeps its last value if the snapshot write fails.
           });
         },
+        slashCommands: () => listSlashCommands({ configDir, projectRoot: runtimeEnv.rootPath }),
         clipboard,
         nativeImage,
         shell,

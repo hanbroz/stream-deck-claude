@@ -146,6 +146,16 @@ export function paintTurn(turn: Turn): void {
   }
   const paragraph = document.createElement("p");
   paragraph.className = "md-paragraph";
-  paragraph.textContent = turn.text;
+  // A leading slash command gets the accent colour; both halves still land in
+  // the DOM via textContent so the no-innerHTML guarantee holds.
+  const command = /^\/[^\s/]+/u.exec(turn.text);
+  if (command) {
+    const highlight = document.createElement("span");
+    highlight.className = "turn__command";
+    highlight.textContent = command[0];
+    paragraph.append(highlight, document.createTextNode(turn.text.slice(command[0].length)));
+  } else {
+    paragraph.textContent = turn.text;
+  }
   turn.body.append(paragraph);
 }
