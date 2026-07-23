@@ -319,17 +319,6 @@ body.is-split-resizing.is-resizing-rows * {
   text-align: left;
 }
 
-.explorer-title svg {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .explorer-title strong {
   overflow: hidden;
   font-size: 12px;

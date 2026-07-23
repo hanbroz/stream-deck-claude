@@ -100,7 +100,7 @@ const resumeSessionButton = mustElement<HTMLButtonElement>("resume-session");
 const openExplorerButton = mustElement<HTMLButtonElement>("open-explorer");
 const openTerminalButton = mustElement<HTMLButtonElement>("open-terminal");
 const explorerRail = mustElement<HTMLButtonElement>("explorer-rail");
-const explorerToggle = mustElement<HTMLButtonElement>("explorer-toggle");
+const collapseExplorerButton = mustElement<HTMLButtonElement>("collapse-explorer");
 const explorerResizer = mustElement<HTMLDivElement>("explorer-resizer");
 const workspaceElement = mustElement<HTMLElement>("workspace");
 const workSplitElement = mustElement<HTMLElement>("work-split");
@@ -394,7 +394,7 @@ window.addEventListener("resize", () => {
 document.addEventListener("click", () => hideContextMenu());
 
 
-explorerToggle.addEventListener("click", () => {
+collapseExplorerButton.addEventListener("click", () => {
   setExplorerCollapsed(true);
 });
 

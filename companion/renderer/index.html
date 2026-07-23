@@ -43,13 +43,15 @@
 
         <aside id="sidebar" class="sidebar" aria-label="Project explorer">
           <header class="sidebar__header">
-            <button id="explorer-toggle" class="explorer-title" type="button" title="Close explorer">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
+            <div class="explorer-title">
               <strong id="explorer-project-name">PROJECT</strong>
-            </button>
+            </div>
             <div class="explorer-actions">
               <button id="open-explorer" class="icon-button icon-button--small" type="button" title="Open folder" aria-label="Open folder">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h7l2 2h9v12a1 1 0 0 1-1 1H3z" /></svg>
+              </button>
+              <button id="collapse-explorer" class="icon-button icon-button--small" type="button" title="Collapse explorer" aria-label="Collapse explorer">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 17-5-5 5-5m-7 10-5-5 5-5" /></svg>
               </button>
               <button id="open-terminal" class="icon-button icon-button--small" type="button" title="Open project terminal" aria-label="Open project terminal">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4M12 16h7" /></svg>
