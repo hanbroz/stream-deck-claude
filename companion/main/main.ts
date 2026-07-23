@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -62,9 +63,16 @@ async function start(): Promise<void> {
   // nativeImage.createFromPath reads through Electron's asar-aware fs.
   const icon = nativeImage.createFromPath(path.join(__dirname, "..", "assets", "icon.png"));
   const windowIcon = icon.isEmpty() ? undefined : icon;
-  // Windows groups taskbar buttons (and their icon) by AppUserModelID.
+  // On Windows the taskbar button icon comes from the Start Menu shortcut whose
+  // AppUserModelID matches the window's. Sharing the installed app's id
+  // (com.hanbroz.claudedeck.companion) makes the button show that shortcut's
+  // icon, which is stale when Code Start runs the freshly built binary instead
+  // of the installer. Deriving the id from this executable's path means no
+  // shortcut matches, so Windows uses the window's own (correct) icon. The hash
+  // keeps the id space-free and within the 128-char AppUserModelID limit.
   if (process.platform === "win32") {
-    app.setAppUserModelId("com.hanbroz.claudedeck.companion");
+    const exeHash = createHash("sha1").update(app.getPath("exe")).digest("hex").slice(0, 16);
+    app.setAppUserModelId(`com.hanbroz.claudedeck.companion.${exeHash}`);
   }
   const runtimeEnv = await resolveCompanionRuntimeEnv(process.env);
   const configDir = process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(
