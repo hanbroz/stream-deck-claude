@@ -191,6 +191,26 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     session.mode = "new";
   }
 
+  /**
+   * Stop the message that is currently generating without ending the
+   * conversation. The captured claudeSessionId is kept so the next message
+   * resumes from where it left off. Returns true if a run was interrupted.
+   */
+  interrupt(sessionId: string): boolean {
+    const session = this.session(sessionId);
+    const run = session.activeRun;
+    if (!run) {
+      return false;
+    }
+    // Detach first so the run's onExit/onData see it is no longer active and
+    // stay silent instead of surfacing an ended-without-response error.
+    session.activeRun = undefined;
+    session.busy = false;
+    run.kill();
+    diag("main.run.interrupt", { sessionId });
+    return true;
+  }
+
   write(sessionId: string, data: string, imageDataUrls: readonly string[] = []): void {
     const session = this.session(sessionId);
     if (session.busy) {

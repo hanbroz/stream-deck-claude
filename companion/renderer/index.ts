@@ -19,6 +19,8 @@ import {
   addComposerImages,
   createComposerState,
   imageId,
+  navigateHistory,
+  pushHistory,
   removeComposerImage,
   setComposerText,
   setComposing,
@@ -134,6 +136,11 @@ let treeRoots: TreeNode[] = [];
 let selectedPath: string | undefined;
 let contextPath: string | undefined;
 let composer: ComposerState = createComposerState();
+// Shell-style input history: sent messages (oldest first) recalled with Up/Down.
+// historyIndex points into inputHistory; === length means the live draft.
+const inputHistory: string[] = [];
+let historyIndex = 0;
+let historyDraft = "";
 let activeClaudeSession: ClaudeSessionStarted | undefined;
 let claudeStartPromise: Promise<void> | undefined;
 const pendingClaudeOutput = new Map<string, ClaudeEvent[]>();
@@ -425,7 +432,24 @@ openTerminalButton.addEventListener("click", () => {
 
 promptInput.addEventListener("input", () => {
   composer = setComposerText(composer, promptInput.value);
+  // Real typing leaves history navigation and starts a fresh draft.
+  historyIndex = inputHistory.length;
 });
+
+function setPromptValue(text: string): void {
+  // Programmatic value changes do not fire "input", so update composer here.
+  promptInput.value = text;
+  composer = setComposerText(composer, text);
+  promptInput.setSelectionRange(text.length, text.length);
+}
+
+function caretOnFirstLine(): boolean {
+  return !promptInput.value.slice(0, promptInput.selectionStart ?? 0).includes("\n");
+}
+
+function caretOnLastLine(): boolean {
+  return !promptInput.value.slice(promptInput.selectionEnd ?? 0).includes("\n");
+}
 
 promptInput.addEventListener("compositionstart", () => {
   composer = setComposing(composer, true);
@@ -439,6 +463,38 @@ promptInput.addEventListener("keydown", (event) => {
   if (shouldSubmitFromKeyboard({ key: event.key, shiftKey: event.shiftKey, isComposing: event.isComposing || composer.isComposing })) {
     event.preventDefault();
     submitPrompt();
+    return;
+  }
+  if (event.isComposing || composer.isComposing) {
+    return;
+  }
+  // Up/Down recall previous inputs, but only from the edge line so multi-line
+  // editing keeps normal cursor movement.
+  if (event.key === "ArrowUp" && caretOnFirstLine()) {
+    if (historyIndex === inputHistory.length) {
+      historyDraft = promptInput.value;
+    }
+    const move = navigateHistory(inputHistory, historyIndex, historyDraft, "up");
+    if (move) {
+      historyIndex = move.index;
+      setPromptValue(move.text);
+      event.preventDefault();
+    }
+  } else if (event.key === "ArrowDown" && caretOnLastLine()) {
+    const move = navigateHistory(inputHistory, historyIndex, historyDraft, "down");
+    if (move) {
+      historyIndex = move.index;
+      setPromptValue(move.text);
+      event.preventDefault();
+    }
+  }
+});
+
+// Esc interrupts the message Claude is currently generating, wherever focus is.
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && claudeStatus.dataset.busy === "true") {
+    event.preventDefault();
+    void interruptClaude();
   }
 });
 
@@ -991,9 +1047,27 @@ function submitPrompt(): void {
     return;
   }
 
+  if (result.intent.text.length > 0) {
+    pushHistory(inputHistory, result.intent.text);
+  }
+  historyIndex = inputHistory.length;
+  historyDraft = "";
+
   promptInput.value = composer.text;
   renderImagePreview();
   void sendIntent(result.intent);
+}
+
+async function interruptClaude(): Promise<void> {
+  if (!api || !activeClaudeSession) {
+    return;
+  }
+  const interrupted = await api.claude.interrupt(activeClaudeSession.sessionId);
+  if (interrupted) {
+    finishAssistantTurn();
+    renderClaudeStatus("waiting");
+    showToast("응답을 중단했습니다.");
+  }
 }
 
 async function startClaudeSession(sessionId?: string): Promise<void> {

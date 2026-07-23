@@ -31,6 +31,7 @@ export type ClaudeCompanionApi = {
     write(sessionId: string, data: string, imageDataUrls?: string[]): Promise<void>;
     configure(sessionId: string, options: { model?: ClaudeModel; effort?: ClaudeEffort }): Promise<void>;
     clear(sessionId: string): Promise<void>;
+    interrupt(sessionId: string): Promise<boolean>;
     history(sessionId: string, offset: number, limit: number): Promise<HistoryPage>;
     kill(sessionId: string): void;
     pasteClipboardImage(sessionId: string, imageDataUrl?: string): Promise<boolean>;
@@ -127,6 +128,7 @@ const api: ClaudeCompanionApi = {
     configure: (sessionId, options) =>
       ipcRenderer.invoke(COMPANION_IPC.claudeConfigure, sessionId, options),
     clear: (sessionId) => ipcRenderer.invoke(COMPANION_IPC.claudeClear, sessionId),
+    interrupt: (sessionId) => ipcRenderer.invoke(COMPANION_IPC.claudeInterrupt, sessionId),
     history: (sessionId, offset, limit) =>
       ipcRenderer.invoke(COMPANION_IPC.claudeHistory, sessionId, offset, limit),
     kill: (sessionId) => ipcRenderer.send(COMPANION_IPC.claudeKill, sessionId),

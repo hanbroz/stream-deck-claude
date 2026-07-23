@@ -309,6 +309,9 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   deps.ipcMain.handle(COMPANION_IPC.claudeClear, (_event: SenderEvent, sessionId) => {
     ptyManager.clear(requireString(sessionId, "sessionId"));
   });
+  deps.ipcMain.handle(COMPANION_IPC.claudeInterrupt, (_event: SenderEvent, sessionId) =>
+    ptyManager.interrupt(requireString(sessionId, "sessionId"))
+  );
   deps.ipcMain.handle(
     COMPANION_IPC.claudeHistory,
     async (_event: SenderEvent, sessionId, offset, limit): Promise<HistoryPage> => {

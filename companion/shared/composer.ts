@@ -90,3 +90,41 @@ export function shouldSubmitFromKeyboard(input: {
 export function imageId(name: string, size: number, lastModified: number): string {
   return `${name}:${size}:${lastModified}`;
 }
+
+/**
+ * Append a sent message to the recall history, skipping blanks and immediate
+ * duplicates so Up/Down navigation stays useful.
+ */
+export function pushHistory(history: string[], text: string): void {
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || history[history.length - 1] === trimmed) {
+    return;
+  }
+  history.push(trimmed);
+}
+
+export type HistoryNavigation = { index: number; text: string };
+
+/**
+ * Move through the recall history. `index` runs [0, history.length]; the last
+ * slot is the live draft. Returns the new index and the text to show, or null
+ * when the caret should keep the arrow key for normal cursor movement.
+ */
+export function navigateHistory(
+  history: string[],
+  index: number,
+  draft: string,
+  direction: "up" | "down"
+): HistoryNavigation | null {
+  if (direction === "up") {
+    if (index <= 0 || history.length === 0) {
+      return null;
+    }
+    return { index: index - 1, text: history[index - 1] };
+  }
+  if (index >= history.length) {
+    return null;
+  }
+  const next = index + 1;
+  return { index: next, text: next === history.length ? draft : history[next] };
+}

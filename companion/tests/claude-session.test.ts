@@ -221,6 +221,35 @@ describe("ClaudePtyManager (per-message runs)", () => {
     expect(data).not.toHaveBeenCalled();
   });
 
+  /**
+   * Esc interrupts the generating message: the run is killed but the
+   * conversation id is kept so the next message resumes, and the killed run
+   * stays silent (no ended-without-response error).
+   */
+  it("interrupts the active run without ending the conversation", () => {
+    const { manager, runs } = makeManager(10_000);
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    expect(manager.interrupt(started.sessionId)).toBe(false); // nothing running yet
+
+    manager.write(started.sessionId, "hi");
+    runs[0].data.emit("data", line({ type: "system", subtype: "init", session_id: "conv-1" }));
+
+    expect(manager.interrupt(started.sessionId)).toBe(true);
+    expect(runs[0].kill).toHaveBeenCalled();
+
+    // The killed run's late exit must not surface an error…
+    data.mockClear();
+    runs[0].exit.emit("exit", { exitCode: 1 });
+    expect(data).not.toHaveBeenCalled();
+
+    // …and the next message resumes the captured conversation and is accepted.
+    manager.write(started.sessionId, "next");
+    expect(runs[1].spec.args).toEqual(expect.arrayContaining(["--resume", "conv-1"]));
+  });
+
   it("surfaces stderr as an error event", () => {
     const { manager, runs } = makeManager();
     const started = manager.start({ cwd: "D:\\repo" });

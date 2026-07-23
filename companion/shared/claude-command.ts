@@ -58,6 +58,7 @@ export const COMPANION_IPC = {
   claudeWrite: "companion:claude:write",
   claudeConfigure: "companion:claude:configure",
   claudeClear: "companion:claude:clear",
+  claudeInterrupt: "companion:claude:interrupt",
   claudeKill: "companion:claude:kill",
   claudePasteClipboardImage: "companion:claude:paste-clipboard-image",
   claudeData: "companion:claude:data",
