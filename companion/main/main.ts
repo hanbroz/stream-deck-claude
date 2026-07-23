@@ -11,10 +11,13 @@ import os from "node:os";
 
 import { ClaudePtyManager } from "./claude-session";
 import { writeContextSnapshot } from "./context-snapshot";
+import { writeModelPrefs } from "./model-prefs";
 import { ConversationHistoryReader } from "./transcript-history";
 import { readCompanionSessionStatus } from "./session-status";
 import { diag, setDiagSink } from "../shared/diag";
 import { companionBuildVersion } from "../shared/build-version";
+import { REPRESENTATIVE_MODEL_ID } from "../shared/model-name";
+import { contextWindowForModel } from "../shared/claude-stream";
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } = require("electron");
@@ -98,6 +101,9 @@ async function start(): Promise<void> {
     indexPath,
     icon: windowIcon,
     beforeLoad: (createdWindow) => {
+      // The most recent context the stream reported, so applying a model can
+      // refresh the key with the real usage instead of resetting it to 0%.
+      let lastContext: { claudeSessionId: string; usedTokens: number; windowTokens: number } | undefined;
       registerCompanionIpc({
         ipcMain,
         window: createdWindow,
@@ -105,6 +111,13 @@ async function start(): Promise<void> {
         ptyManager: new ClaudePtyManager({
           command: runtimeEnv.claudePath,
           onContext: (info) => {
+            if (info.claudeSessionId.length > 0) {
+              lastContext = {
+                claudeSessionId: info.claudeSessionId,
+                usedTokens: info.usedTokens,
+                windowTokens: info.windowTokens
+              };
+            }
             // Feed the Stream Deck Code Start key, which cannot read a --print
             // session's usage on its own. Requires the launch identifiers.
             if (!runtimeEnv.bindingId || !runtimeEnv.launchId || info.claudeSessionId.length === 0) {
@@ -134,6 +147,32 @@ async function start(): Promise<void> {
             contextPercentage: runtimeEnv.metadata.contextPercent
           }
         }),
+        applyModelPrefs: async ({ model, effort }) => {
+          await writeModelPrefs(runtimeEnv.usageDataDir, runtimeEnv.rootPath, { model, effort });
+          if (!runtimeEnv.bindingId || !runtimeEnv.launchId) {
+            return;
+          }
+          // Before the first message there is no live conversation id, so fall
+          // back to the folder's resume id so the key still updates immediately.
+          const sessionId = lastContext?.claudeSessionId ?? runtimeEnv.resumeSessionId;
+          if (!sessionId) {
+            return;
+          }
+          const representativeId = REPRESENTATIVE_MODEL_ID[model];
+          await writeContextSnapshot({
+            dataDir: runtimeEnv.usageDataDir,
+            bindingId: runtimeEnv.bindingId,
+            launchId: runtimeEnv.launchId,
+            sessionId,
+            projectDir: runtimeEnv.rootPath,
+            model: representativeId,
+            usedTokens: lastContext?.usedTokens ?? 0,
+            windowTokens: contextWindowForModel(representativeId),
+            capturedAt: Date.now()
+          }).catch(() => {
+            // The key keeps its last value if the snapshot write fails.
+          });
+        },
         clipboard,
         nativeImage,
         shell,

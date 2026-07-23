@@ -5,6 +5,7 @@ import path from "node:path";
 
 import type { DirectoryEntry } from "../shared/claude-command";
 import type { RuntimeProjectMetadata } from "../shared/claude-command";
+import { readModelPrefs } from "./model-prefs";
 
 export type PathShell = {
   openPath(path: string): Promise<string>;
@@ -176,19 +177,24 @@ export async function resolveCompanionRuntimeEnv(
   const resumeSessionId = explicitResume ?? await newestClaudeConversationId(env, rootPath);
   const contextPercent = parseContextPercent(env[COMPANION_CONTEXT_PERCENT_ENV]);
   const localAppData = env.LOCALAPPDATA ?? path.join(env.USERPROFILE ?? process.cwd(), "AppData", "Local");
+  const usageDataDir = path.join(localAppData, "ClaudeUsageDeck");
+  // The model + effort the user last applied for this folder win over the env
+  // default, so relaunching Code Start restores their choice.
+  const savedPrefs = await readModelPrefs(usageDataDir, rootPath);
   return {
     rootPath,
     claudePath: cleanEnvValue(env[COMPANION_CLAUDE_PATH_ENV], COMPANION_CLAUDE_PATH_ENV) ?? "claude",
     bindingId: cleanEnvValue(env[COMPANION_BINDING_ID_ENV], COMPANION_BINDING_ID_ENV),
     launchId: cleanEnvValue(env[COMPANION_LAUNCH_ID_ENV], COMPANION_LAUNCH_ID_ENV),
-    usageDataDir: path.join(localAppData, "ClaudeUsageDeck"),
+    usageDataDir,
     resumeSessionId,
     metadata: {
       folder: rootPath,
       projectName:
         cleanEnvValue(env[COMPANION_PROJECT_NAME_ENV], COMPANION_PROJECT_NAME_ENV) ??
         path.basename(rootPath),
-      model: cleanEnvValue(env[COMPANION_MODEL_ENV], COMPANION_MODEL_ENV),
+      model: savedPrefs.model ?? cleanEnvValue(env[COMPANION_MODEL_ENV], COMPANION_MODEL_ENV),
+      effort: savedPrefs.effort,
       contextPercent,
       resumeSessionId
     }

@@ -60,6 +60,9 @@ export type CompanionIpcDependencies = {
   openTerminalFolder?: (folder: string) => unknown;
   sessionStatus?: () => Promise<CompanionSessionStatus> | CompanionSessionStatus;
   historyReader?: ConversationHistoryReader;
+  // Persist the applied model/effort for this folder and refresh the Stream Deck
+  // key so it shows the new model without waiting for the next message.
+  applyModelPrefs?: (prefs: { model: ClaudeModel; effort: ClaudeEffort }) => Promise<void> | void;
 };
 
 type SenderEvent = {
@@ -305,6 +308,18 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
       model: config.model === undefined ? undefined : requireClaudeModel(config.model),
       effort: config.effort === undefined ? undefined : requireClaudeEffort(config.effort)
     });
+  });
+  deps.ipcMain.handle(COMPANION_IPC.claudeApply, async (_event: SenderEvent, sessionId, options) => {
+    const config = (options ?? {}) as { model?: unknown; effort?: unknown };
+    const model = requireClaudeModel(config.model);
+    const effort = requireClaudeEffort(config.effort);
+    // An empty id means no live session yet (applied during the start window):
+    // still persist and refresh the key; the next message picks up the choice.
+    const sid = optionalString(sessionId, "sessionId");
+    if (sid) {
+      ptyManager.configure(sid, { model, effort });
+    }
+    await deps.applyModelPrefs?.({ model, effort });
   });
   deps.ipcMain.handle(COMPANION_IPC.claudeClear, (_event: SenderEvent, sessionId) => {
     ptyManager.clear(requireString(sessionId, "sessionId"));

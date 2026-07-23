@@ -1,3 +1,20 @@
+import type { ClaudeModel } from "./claude-command";
+
+/**
+ * A representative full model id for each picker family. When the user applies a
+ * model before any message has run, the stream has not reported an exact id yet,
+ * so the Stream Deck key snapshot uses this to show a label (e.g. `Opus 4.8`).
+ * The next message overwrites the snapshot with the real streamed id, so a stale
+ * minor version here only ever shows until the first reply. Keep the versions in
+ * step with the picker options in renderer/index.html.
+ */
+export const REPRESENTATIVE_MODEL_ID: Record<ClaudeModel, string> = {
+  opus: "claude-opus-4-8",
+  sonnet: "claude-sonnet-5",
+  haiku: "claude-haiku-4-5",
+  fable: "claude-fable-5"
+};
+
 /**
  * Single source of truth for turning a raw model id into a display label.
  *

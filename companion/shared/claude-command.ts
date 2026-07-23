@@ -43,6 +43,7 @@ export type RuntimeProjectMetadata = {
   folder: string;
   projectName: string;
   model?: string;
+  effort?: ClaudeEffort;
   contextPercent?: number;
   resumeSessionId?: string;
 };
@@ -57,6 +58,7 @@ export const COMPANION_IPC = {
   claudeStart: "companion:claude:start",
   claudeWrite: "companion:claude:write",
   claudeConfigure: "companion:claude:configure",
+  claudeApply: "companion:claude:apply",
   claudeClear: "companion:claude:clear",
   claudeInterrupt: "companion:claude:interrupt",
   claudeKill: "companion:claude:kill",
@@ -164,6 +166,7 @@ export function readRuntimeProjectMetadataArg(argv: string[]): RuntimeProjectMet
     folder: typeof parsed.folder === "string" ? parsed.folder : "",
     projectName: typeof parsed.projectName === "string" ? parsed.projectName : "",
     model: typeof parsed.model === "string" ? parsed.model : undefined,
+    effort: CLAUDE_EFFORTS.includes(parsed.effort as ClaudeEffort) ? parsed.effort : undefined,
     contextPercent:
       typeof parsed.contextPercent === "number" ? parsed.contextPercent : undefined,
     resumeSessionId:

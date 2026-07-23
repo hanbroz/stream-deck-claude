@@ -7,13 +7,15 @@ import {
   formatModelName,
   projectNameFromPath
 } from "./labels";
-import { parseModelId } from "../shared/model-name";
+import { parseModelId, REPRESENTATIVE_MODEL_ID } from "../shared/model-name";
 import type { ClaudeCompanionApi } from "../preload";
-import type {
-  ClaudeEffort,
-  ClaudeModel,
-  ClaudeSessionStarted,
-  DirectoryEntry
+import {
+  CLAUDE_EFFORTS,
+  CLAUDE_MODELS,
+  type ClaudeEffort,
+  type ClaudeModel,
+  type ClaudeSessionStarted,
+  type DirectoryEntry
 } from "../shared/claude-command";
 import {
   addComposerImages,
@@ -107,6 +109,7 @@ const composerPanel = mustElement<HTMLElement>("composer");
 const composerResizer = mustElement<HTMLDivElement>("composer-resizer");
 const modelSelect = mustElement<HTMLSelectElement>("model-select");
 const effortSelect = mustElement<HTMLSelectElement>("effort-select");
+const applyModelButton = mustElement<HTMLButtonElement>("apply-model");
 const clearSessionButton = mustElement<HTMLButtonElement>("clear-session");
 const windowMinimize = mustElement<HTMLButtonElement>("window-minimize");
 const windowMaximize = mustElement<HTMLButtonElement>("window-maximize");
@@ -157,8 +160,16 @@ let lastContextPercentage: number | undefined;
 // real model instead of the OMC statusline bridge cache, which cannot see a
 // --print session and otherwise leaves the bar reading "Claude Code".
 let lastStreamModel: string | undefined;
-let claudeModel: ClaudeModel = "opus";
-let claudeEffort: ClaudeEffort = "high";
+// Seed from the model/effort the user last applied for this folder (restored by
+// the main process), falling back to the opus/high default on first launch.
+const seededModel = api?.runtime.model;
+const seededEffort = api?.runtime.effort;
+let claudeModel: ClaudeModel = CLAUDE_MODELS.includes(seededModel as ClaudeModel)
+  ? (seededModel as ClaudeModel)
+  : "opus";
+let claudeEffort: ClaudeEffort = CLAUDE_EFFORTS.includes(seededEffort as ClaudeEffort)
+  ? (seededEffort as ClaudeEffort)
+  : "high";
 modelSelect.value = claudeModel;
 effortSelect.value = claudeEffort;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -502,18 +513,39 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-modelSelect.addEventListener("change", () => {
-  claudeModel = modelSelect.value as ClaudeModel;
-  if (activeClaudeSession) {
-    void api?.claude.configure(activeClaudeSession.sessionId, { model: claudeModel });
-  }
-});
+// The dropdowns only stage a selection; nothing takes effect until Apply, which
+// configures the session, persists the choice per folder, and refreshes the
+// Code Start key. The button lights up while the selection differs from what is
+// applied so the pending change is obvious.
+function refreshApplyPending(): void {
+  const pending = modelSelect.value !== claudeModel || effortSelect.value !== claudeEffort;
+  applyModelButton.disabled = !pending;
+  applyModelButton.classList.toggle("is-pending", pending);
+}
 
-effortSelect.addEventListener("change", () => {
+async function applyModelSelection(): Promise<void> {
+  claudeModel = modelSelect.value as ClaudeModel;
   claudeEffort = effortSelect.value as ClaudeEffort;
-  if (activeClaudeSession) {
-    void api?.claude.configure(activeClaudeSession.sessionId, { effort: claudeEffort });
+  refreshApplyPending();
+  // Reflect the applied model in the status bar now instead of on the next poll.
+  void refreshSessionStatus();
+  const modelLabel = modelSelect.selectedOptions[0]?.textContent ?? claudeModel;
+  const effortLabel = effortSelect.selectedOptions[0]?.textContent ?? claudeEffort;
+  try {
+    await api?.claude.apply(activeClaudeSession?.sessionId ?? "", {
+      model: claudeModel,
+      effort: claudeEffort
+    });
+    showToast(`${modelLabel} · ${effortLabel} 적용됨`);
+  } catch {
+    showToast("적용에 실패했습니다.");
   }
+}
+
+modelSelect.addEventListener("change", refreshApplyPending);
+effortSelect.addEventListener("change", refreshApplyPending);
+applyModelButton.addEventListener("click", () => {
+  void applyModelSelection();
 });
 
 clearSessionButton.addEventListener("click", () => {
@@ -809,7 +841,7 @@ function renderStatus(status: SessionStatus): void {
   // message will use) so the bar never reads a stale bridge value.
   sessionModel.textContent =
     parseModelId(lastStreamModel)?.label ??
-    modelSelect.selectedOptions[0]?.textContent ??
+    parseModelId(REPRESENTATIVE_MODEL_ID[claudeModel])?.label ??
     formatModelName(status.model);
   renderContextMeter(status);
 }

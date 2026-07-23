@@ -69,6 +69,7 @@ describe("runtime metadata args", () => {
       folder: "D:\\프로젝트\\020_Source",
       projectName: "020_Source 프로젝트",
       model: "Opus 4.8",
+      effort: "xhigh",
       contextPercent: 42,
       resumeSessionId: "resume-1"
     });
@@ -77,6 +78,7 @@ describe("runtime metadata args", () => {
       folder: "D:\\프로젝트\\020_Source",
       projectName: "020_Source 프로젝트",
       model: "Opus 4.8",
+      effort: "xhigh",
       contextPercent: 42,
       resumeSessionId: "resume-1"
     });

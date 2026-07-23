@@ -23,6 +23,7 @@ export type ClaudeCompanionApi = {
     folder: string;
     projectName: string;
     model?: string;
+    effort?: ClaudeEffort;
     contextPercent?: number;
     resumeSessionId?: string;
   };
@@ -30,6 +31,7 @@ export type ClaudeCompanionApi = {
     start(request: ClaudeSessionStartRequest): Promise<ClaudeSessionStarted>;
     write(sessionId: string, data: string, imageDataUrls?: string[]): Promise<void>;
     configure(sessionId: string, options: { model?: ClaudeModel; effort?: ClaudeEffort }): Promise<void>;
+    apply(sessionId: string, options: { model: ClaudeModel; effort: ClaudeEffort }): Promise<void>;
     clear(sessionId: string): Promise<void>;
     interrupt(sessionId: string): Promise<boolean>;
     history(sessionId: string, offset: number, limit: number): Promise<HistoryPage>;
@@ -100,6 +102,7 @@ const api: ClaudeCompanionApi = {
     folder: runtimeMetadata.folder,
     projectName: runtimeMetadata.projectName,
     model: runtimeMetadata.model,
+    effort: runtimeMetadata.effort,
     contextPercent: runtimeMetadata.contextPercent,
     resumeSessionId: runtimeMetadata.resumeSessionId
   },
@@ -127,6 +130,8 @@ const api: ClaudeCompanionApi = {
     },
     configure: (sessionId, options) =>
       ipcRenderer.invoke(COMPANION_IPC.claudeConfigure, sessionId, options),
+    apply: (sessionId, options) =>
+      ipcRenderer.invoke(COMPANION_IPC.claudeApply, sessionId, options),
     clear: (sessionId) => ipcRenderer.invoke(COMPANION_IPC.claudeClear, sessionId),
     interrupt: (sessionId) => ipcRenderer.invoke(COMPANION_IPC.claudeInterrupt, sessionId),
     history: (sessionId, offset, limit) =>
