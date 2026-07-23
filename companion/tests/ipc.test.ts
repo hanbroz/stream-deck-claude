@@ -71,7 +71,7 @@ describe("registerCompanionIpc", () => {
       ptyManager,
       terminalManager,
       clipboard: { readImage: () => ({ isEmpty: () => true }) },
-      shell: { openPath: vi.fn(), showItemInFolder: vi.fn() },
+      shell: { openPath: vi.fn(), showItemInFolder: vi.fn(), trashItem: vi.fn() },
       openTerminalFolder
     });
 
@@ -179,7 +179,7 @@ describe("registerCompanionIpc", () => {
         writeImage
       },
       nativeImage: { createFromDataURL },
-      shell: { openPath: vi.fn(), showItemInFolder: vi.fn() }
+      shell: { openPath: vi.fn(), showItemInFolder: vi.fn(), trashItem: vi.fn() }
     });
 
     const started = ptyManager.start({ cwd: root });
@@ -203,7 +203,7 @@ describe("registerCompanionIpc", () => {
       window: { webContents: { send: vi.fn() } },
       rootPath: root,
       clipboard: { readImage: () => ({ isEmpty: () => true }) },
-      shell: { openPath: vi.fn(), showItemInFolder: vi.fn() },
+      shell: { openPath: vi.fn(), showItemInFolder: vi.fn(), trashItem: vi.fn() },
       ...overrides
     } as unknown as Parameters<typeof registerCompanionIpc>[0]);
     return ipcMain;

@@ -15,6 +15,7 @@ import {
   COMPANION_RESUME_ENV,
   COMPANION_RESUME_SESSION_ID_ENV,
   claudeConversationExists,
+  deleteContainedPath,
   listContainedDirectory,
   openContainedPath,
   resolveCompanionRuntimeEnv,
@@ -201,7 +202,8 @@ describe("contained path operations", () => {
   it("opens and reveals only contained targets", async () => {
     const shell = {
       openPath: vi.fn().mockResolvedValue(""),
-      showItemInFolder: vi.fn()
+      showItemInFolder: vi.fn(),
+      trashItem: vi.fn().mockResolvedValue(undefined)
     };
 
     await openContainedPath(root, ".", shell);
@@ -212,5 +214,26 @@ describe("contained path operations", () => {
     await expect(openContainedPath(root, "..", shell)).rejects.toThrow(
       "Path is outside the allowed root"
     );
+  });
+
+  it("moves contained entries to the trash but never the root or outside paths", async () => {
+    const shell = {
+      openPath: vi.fn().mockResolvedValue(""),
+      showItemInFolder: vi.fn(),
+      trashItem: vi.fn().mockResolvedValue(undefined)
+    };
+    const victim = path.join(root, "victim.txt");
+    await writeFile(victim, "bye", "utf8");
+
+    await deleteContainedPath(root, victim, shell);
+    expect(shell.trashItem).toHaveBeenCalledWith(await realpath(victim));
+
+    await expect(deleteContainedPath(root, ".", shell)).rejects.toThrow(
+      "Cannot delete the project root"
+    );
+    await expect(deleteContainedPath(root, "..", shell)).rejects.toThrow(
+      "Path is outside the allowed root"
+    );
+    expect(shell.trashItem).toHaveBeenCalledTimes(1);
   });
 });

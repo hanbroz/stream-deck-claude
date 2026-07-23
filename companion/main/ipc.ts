@@ -14,6 +14,7 @@ import { diag, emitDiagLine } from "../shared/diag";
 import {
   createContainedDirectory,
   createContainedFile,
+  deleteContainedPath,
   listContainedDirectory,
   openContainedPath,
   revealContainedPath,
@@ -240,6 +241,9 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
         requireString(content, "content")
       )
   );
+  deps.ipcMain.handle(COMPANION_IPC.pathDelete, async (_event: SenderEvent, path: unknown) => {
+    await deleteContainedPath(deps.rootPath, requireString(path, "path"), deps.shell);
+  });
   deps.ipcMain.handle(COMPANION_IPC.pathOpen, async (_event: SenderEvent, path: unknown) => {
     await openContainedPath(deps.rootPath, requireString(path, "path"), deps.shell);
   });

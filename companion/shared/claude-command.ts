@@ -65,6 +65,7 @@ export const COMPANION_IPC = {
   claudePasteClipboardImage: "companion:claude:paste-clipboard-image",
   claudeData: "companion:claude:data",
   claudeExit: "companion:claude:exit",
+  pathDelete: "companion:path:delete",
   terminalStart: "companion:terminal:start",
   terminalWrite: "companion:terminal:write",
   terminalResize: "companion:terminal:resize",

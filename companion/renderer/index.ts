@@ -599,8 +599,37 @@ contextMenu.addEventListener("click", (event) => {
     void api?.paths.reveal(node.path);
   } else if (button.dataset.action === "open-terminal") {
     void api?.terminal.openFolder(node.kind === "directory" ? node.path : parentPathOf(node.path));
+  } else if (button.dataset.action === "delete") {
+    void deleteNode(node);
   }
 });
+
+/** Move a tree entry to the Recycle Bin after confirmation, then re-list its parent. */
+async function deleteNode(node: TreeNode): Promise<void> {
+  if (node.path === projectRoot) {
+    showToast("프로젝트 폴더는 삭제할 수 없습니다.");
+    return;
+  }
+  const label = node.kind === "directory" ? "폴더" : "파일";
+  if (!window.confirm(`${label} '${node.name}'을(를) 휴지통으로 이동할까요?`)) {
+    return;
+  }
+  try {
+    await api?.paths.delete(node.path);
+  } catch {
+    showToast("삭제하지 못했습니다.");
+    return;
+  }
+  if (selectedPath === node.path || selectedPath?.startsWith(`${node.path}\\`)) {
+    selectedPath = projectRoot;
+  }
+  try {
+    await refreshPath(parentPathOf(node.path));
+  } catch {
+    showToast("Refresh failed.");
+  }
+  showToast(`'${node.name}'을(를) 휴지통으로 이동했습니다.`);
+}
 
 void initialize();
 

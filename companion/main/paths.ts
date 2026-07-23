@@ -10,6 +10,7 @@ import { readModelPrefs } from "./model-prefs";
 export type PathShell = {
   openPath(path: string): Promise<string>;
   showItemInFolder(path: string): void;
+  trashItem(path: string): Promise<void>;
 };
 
 export const COMPANION_FOLDER_ENV = "CLAUDE_STREAM_DECK_FOLDER";
@@ -300,6 +301,24 @@ export async function createContainedFile(
   const filePath = resolveContainedPath(realRoot, path.join(path.relative(realRoot, parent), name));
   await writeFile(filePath, content, { encoding: "utf8", flag: "wx" });
   return filePath;
+}
+
+/**
+ * Move a file or folder inside the project to the OS Recycle Bin (never a
+ * permanent unlink, so a mis-click is recoverable). The project root itself
+ * can never be deleted.
+ */
+export async function deleteContainedPath(
+  root: string,
+  requestedPath: string,
+  shell: PathShell
+): Promise<void> {
+  const realRoot = await realpath(path.resolve(root));
+  const target = await resolveExistingContainedPath(realRoot, requestedPath);
+  if (target === realRoot) {
+    throw new Error("Cannot delete the project root");
+  }
+  await shell.trashItem(target);
 }
 
 export async function openContainedPath(

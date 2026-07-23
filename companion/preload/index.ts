@@ -50,6 +50,7 @@ export type ClaudeCompanionApi = {
     list(path?: string): Promise<DirectoryEntry[]>;
     createDirectory(parentPath: string, name: string): Promise<string>;
     createFile(parentPath: string, name: string, content?: string): Promise<string>;
+    delete(path: string): Promise<void>;
     open(path: string): Promise<void>;
     reveal(path: string): Promise<void>;
   };
@@ -148,6 +149,7 @@ const api: ClaudeCompanionApi = {
       ipcRenderer.invoke(COMPANION_IPC.pathCreateDirectory, parentPath, name),
     createFile: (parentPath, name, content = "") =>
       ipcRenderer.invoke(COMPANION_IPC.pathCreateFile, parentPath, name, content),
+    delete: (path) => ipcRenderer.invoke(COMPANION_IPC.pathDelete, path),
     open: (path) => ipcRenderer.invoke(COMPANION_IPC.pathOpen, path),
     reveal: (path) => ipcRenderer.invoke(COMPANION_IPC.pathReveal, path)
   },

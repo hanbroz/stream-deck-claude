@@ -1251,6 +1251,15 @@ textarea {
   text-align: center;
 }
 
+.context-menu button.context-menu__danger {
+  color: #e07a6a;
+}
+
+.context-menu button.context-menu__danger:hover:not(:disabled) {
+  background: #8b2f23;
+  color: #ffffff;
+}
+
 .toast {
   position: fixed;
   right: 16px;
