@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 import type { UsageCache } from "../domain/rate-limits";
-import { writeMergedUsageCache } from "../io/usage-cache";
+import { writeUsageCache } from "../io/usage-cache";
 import { resolveClaudePath } from "./companion-launcher";
 
 /**
@@ -147,7 +147,7 @@ function runUsageCli(claudePath: string, cwd: string): Promise<string> {
   });
 }
 
-const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
+const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 
 // Shared across the five-hour and weekly actions: one refresh serves both.
 let lastAttemptAtMs = 0;
@@ -170,7 +170,10 @@ export function maybeRefreshUsageViaCli(dataDir: string, nowMs = Date.now()): Pr
     const output = await runUsageCli(claudePath, dataDir);
     const cache = parseUsageCliOutput(output);
     if (cache) {
-      await writeMergedUsageCache(path.join(dataDir, "usage.json"), cache);
+      // Replace, never merge: /usage is a complete snapshot of the account
+      // that is logged in RIGHT NOW. Merging kept the previous account's
+      // weekly window (with its later reset) alive after a login switch.
+      await writeUsageCache(path.join(dataDir, "usage.json"), cache);
     }
   })().finally(() => {
     inFlight = undefined;

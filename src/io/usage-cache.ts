@@ -204,15 +204,17 @@ async function acquireUsageCacheLock(lockPath: string) {
   }
 }
 
-export async function writeMergedUsageCache(
+async function writeUsageCacheLocked(
   cachePath: string,
-  incoming: UsageCache
+  incoming: UsageCache,
+  merge: boolean
 ): Promise<void> {
   const lockPath = `${cachePath}.lock`;
   const lock = await acquireUsageCacheLock(lockPath);
   try {
-    const current = await readUsageCache(cachePath);
-    const cache = mergeUsageCaches(current, incoming);
+    const cache = merge
+      ? mergeUsageCaches(await readUsageCache(cachePath), incoming)
+      : incoming;
     const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
     try {
       await writeFile(temporaryPath, `${JSON.stringify(cache, null, 2)}\n`, "utf8");
@@ -227,4 +229,25 @@ export async function writeMergedUsageCache(
       await rm(lockPath, { force: true });
     }
   }
+}
+
+/** Merge-write: for same-account partial updates (the statusline bridge). */
+export async function writeMergedUsageCache(
+  cachePath: string,
+  incoming: UsageCache
+): Promise<void> {
+  await writeUsageCacheLocked(cachePath, incoming, true);
+}
+
+/**
+ * Replace-write: for complete authoritative snapshots (`claude /usage`).
+ * Merging those instead kept a previous ACCOUNT's window alive after a login
+ * switch — its weekly reset happened to be later, so the merge's
+ * newer-resetsAt rule pinned the old 75% over the new account's 4%.
+ */
+export async function writeUsageCache(
+  cachePath: string,
+  incoming: UsageCache
+): Promise<void> {
+  await writeUsageCacheLocked(cachePath, incoming, false);
 }

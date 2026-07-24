@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 import {
   parseOmcUsageCache,
   readUsageCache,
-  writeMergedUsageCache
+  writeMergedUsageCache,
+  writeUsageCache
 } from "../src/io/usage-cache";
 
 describe("parseOmcUsageCache", () => {
@@ -56,6 +57,43 @@ describe("parseOmcUsageCache", () => {
     ).toBeUndefined();
     expect(parseOmcUsageCache({ ...base, error: true }, nowMs)).toBeUndefined();
     expect(parseOmcUsageCache({ ...base, source: "zai" }, nowMs)).toBeUndefined();
+  });
+});
+
+describe("writeUsageCache (replace)", () => {
+  it("replaces the previous account's windows even when their reset is later", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-write-"));
+    const cachePath = path.join(root, "usage.json");
+    try {
+      // Field incident: after a login switch the OLD account's weekly window
+      // (75%, later reset) kept winning the merge over the new account's 4%.
+      await writeFile(
+        cachePath,
+        JSON.stringify({
+          schemaVersion: 1,
+          capturedAt: 1_700_000_000_000,
+          rateLimits: {
+            fiveHour: { usedPercentage: 71, resetsAt: 1_700_010_000 },
+            sevenDay: { usedPercentage: 75, resetsAt: 1_700_500_000 }
+          }
+        }),
+        "utf8"
+      );
+      const newAccount = {
+        schemaVersion: 1 as const,
+        capturedAt: 1_700_000_600_000,
+        rateLimits: {
+          fiveHour: { usedPercentage: 18, resetsAt: 1_700_016_000 },
+          sevenDay: { usedPercentage: 4, resetsAt: 1_700_400_000 }
+        }
+      };
+
+      await writeUsageCache(cachePath, newAccount);
+
+      expect(await readUsageCache(cachePath)).toEqual(newAccount);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 
