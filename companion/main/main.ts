@@ -13,6 +13,7 @@ import { ClaudePtyManager } from "./claude-session";
 import { writeContextSnapshot } from "./context-snapshot";
 import { writeModelPrefs } from "./model-prefs";
 import { listSlashCommands } from "./slash-commands";
+import { CLAUDE_MODELS, type ClaudeModel } from "../shared/claude-command";
 import { ConversationHistoryReader } from "./transcript-history";
 import { readCompanionSessionStatus } from "./session-status";
 import { diag, setDiagSink } from "../shared/diag";
@@ -95,6 +96,42 @@ async function start(): Promise<void> {
     projectName: runtimeEnv.metadata.projectName,
     hasResumeSessionId: runtimeEnv.resumeSessionId !== undefined
   });
+  // The Stream Deck key should show model + context the moment the app opens,
+  // not only after the first message: seed the snapshot from the saved model
+  // prefs and the resumed conversation's last recorded usage.
+  if (runtimeEnv.bindingId && runtimeEnv.launchId) {
+    const bindingId = runtimeEnv.bindingId;
+    const launchId = runtimeEnv.launchId;
+    void (async () => {
+      const family: ClaudeModel = CLAUDE_MODELS.includes(runtimeEnv.metadata.model as ClaudeModel)
+        ? (runtimeEnv.metadata.model as ClaudeModel)
+        : "opus";
+      const representativeId = REPRESENTATIVE_MODEL_ID[family];
+      const usage = runtimeEnv.resumeSessionId
+        ? await historyReader.lastContextUsage(runtimeEnv.resumeSessionId)
+        : undefined;
+      await writeContextSnapshot({
+        dataDir: runtimeEnv.usageDataDir,
+        bindingId,
+        launchId,
+        // The launch id stands in when the folder has no conversation yet; a
+        // resume-pointer promotion discards it via the existence check.
+        sessionId: runtimeEnv.resumeSessionId ?? launchId,
+        projectDir: runtimeEnv.rootPath,
+        model: representativeId,
+        usedTokens: usage?.usedTokens ?? null,
+        windowTokens: contextWindowForModel(representativeId),
+        capturedAt: Date.now()
+      });
+      diag("main.snapshot.initial", {
+        model: family,
+        hasUsage: usage !== undefined,
+        resumed: runtimeEnv.resumeSessionId !== undefined
+      });
+    })().catch(() => {
+      // The key simply waits for the first message's snapshot.
+    });
+  }
   await createCompanionWindow({
     BrowserWindow,
     preloadPath,

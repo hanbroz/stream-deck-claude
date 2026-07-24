@@ -56,6 +56,16 @@ describe("buildContextSnapshot", () => {
     });
     expect((record.context as { usedPercentage: number }).usedPercentage).toBe(100);
   });
+
+  it("writes a null percentage when usage is not known yet (fresh launch)", () => {
+    const record = buildContextSnapshot({
+      dataDir: "d", bindingId: "b", launchId: "l", sessionId: "s",
+      model: "claude-opus-4-8",
+      usedTokens: null, windowTokens: 1_000_000, capturedAt: 1
+    });
+    expect(record.model).toEqual({ displayName: "Opus 4.8" });
+    expect(record.context).toEqual({ usedPercentage: null, contextWindowSize: 1_000_000 });
+  });
 });
 
 describe("writeContextSnapshot", () => {

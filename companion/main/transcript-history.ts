@@ -1,9 +1,10 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { open, stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import path from "node:path";
 
 import { isSafeClaudeSessionId } from "../shared/claude-command";
+import { usedContextTokens } from "../shared/claude-stream";
 
 /**
  * Reads a saved Claude conversation for display when Code Start resumes it.
@@ -113,6 +114,58 @@ export async function readConversationMessages(
   return messages;
 }
 
+export type LastContextUsage = {
+  usedTokens: number;
+  model?: string;
+};
+
+/**
+ * The conversation's last recorded context usage, read from the transcript's
+ * tail (bounded 256KB) so a resumed launch can show real numbers on the
+ * Stream Deck key before any message of this launch runs.
+ */
+export async function readLastContextUsage(
+  transcriptFile: string
+): Promise<LastContextUsage | undefined> {
+  let handle;
+  try {
+    handle = await open(transcriptFile, "r");
+  } catch {
+    return undefined; // no transcript — nothing to show yet
+  }
+  try {
+    const size = (await handle.stat()).size;
+    const length = Math.min(256 * 1024, size);
+    if (length === 0) {
+      return undefined;
+    }
+    const buffer = Buffer.alloc(length);
+    await handle.read(buffer, 0, length, size - length);
+    const lines = buffer.toString("utf8").split(/\r?\n/);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      let record: unknown;
+      try {
+        record = JSON.parse(lines[index]);
+      } catch {
+        continue; // the tail window may start mid-line
+      }
+      if (!isRecord(record) || record.type !== "assistant" || !isRecord(record.message)) {
+        continue;
+      }
+      const usedTokens = usedContextTokens(record.message.usage);
+      if (usedTokens !== undefined) {
+        return {
+          usedTokens,
+          model: typeof record.message.model === "string" ? record.message.model : undefined
+        };
+      }
+    }
+    return undefined;
+  } finally {
+    await handle.close();
+  }
+}
+
 export type ConversationHistoryReaderOptions = {
   configDir: string;
   folder: string;
@@ -149,6 +202,14 @@ export class ConversationHistoryReader {
       total,
       hasMore: start > 0
     };
+  }
+
+  /** Last recorded context usage of a saved conversation, if any. */
+  async lastContextUsage(sessionId: string): Promise<LastContextUsage | undefined> {
+    if (!isSafeClaudeSessionId(sessionId)) {
+      return undefined;
+    }
+    return readLastContextUsage(transcriptPath(this.configDir, this.folder, sessionId));
   }
 
   private async load(sessionId: string): Promise<HistoryMessage[]> {

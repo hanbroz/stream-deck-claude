@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   ConversationHistoryReader,
-  readConversationMessages
+  readConversationMessages,
+  readLastContextUsage
 } from "../main/transcript-history";
 
 let root: string;
@@ -124,5 +125,48 @@ describe("ConversationHistoryReader paging", () => {
     const configDir = await writeTranscript(folder, "sess", body);
     const reader = new ConversationHistoryReader({ configDir, folder });
     expect(await reader.page("../secret", 0, 20)).toEqual({ messages: [], total: 0, hasMore: false });
+  });
+});
+
+describe("readLastContextUsage", () => {
+  it("returns the newest assistant usage and model from the transcript tail", async () => {
+    const folder = "D:\proj";
+    const configDir = await writeTranscript(folder, "sess-usage", jsonl(
+      { type: "user", message: { role: "user", content: "first" } },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant", model: "claude-opus-4-8",
+          usage: { input_tokens: 10, cache_creation_input_tokens: 100, cache_read_input_tokens: 40 }
+        }
+      },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant", model: "claude-sonnet-5",
+          usage: { input_tokens: 2, cache_creation_input_tokens: 70444, cache_read_input_tokens: 36205 }
+        }
+      },
+      { type: "user", message: { role: "user", content: "trailing user turn" } }
+    ));
+    const reader = new ConversationHistoryReader({ configDir, folder });
+
+    expect(await reader.lastContextUsage("sess-usage")).toEqual({
+      usedTokens: 2 + 70444 + 36205,
+      model: "claude-sonnet-5"
+    });
+  });
+
+  it("returns undefined for missing transcripts, unsafe ids and usage-less files", async () => {
+    const folder = "D:\proj";
+    const configDir = await writeTranscript(folder, "no-usage", jsonl(
+      { type: "user", message: { role: "user", content: "only user text" } }
+    ));
+    const reader = new ConversationHistoryReader({ configDir, folder });
+
+    expect(await reader.lastContextUsage("no-usage")).toBeUndefined();
+    expect(await reader.lastContextUsage("missing-session")).toBeUndefined();
+    expect(await reader.lastContextUsage("../secret")).toBeUndefined();
+    expect(await readLastContextUsage(configDir + "/nope.jsonl")).toBeUndefined();
   });
 });

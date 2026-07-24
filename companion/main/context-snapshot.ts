@@ -22,7 +22,8 @@ export type ContextSnapshotInput = {
   sessionId: string;
   projectDir?: string;
   model?: string;
-  usedTokens: number;
+  /** null = usage not known yet (fresh launch, no message run); the key shows "--". */
+  usedTokens: number | null;
   windowTokens: number;
   capturedAt: number;
 };
@@ -37,10 +38,9 @@ export function displayModelName(model: string | undefined): string | undefined 
 }
 
 export function buildContextSnapshot(input: ContextSnapshotInput): Record<string, unknown> {
-  const usedPercentage = Math.min(
-    100,
-    Math.max(0, (input.usedTokens / input.windowTokens) * 100)
-  );
+  const usedPercentage = input.usedTokens === null
+    ? null
+    : Math.min(100, Math.max(0, (input.usedTokens / input.windowTokens) * 100));
   const displayName = displayModelName(input.model);
   return {
     schemaVersion: 2,
@@ -52,7 +52,7 @@ export function buildContextSnapshot(input: ContextSnapshotInput): Record<string
     ...(displayName ? { model: { displayName } } : {}),
     context: {
       usedPercentage,
-      totalInputTokens: input.usedTokens,
+      ...(input.usedTokens === null ? {} : { totalInputTokens: input.usedTokens }),
       contextWindowSize: input.windowTokens
     }
   };
