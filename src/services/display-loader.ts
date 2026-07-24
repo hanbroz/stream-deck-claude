@@ -1,5 +1,6 @@
 import {
   getDisplayState,
+  mergeUsageCaches,
   selectRateLimitWindow,
   type RateLimitKind,
   type UsageDisplayState
@@ -46,15 +47,18 @@ export async function loadUsageDisplayState(
 ): Promise<UsageDisplayState> {
   try {
     if (options.statusLineConflict) {
-      if (options.externalUsageCachePath) {
-        const externalCache = await readOmcUsageCache(
-          options.externalUsageCachePath,
-          options.nowMs
-        );
-        const externalWindow = externalCache && selectRateLimitWindow(externalCache, kind);
-        if (externalWindow) {
-          return getDisplayState(externalWindow, options.nowMs);
-        }
+      const externalCache = options.externalUsageCachePath
+        ? await readOmcUsageCache(options.externalUsageCachePath, options.nowMs)
+        : undefined;
+      // usage.json also carries the CLI self-refresh, so merge both sources
+      // and let the newer window win (merge keeps the later resetsAt).
+      const localCache = await readUsageCache(options.cachePath).catch(() => undefined);
+      const merged = externalCache && localCache
+        ? mergeUsageCaches(localCache, externalCache)
+        : externalCache ?? localCache;
+      const window = merged && selectRateLimitWindow(merged, kind);
+      if (window) {
+        return getDisplayState(window, options.nowMs);
       }
       return { kind: "statusline-conflict" };
     }

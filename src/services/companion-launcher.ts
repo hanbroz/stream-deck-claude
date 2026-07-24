@@ -67,7 +67,7 @@ export async function resolveCompanionExecutable(
   );
 }
 
-async function resolveClaudePath(): Promise<string> {
+export async function resolveClaudePath(): Promise<string> {
   const defaultPath = path.join(os.homedir(), ".local", "bin", "claude.exe");
   if (await fileExists(defaultPath)) {
     return defaultPath;

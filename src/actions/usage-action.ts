@@ -26,6 +26,7 @@ import {
   withLastGoodHold,
   type LastGoodUsage
 } from "../services/display-loader";
+import { maybeRefreshUsageViaCli } from "../services/usage-refresher";
 import { renderUsageKeyImage } from "../ui/key-renderer";
 import { UsageImageCache } from "./usage-image-cache";
 
@@ -105,6 +106,14 @@ export abstract class UsageAction extends SingletonAction {
       statusLineConflict: await isStatusLineConflict(settingsPath, dataDir),
       externalUsageCachePath: defaultOmcUsageCachePath()
     });
+    // Stale or missing data (raw state, before the hold): fetch fresh numbers
+    // ourselves via `claude /usage` — the OMC cache only updates while an
+    // interactive TUI session is open, which can be days ago.
+    if (loaded.kind !== "ready" && loaded.kind !== "setup") {
+      void maybeRefreshUsageViaCli(dataDir).catch((error: unknown) => {
+        streamDeck.logger.error(`Usage CLI refresh failed: ${this.kind}.`, error);
+      });
+    }
     const held = withLastGoodHold(loaded, this.lastGood);
     this.lastGood = held.lastGood;
     const state = held.state;

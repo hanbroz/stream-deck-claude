@@ -64,6 +64,71 @@ describe("loadUsageDisplayState", () => {
     ).resolves.toEqual({ kind: "statusline-conflict" });
   });
 
+  it("falls back to the CLI-refreshed usage.json when the OMC cache is absent (conflict path)", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
+    const cachePath = path.join(root, "usage.json");
+    const nowMs = 1_700_000_000_000;
+    await writeFile(
+      cachePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        capturedAt: nowMs,
+        rateLimits: { fiveHour: { usedPercentage: 69, resetsAt: nowMs / 1000 + 3_600 } }
+      }),
+      "utf8"
+    );
+
+    await expect(
+      loadUsageDisplayState("fiveHour", {
+        cachePath,
+        bridgeInstalled: false,
+        statusLineConflict: true,
+        externalUsageCachePath: path.join(root, "missing-omc-cache.json"),
+        nowMs
+      })
+    ).resolves.toEqual({ kind: "ready", percentage: 69, remaining: "1h 0m" });
+  });
+
+  it("prefers the newer window when both OMC and usage.json exist (conflict path)", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
+    const cachePath = path.join(root, "usage.json");
+    const externalPath = path.join(root, ".usage-cache-anthropic.json");
+    const nowMs = 1_700_000_000_000;
+    // OMC last saw the previous five-hour window (already reset)…
+    await writeFile(
+      externalPath,
+      JSON.stringify({
+        timestamp: nowMs - 60_000,
+        source: "anthropic",
+        data: {
+          fiveHourPercent: 99,
+          fiveHourResetsAt: (nowMs / 1000 - 600) * 1000
+        }
+      }),
+      "utf8"
+    );
+    // …while the CLI self-refresh already captured the new window.
+    await writeFile(
+      cachePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        capturedAt: nowMs,
+        rateLimits: { fiveHour: { usedPercentage: 12, resetsAt: nowMs / 1000 + 9_000 } }
+      }),
+      "utf8"
+    );
+
+    await expect(
+      loadUsageDisplayState("fiveHour", {
+        cachePath,
+        bridgeInstalled: false,
+        statusLineConflict: true,
+        externalUsageCachePath: externalPath,
+        nowMs
+      })
+    ).resolves.toEqual({ kind: "ready", percentage: 12, remaining: "2h 30m" });
+  });
+
   it("uses a fresh OMC Anthropic cache when OMC owns the status-line slot", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
     const cachePath = path.join(root, "usage.json");
