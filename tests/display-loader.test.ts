@@ -89,7 +89,7 @@ describe("loadUsageDisplayState", () => {
     ).resolves.toEqual({ kind: "ready", percentage: 69, remaining: "1h 0m" });
   });
 
-  it("prefers the newer window when both OMC and usage.json exist (conflict path)", async () => {
+  it("merges by newer window once the local cache has aged out (conflict path)", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
     const cachePath = path.join(root, "usage.json");
     const externalPath = path.join(root, ".usage-cache-anthropic.json");
@@ -107,12 +107,13 @@ describe("loadUsageDisplayState", () => {
       }),
       "utf8"
     );
-    // …while the CLI self-refresh already captured the new window.
+    // …while an OLD CLI refresh (20 min ago, past the freshness window)
+    // captured the new window — the merge still keeps the later reset.
     await writeFile(
       cachePath,
       JSON.stringify({
         schemaVersion: 1,
-        capturedAt: nowMs,
+        capturedAt: nowMs - 20 * 60 * 1000,
         rateLimits: { fiveHour: { usedPercentage: 12, resetsAt: nowMs / 1000 + 9_000 } }
       }),
       "utf8"
@@ -127,6 +128,46 @@ describe("loadUsageDisplayState", () => {
         nowMs
       })
     ).resolves.toEqual({ kind: "ready", percentage: 12, remaining: "2h 30m" });
+  });
+
+  it("a fresh CLI cache beats a poisoned OMC cache even with a later reset", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
+    const cachePath = path.join(root, "usage.json");
+    const externalPath = path.join(root, ".usage-cache-anthropic.json");
+    const nowMs = 1_700_000_000_000;
+    // Field incident: after an OMC update its cache served 0% with an
+    // inflated reset time, which used to win the resetsAt merge.
+    await writeFile(
+      externalPath,
+      JSON.stringify({
+        timestamp: nowMs - 60_000,
+        source: "anthropic",
+        data: {
+          fiveHourPercent: 0,
+          fiveHourResetsAt: (nowMs / 1000 + 5 * 3600) * 1000
+        }
+      }),
+      "utf8"
+    );
+    await writeFile(
+      cachePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        capturedAt: nowMs - 5 * 60 * 1000,
+        rateLimits: { fiveHour: { usedPercentage: 71, resetsAt: nowMs / 1000 + 7_200 } }
+      }),
+      "utf8"
+    );
+
+    await expect(
+      loadUsageDisplayState("fiveHour", {
+        cachePath,
+        bridgeInstalled: false,
+        statusLineConflict: true,
+        externalUsageCachePath: externalPath,
+        nowMs
+      })
+    ).resolves.toEqual({ kind: "ready", percentage: 71, remaining: "2h 0m" });
   });
 
   it("uses a fresh OMC Anthropic cache when OMC owns the status-line slot", async () => {

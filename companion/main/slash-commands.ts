@@ -21,7 +21,11 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "clear", description: "새 대화 시작", source: "builtin" },
   { name: "usage", description: "구독 사용량 한도 확인", source: "builtin" },
   { name: "cost", description: "현재 세션 비용·사용량", source: "builtin" },
-  { name: "context", description: "컨텍스트 사용량 분석", source: "builtin" }
+  { name: "context", description: "컨텍스트 사용량 분석", source: "builtin" },
+  // Probed working in print mode ("Reloaded skills: N skills available").
+  // /reload-plugins is interactive-only — irrelevant here anyway, since every
+  // Companion message spawns a fresh CLI that reloads plugins from disk.
+  { name: "reload-skills", description: "스킬 목록 다시 로드", source: "builtin" }
 ];
 
 /** First `description:` line of the file's YAML frontmatter, if any. */

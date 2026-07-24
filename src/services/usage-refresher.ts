@@ -147,7 +147,7 @@ function runUsageCli(claudePath: string, cwd: string): Promise<string> {
   });
 }
 
-const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
 
 // Shared across the five-hour and weekly actions: one refresh serves both.
 let lastAttemptAtMs = 0;

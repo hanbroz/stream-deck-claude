@@ -76,7 +76,9 @@ describe("listSlashCommands", () => {
 
   it("returns only builtins when no commands directories exist", async () => {
     const commands = await listSlashCommands({ configDir, projectRoot });
-    expect(commands.map((command) => command.name)).toEqual(["clear", "usage", "cost", "context"]);
+    expect(commands.map((command) => command.name)).toEqual([
+      "clear", "usage", "cost", "context", "reload-skills"
+    ]);
   });
 
   it("lists skills and installed plugin commands/skills with namespaced names", async () => {

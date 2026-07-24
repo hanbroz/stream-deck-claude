@@ -18,6 +18,9 @@ export type DisplayLoaderOptions = {
 export type LastGoodUsage = { state: UsageDisplayState; atMs: number };
 
 const LAST_GOOD_HOLD_MS = 15 * 60 * 1000;
+// The refresher keeps usage.json at most ~10 minutes old, so a fresh local
+// cache means the CLI pipeline is alive and its numbers are current.
+const LOCAL_CACHE_FRESH_MS = 15 * 60 * 1000;
 
 /**
  * Ride out transient cache gaps: a momentary read failure (OMC rewriting its
@@ -47,18 +50,27 @@ export async function loadUsageDisplayState(
 ): Promise<UsageDisplayState> {
   try {
     if (options.statusLineConflict) {
-      const externalCache = options.externalUsageCachePath
-        ? await readOmcUsageCache(options.externalUsageCachePath, options.nowMs)
-        : undefined;
-      // usage.json also carries the CLI self-refresh, so merge both sources
-      // and let the newer window win (merge keeps the later resetsAt).
+      const nowMs = options.nowMs ?? Date.now();
       const localCache = await readUsageCache(options.cachePath).catch(() => undefined);
+      // The CLI self-refresh is authoritative (it parses `claude /usage`
+      // directly). While it is fresh it wins outright: merging by resetsAt
+      // let a poisoned OMC cache (0% with an inflated reset time, seen in
+      // the field after an OMC update) beat correct numbers.
+      if (localCache && nowMs - localCache.capturedAt <= LOCAL_CACHE_FRESH_MS) {
+        const localWindow = selectRateLimitWindow(localCache, kind);
+        if (localWindow) {
+          return getDisplayState(localWindow, nowMs);
+        }
+      }
+      const externalCache = options.externalUsageCachePath
+        ? await readOmcUsageCache(options.externalUsageCachePath, nowMs)
+        : undefined;
       const merged = externalCache && localCache
         ? mergeUsageCaches(localCache, externalCache)
         : externalCache ?? localCache;
       const window = merged && selectRateLimitWindow(merged, kind);
       if (window) {
-        return getDisplayState(window, options.nowMs);
+        return getDisplayState(window, nowMs);
       }
       return { kind: "statusline-conflict" };
     }

@@ -106,14 +106,13 @@ export abstract class UsageAction extends SingletonAction {
       statusLineConflict: await isStatusLineConflict(settingsPath, dataDir),
       externalUsageCachePath: defaultOmcUsageCachePath()
     });
-    // Stale or missing data (raw state, before the hold): fetch fresh numbers
-    // ourselves via `claude /usage` — the OMC cache only updates while an
-    // interactive TUI session is open, which can be days ago.
-    if (loaded.kind !== "ready" && loaded.kind !== "setup") {
-      void maybeRefreshUsageViaCli(dataDir).catch((error: unknown) => {
-        streamDeck.logger.error(`Usage CLI refresh failed: ${this.kind}.`, error);
-      });
-    }
+    // Keep our own usage.json current (the refresher's cooldown makes this
+    // one cheap `claude /usage` call every ~10 minutes). It is the primary
+    // source: the OMC cache both goes stale (it only updates while a TUI
+    // session is open) and has served poisoned 0% data after an OMC update.
+    void maybeRefreshUsageViaCli(dataDir).catch((error: unknown) => {
+      streamDeck.logger.error(`Usage CLI refresh failed: ${this.kind}.`, error);
+    });
     const held = withLastGoodHold(loaded, this.lastGood);
     this.lastGood = held.lastGood;
     const state = held.state;

@@ -466,6 +466,7 @@ promptInput.addEventListener("input", () => {
 let slashCommands: SlashCommand[] = [];
 let commandMatches: SlashCommand[] = [];
 let commandIndex = 0;
+let commandsScannedAtMs = 0;
 
 function hideCommandMenu(): void {
   commandMatches = [];
@@ -473,6 +474,17 @@ function hideCommandMenu(): void {
 }
 
 function updateCommandMenu(): void {
+  // Re-scan the inventory whenever a slash draft is being typed — BEFORE the
+  // match check, or a command installed after launch could never appear (no
+  // match in the stale list → early return → no rescan, a catch-22). The
+  // per-message CLI runs already pick new skills/plugins up automatically.
+  if (/^\/[^\s/]*$/u.test(promptInput.value) && Date.now() - commandsScannedAtMs > 30_000) {
+    commandsScannedAtMs = Date.now();
+    void api?.claude.commands().then((commands) => {
+      slashCommands = commands;
+      updateCommandMenu();
+    }).catch(() => {});
+  }
   const matches = filterSlashCommands(slashCommands, promptInput.value);
   if (!matches) {
     hideCommandMenu();
