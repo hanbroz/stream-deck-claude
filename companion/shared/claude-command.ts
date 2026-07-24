@@ -1,3 +1,5 @@
+import { QUESTION_SYSTEM_PROMPT } from "./question-block";
+
 export type ClaudeLaunchMode = "new" | "resume";
 
 export type ClaudeModel = "opus" | "sonnet" | "haiku" | "fable";
@@ -123,7 +125,11 @@ export function createClaudeCommandArgs(request: ClaudeCommandRequest): string[]
     "--output-format",
     "stream-json",
     "--include-partial-messages",
-    "--verbose"
+    "--verbose",
+    // Print mode disables the interactive AskUserQuestion tool, so choice
+    // questions arrive as a ```question block the renderer turns into buttons.
+    "--append-system-prompt",
+    QUESTION_SYSTEM_PROMPT
   ];
 
   if (mode === "resume") {

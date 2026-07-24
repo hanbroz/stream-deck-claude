@@ -5,19 +5,24 @@ import {
   encodeRuntimeProjectMetadata,
   readRuntimeProjectMetadataArg
 } from "../shared/claude-command";
+import { QUESTION_SYSTEM_PROMPT } from "../shared/question-block";
+
+const BASE_ARGS = [
+  "--dangerously-skip-permissions",
+  "--print",
+  "--input-format",
+  "stream-json",
+  "--output-format",
+  "stream-json",
+  "--include-partial-messages",
+  "--verbose",
+  "--append-system-prompt",
+  QUESTION_SYSTEM_PROMPT
+];
 
 describe("createClaudeCommandArgs", () => {
   it("starts a new Claude session in structured streaming mode", () => {
-    expect(createClaudeCommandArgs({ cwd: "D:\\repo", mode: "new" })).toEqual([
-      "--dangerously-skip-permissions",
-      "--print",
-      "--input-format",
-      "stream-json",
-      "--output-format",
-      "stream-json",
-      "--include-partial-messages",
-      "--verbose"
-    ]);
+    expect(createClaudeCommandArgs({ cwd: "D:\\repo", mode: "new" })).toEqual(BASE_ARGS);
   });
 
   it("resumes a selected Claude session by id", () => {
@@ -27,18 +32,7 @@ describe("createClaudeCommandArgs", () => {
         mode: "resume",
         sessionId: "session-123"
       })
-    ).toEqual([
-      "--dangerously-skip-permissions",
-      "--print",
-      "--input-format",
-      "stream-json",
-      "--output-format",
-      "stream-json",
-      "--include-partial-messages",
-      "--verbose",
-      "--resume",
-      "session-123"
-    ]);
+    ).toEqual([...BASE_ARGS, "--resume", "session-123"]);
   });
 
   it("rejects invalid resume requests", () => {

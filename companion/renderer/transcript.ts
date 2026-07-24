@@ -1,4 +1,5 @@
 import { parseMarkdown, type InlineNode, type MarkdownBlock } from "../shared/markdown";
+import { parseQuestionBlock } from "../shared/question-block";
 
 export type TurnRole = "user" | "assistant" | "error";
 
@@ -71,12 +72,43 @@ function createCodeBlock(block: Extract<MarkdownBlock, { type: "code" }>): HTMLE
   return wrapper;
 }
 
+/** A ```question block becomes a clickable option card (null → not valid). */
+function createQuestionCard(code: string): HTMLElement | null {
+  const parsed = parseQuestionBlock(code);
+  if (!parsed) {
+    return null;
+  }
+  const card = document.createElement("div");
+  card.className = "question-card";
+
+  const title = document.createElement("p");
+  title.className = "question-card__title";
+  title.textContent = parsed.question;
+
+  const options = document.createElement("div");
+  options.className = "question-card__options";
+  for (const option of parsed.options) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "question-card__option";
+    button.dataset.questionAnswer = option;
+    button.textContent = option;
+    options.append(button);
+  }
+
+  card.append(title, options);
+  return card;
+}
+
 export function renderMarkdown(source: string): DocumentFragment {
   const fragment = document.createDocumentFragment();
 
   for (const block of parseMarkdown(source)) {
     if (block.type === "code") {
-      fragment.append(createCodeBlock(block));
+      // While streaming, an unfinished question block briefly paints as a
+      // plain code block and upgrades to the card on the final repaint.
+      const card = block.language === "question" ? createQuestionCard(block.code) : null;
+      fragment.append(card ?? createCodeBlock(block));
       continue;
     }
     if (block.type === "list") {

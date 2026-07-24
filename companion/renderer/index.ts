@@ -619,6 +619,26 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+// Clicking an option in a ```question card sends that answer immediately,
+// AskUserQuestion-style; the card locks so it reads as answered.
+consoleElement.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-question-answer]");
+  if (!button || button.disabled || claudeStatus.dataset.busy === "true") {
+    return;
+  }
+  const answer = button.dataset.questionAnswer ?? "";
+  if (answer.length === 0) {
+    return;
+  }
+  const card = button.closest(".question-card");
+  card?.classList.add("is-answered");
+  card?.querySelectorAll("button").forEach((option) => {
+    (option as HTMLButtonElement).disabled = true;
+  });
+  button.classList.add("is-chosen");
+  void sendIntent({ text: answer, images: [] });
+});
+
 // The dropdowns only stage a selection; nothing takes effect until Apply, which
 // configures the session, persists the choice per folder, and refreshes the
 // Code Start key. The button lights up while the selection differs from what is
