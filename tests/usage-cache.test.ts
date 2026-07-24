@@ -37,7 +37,7 @@ describe("parseOmcUsageCache", () => {
     });
   });
 
-  it("rejects stale, failed, or non-Anthropic caches", () => {
+  it("rejects abandoned, failed, or non-Anthropic caches", () => {
     const nowMs = 1_700_000_000_000;
     const base = {
       timestamp: nowMs - 1_000,
@@ -47,7 +47,13 @@ describe("parseOmcUsageCache", () => {
         fiveHourResetsAt: "2026-07-21T09:49:59.638Z"
       }
     };
-    expect(parseOmcUsageCache({ ...base, timestamp: nowMs - 700_000 }, nowMs)).toBeUndefined();
+    // Idle-but-recent caches stay valid (usage cannot rise while Claude is
+    // idle; a 10-minute cutoff used to flip the keys to STATUSLINE BUSY)…
+    expect(parseOmcUsageCache({ ...base, timestamp: nowMs - 700_000 }, nowMs)).toBeDefined();
+    // …only a cache abandoned for over a day is rejected.
+    expect(
+      parseOmcUsageCache({ ...base, timestamp: nowMs - 25 * 60 * 60 * 1000 }, nowMs)
+    ).toBeUndefined();
     expect(parseOmcUsageCache({ ...base, error: true }, nowMs)).toBeUndefined();
     expect(parseOmcUsageCache({ ...base, source: "zai" }, nowMs)).toBeUndefined();
   });

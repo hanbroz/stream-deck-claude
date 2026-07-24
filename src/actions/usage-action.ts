@@ -21,7 +21,11 @@ import {
   defaultUsageDataDir
 } from "../bridge/paths";
 import type { RateLimitKind } from "../domain/rate-limits";
-import { loadUsageDisplayState } from "../services/display-loader";
+import {
+  loadUsageDisplayState,
+  withLastGoodHold,
+  type LastGoodUsage
+} from "../services/display-loader";
 import { renderUsageKeyImage } from "../ui/key-renderer";
 import { UsageImageCache } from "./usage-image-cache";
 
@@ -35,6 +39,7 @@ export abstract class UsageAction extends SingletonAction {
   private refreshTimer?: NodeJS.Timeout;
   private refreshInFlight?: Promise<void>;
   private refreshQueued = false;
+  private lastGood?: LastGoodUsage;
 
   protected constructor(private readonly kind: RateLimitKind) {
     super();
@@ -94,12 +99,15 @@ export abstract class UsageAction extends SingletonAction {
   private async refreshAll(): Promise<void> {
     const settingsPath = defaultClaudeSettingsPath();
     const dataDir = defaultUsageDataDir();
-    const state = await loadUsageDisplayState(this.kind, {
+    const loaded = await loadUsageDisplayState(this.kind, {
       cachePath: path.join(dataDir, "usage.json"),
       bridgeInstalled: await isBridgeInstalled(settingsPath, dataDir),
       statusLineConflict: await isStatusLineConflict(settingsPath, dataDir),
       externalUsageCachePath: defaultOmcUsageCachePath()
     });
+    const held = withLastGoodHold(loaded, this.lastGood);
+    this.lastGood = held.lastGood;
+    const state = held.state;
     const image = renderUsageKeyImage(this.kind, state);
     await Promise.all(
       [...this.visibleActions.values()].map(async (action) => {

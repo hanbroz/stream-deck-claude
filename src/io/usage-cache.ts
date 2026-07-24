@@ -10,7 +10,12 @@ import {
 const LOCK_RETRY_MS = 10;
 const LOCK_TIMEOUT_MS = 1_000;
 const STALE_LOCK_MS = 5_000;
-const DEFAULT_EXTERNAL_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
+// Generous on purpose: usage percentages cannot rise while Claude is idle,
+// and getDisplayState already flips to RESET DUE once resetsAt passes. A
+// 10-minute cutoff made the keys drop to the STATUSLINE BUSY card whenever
+// Claude sat unused for ten minutes; this only needs to reject caches from a
+// machine where OMC stopped updating entirely.
+const DEFAULT_EXTERNAL_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 type JsonRecord = Record<string, unknown>;
 

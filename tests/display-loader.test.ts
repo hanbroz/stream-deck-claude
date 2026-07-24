@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { loadUsageDisplayState } from "../src/services/display-loader";
+import { loadUsageDisplayState, withLastGoodHold } from "../src/services/display-loader";
 
 describe("loadUsageDisplayState", () => {
   it("distinguishes setup from waiting when the cache is absent", async () => {
@@ -114,5 +114,33 @@ describe("loadUsageDisplayState", () => {
     await expect(
       loadUsageDisplayState("fiveHour", { cachePath, bridgeInstalled: true, nowMs: 0 })
     ).resolves.toEqual({ kind: "error" });
+  });
+});
+
+describe("withLastGoodHold", () => {
+  const ready = { kind: "ready", percentage: 58, remaining: "2h 10m" } as const;
+  const nowMs = 1_700_000_000_000;
+
+  it("remembers data states and rides out transient data-less states", () => {
+    const first = withLastGoodHold(ready, undefined, nowMs);
+    expect(first.state).toEqual(ready);
+
+    // A momentary conflict/error/waiting keeps showing the last good value…
+    for (const flap of [
+      { kind: "statusline-conflict" } as const,
+      { kind: "error" } as const,
+      { kind: "waiting" } as const
+    ]) {
+      expect(withLastGoodHold(flap, first.lastGood, nowMs + 60_000).state).toEqual(ready);
+    }
+  });
+
+  it("gives up the hold after 15 minutes and never holds over setup", () => {
+    const { lastGood } = withLastGoodHold(ready, undefined, nowMs);
+    const conflict = { kind: "statusline-conflict" } as const;
+    expect(withLastGoodHold(conflict, lastGood, nowMs + 16 * 60 * 1000).state).toEqual(conflict);
+    // "setup" is a real call to action — always shown immediately.
+    const setup = { kind: "setup" } as const;
+    expect(withLastGoodHold(setup, lastGood, nowMs + 1_000).state).toEqual(setup);
   });
 });
