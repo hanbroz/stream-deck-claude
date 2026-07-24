@@ -704,6 +704,12 @@ body.is-split-resizing.is-resizing-rows * {
   margin-bottom: 0;
 }
 
+/* A block Claude ends with a question mark — the ask directed at the user. */
+.md-question {
+  color: #ffc66d;
+  font-weight: 600;
+}
+
 .md-heading {
   margin: 14px 0 6px;
   color: #f0f0f0;

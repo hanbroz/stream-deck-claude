@@ -8,6 +8,15 @@ export type TurnRole = "user" | "assistant" | "error";
  * Every piece of model output reaches the page through textContent, never
  * innerHTML, so markup inside a reply stays inert text.
  */
+/**
+ * A block whose visible text ends in a question mark is Claude asking the
+ * user something — the transcript colours it so the question stands out.
+ */
+export function isQuestionInline(nodes: readonly InlineNode[]): boolean {
+  const text = nodes.map((node) => node.text).join("").trim();
+  return text.endsWith("?") || text.endsWith("？");
+}
+
 function appendInline(target: HTMLElement, nodes: readonly InlineNode[]): void {
   for (const node of nodes) {
     if (node.type === "text") {
@@ -73,6 +82,9 @@ export function renderMarkdown(source: string): DocumentFragment {
       list.className = "md-list";
       for (const item of block.items) {
         const li = document.createElement("li");
+        if (isQuestionInline(item)) {
+          li.classList.add("md-question");
+        }
         appendInline(li, item);
         list.append(li);
       }
@@ -95,6 +107,9 @@ export function renderMarkdown(source: string): DocumentFragment {
     }
     const paragraph = document.createElement("p");
     paragraph.className = "md-paragraph";
+    if (isQuestionInline(block.inline)) {
+      paragraph.classList.add("md-question");
+    }
     appendInline(paragraph, block.inline);
     fragment.append(paragraph);
   }
