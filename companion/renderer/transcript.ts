@@ -9,12 +9,14 @@ export type TurnRole = "user" | "assistant" | "error";
  * innerHTML, so markup inside a reply stays inert text.
  */
 /**
- * A block whose visible text ends in a question mark is Claude asking the
- * user something — the transcript colours it so the question stands out.
+ * A block Claude directs at the user as a question gets the amber highlight:
+ * either its visible text ends in a question mark, or it opens with a
+ * question label like "Q1." / "Q2)" — those often end in a dash or colon
+ * with the answer choices following as a list.
  */
 export function isQuestionInline(nodes: readonly InlineNode[]): boolean {
   const text = nodes.map((node) => node.text).join("").trim();
-  return text.endsWith("?") || text.endsWith("？");
+  return text.endsWith("?") || text.endsWith("？") || /^Q\d+\s*[.):]/iu.test(text);
 }
 
 function appendInline(target: HTMLElement, nodes: readonly InlineNode[]): void {

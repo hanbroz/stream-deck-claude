@@ -13,6 +13,13 @@ describe("isQuestionInline", () => {
     expect(isQuestionInline([{ type: "bold", text: "이 방식" }, text("이 맞나요?  ")])).toBe(true);
   });
 
+  it("marks Q-labelled blocks even when they end with a dash or colon", () => {
+    expect(isQuestionInline([text("Q2. 개별 주소 vs 도메인을 UI에서 구분하는 방식 —")])).toBe(true);
+    expect(isQuestionInline([{ type: "bold", text: "Q10)" }, text(" 다음 항목 중 선택:")])).toBe(true);
+    // A plain word starting with Q is not a label.
+    expect(isQuestionInline([text("Quality가 중요합니다.")])).toBe(false);
+  });
+
   it("leaves statements and mid-text question marks unhighlighted", () => {
     expect(isQuestionInline([text("작업을 완료했습니다.")])).toBe(false);
     expect(isQuestionInline([text("무엇을 할까? 라는 고민 끝에 진행했습니다.")])).toBe(false);
