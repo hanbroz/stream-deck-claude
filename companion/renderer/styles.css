@@ -1025,10 +1025,10 @@ body.is-split-resizing.is-resizing-rows * {
 .command-menu {
   position: absolute;
   bottom: calc(100% - 6px);
+  /* Span the composer's full width so descriptions get the whole line. */
   left: 16px;
+  right: 16px;
   z-index: 40;
-  min-width: 320px;
-  max-width: 480px;
   max-height: 260px;
   overflow-y: auto;
   border: 1px solid #3a3a3a;
@@ -1041,7 +1041,7 @@ body.is-split-resizing.is-resizing-rows * {
 .command-item {
   display: flex;
   width: 100%;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 10px;
   padding: 6px 10px;
   border-radius: 5px;
@@ -1060,11 +1060,21 @@ body.is-split-resizing.is-resizing-rows * {
 }
 
 .command-item__desc {
+  /* One line by default; the hovered/keyboard-active row shows it all. */
   overflow: hidden;
+  min-width: 0;
+  flex: 1;
   color: #9a9a9a;
   font-size: 12px;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
+  word-break: keep-all;
+}
+
+.command-item.is-active .command-item__desc {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* A leading /command in the user's transcript bubble. */
