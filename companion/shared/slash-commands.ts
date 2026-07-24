@@ -1,8 +1,8 @@
 export type SlashCommand = {
-  /** Command name without the leading slash, e.g. "clear" or "review". */
+  /** Command name without the leading slash, e.g. "clear" or "omc:plan". */
   name: string;
   description?: string;
-  source: "builtin" | "project" | "user";
+  source: "builtin" | "project" | "user" | "plugin";
 };
 
 /**
@@ -20,7 +20,12 @@ export function filterSlashCommands(
     return null;
   }
   const prefix = match[1].toLowerCase();
-  const hits = commands.filter((command) => command.name.toLowerCase().startsWith(prefix));
+  // Match the full name or any ":" segment, so typing "/commit" also finds
+  // the namespaced "commit-commands:commit".
+  const hits = commands.filter((command) =>
+    command.name.toLowerCase().split(":").some((segment) => segment.startsWith(prefix)) ||
+    command.name.toLowerCase().startsWith(prefix)
+  );
   return hits.length > 0 ? hits : null;
 }
 

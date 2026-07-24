@@ -514,6 +514,11 @@ function renderCommandMenu(): void {
   commandMenu.hidden = false;
 }
 
+/** Keyboard navigation only: hovering must not yank the scroll position. */
+function scrollActiveCommandIntoView(): void {
+  commandMenu.querySelector(".command-item.is-active")?.scrollIntoView({ block: "nearest" });
+}
+
 function selectCommand(index: number): void {
   const command = commandMatches[index];
   if (!command) {
@@ -561,6 +566,7 @@ promptInput.addEventListener("keydown", (event) => {
       const step = event.key === "ArrowDown" ? 1 : -1;
       commandIndex = (commandIndex + step + commandMatches.length) % commandMatches.length;
       renderCommandMenu();
+      scrollActiveCommandIntoView();
       return;
     }
     if (event.key === "Enter" || event.key === "Tab") {

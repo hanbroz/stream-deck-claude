@@ -4,15 +4,18 @@ import path from "node:path";
 import type { SlashCommand } from "../shared/slash-commands";
 
 /**
- * The commands the composer's "/" menu offers.
+ * The commands the composer's "/" menu offers — the same inventory the
+ * interactive CLI lists: custom commands (`.claude/commands/*.md`), skills
+ * (`.claude/skills/<name>/SKILL.md`), and every installed plugin's commands
+ * and skills (namespaced `plugin:name`). All of these are prompt expansions,
+ * which `claude --print` executes.
  *
- * Custom commands are the folder's `.claude/commands/*.md` plus the user's
- * `<configDir>/commands/*.md` — both documented to work in `claude --print`.
- * `/clear` is listed too but handled by the Companion itself (new
- * conversation), never sent to the CLI.
+ * Interactive-only CLI builtins (/config, /copy, /vim, …) are deliberately
+ * absent: they drive the terminal UI and do nothing in print mode. /compact
+ * is also absent — probing print mode showed it hangs with no result, which
+ * would leave the Companion stuck "working". /clear is listed but handled by
+ * the Companion itself (new conversation), never sent to the CLI.
  */
-// /compact is deliberately absent: probing `claude --print` showed it hangs
-// (no result within 60s), which would leave the Companion stuck "working".
 const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "clear", description: "새 대화 시작", source: "builtin" }
 ];
@@ -28,49 +31,116 @@ function frontmatterDescription(head: string): string | undefined {
   return match?.[1].trim().replace(/^["']|["']$/gu, "");
 }
 
+async function describeFile(filePath: string): Promise<string | undefined> {
+  try {
+    return frontmatterDescription((await readFile(filePath, "utf8")).slice(0, 2048));
+  } catch {
+    return undefined; // a vanished/unreadable file still lists by name
+  }
+}
+
+/** `<directory>/*.md` → commands. A namespace prefixes names as `ns:name`. */
 async function scanCommandDirectory(
   directory: string,
-  source: SlashCommand["source"]
+  source: SlashCommand["source"],
+  namespace?: string
 ): Promise<SlashCommand[]> {
   let entries;
   try {
     entries = await readdir(directory, { withFileTypes: true });
   } catch {
-    return []; // no commands directory — nothing to offer
+    return [];
   }
 
   const commands: SlashCommand[] = [];
   for (const entry of entries) {
-    // ponytail: top-level *.md only; namespaced subdirectory commands can come
+    // ponytail: top-level *.md only; nested namespaced command dirs can come
     // later if anyone actually uses them.
     if (!entry.isFile() || !entry.name.endsWith(".md")) {
       continue;
     }
-    let description: string | undefined;
-    try {
-      const head = (await readFile(path.join(directory, entry.name), "utf8")).slice(0, 2048);
-      description = frontmatterDescription(head);
-    } catch {
-      // A vanished/unreadable file still lists by name.
-    }
-    commands.push({ name: entry.name.slice(0, -".md".length), description, source });
+    const bare = entry.name.slice(0, -".md".length);
+    commands.push({
+      name: namespace ? `${namespace}:${bare}` : bare,
+      description: await describeFile(path.join(directory, entry.name)),
+      source
+    });
   }
   return commands;
+}
+
+/** `<directory>/<name>/SKILL.md` → commands, like the CLI's skill slashes. */
+async function scanSkillDirectory(
+  directory: string,
+  source: SlashCommand["source"],
+  namespace?: string
+): Promise<SlashCommand[]> {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const commands: SlashCommand[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const description = await describeFile(path.join(directory, entry.name, "SKILL.md"));
+    if (description === undefined) {
+      // No readable SKILL.md → not a skill folder.
+      continue;
+    }
+    commands.push({
+      name: namespace ? `${namespace}:${entry.name}` : entry.name,
+      description,
+      source
+    });
+  }
+  return commands;
+}
+
+/** Installed plugins from the CLI's own manifest: name → installPath. */
+async function installedPlugins(configDir: string): Promise<Array<{ name: string; installPath: string }>> {
+  try {
+    const manifest = JSON.parse(
+      await readFile(path.join(configDir, "plugins", "installed_plugins.json"), "utf8")
+    ) as { plugins?: Record<string, Array<{ installPath?: string }>> };
+    const plugins: Array<{ name: string; installPath: string }> = [];
+    for (const [key, installs] of Object.entries(manifest.plugins ?? {})) {
+      const installPath = installs?.[0]?.installPath;
+      if (typeof installPath === "string" && installPath.length > 0) {
+        plugins.push({ name: key.split("@")[0], installPath });
+      }
+    }
+    return plugins;
+  } catch {
+    return []; // no plugins installed (or unreadable manifest)
+  }
 }
 
 export async function listSlashCommands(options: {
   configDir: string;
   projectRoot: string;
 }): Promise<SlashCommand[]> {
-  const [project, user] = await Promise.all([
+  const plugins = await installedPlugins(options.configDir);
+  const groups = await Promise.all([
     scanCommandDirectory(path.join(options.projectRoot, ".claude", "commands"), "project"),
-    scanCommandDirectory(path.join(options.configDir, "commands"), "user")
+    scanSkillDirectory(path.join(options.projectRoot, ".claude", "skills"), "project"),
+    scanCommandDirectory(path.join(options.configDir, "commands"), "user"),
+    scanSkillDirectory(path.join(options.configDir, "skills"), "user"),
+    ...plugins.flatMap((plugin) => [
+      scanCommandDirectory(path.join(plugin.installPath, "commands"), "plugin", plugin.name),
+      scanSkillDirectory(path.join(plugin.installPath, "skills"), "plugin", plugin.name)
+    ])
   ]);
 
-  // Project commands shadow user commands of the same name; builtins first.
+  // Builtins first, then project → user → plugins; first occurrence of a
+  // name wins (project shadows user shadows plugins).
   const seen = new Set(BUILTIN_COMMANDS.map((command) => command.name));
   const merged = [...BUILTIN_COMMANDS];
-  for (const command of [...project, ...user]) {
+  for (const command of groups.flat()) {
     if (!seen.has(command.name)) {
       seen.add(command.name);
       merged.push(command);
