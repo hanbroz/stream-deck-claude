@@ -5,10 +5,12 @@ import { defaultClaudeSettingsPath, defaultUsageDataDir } from "../bridge/paths"
 import type {
   claudeConversationExists,
   clearContextSessionResumePointer,
+  findRunningCompanionLaunch,
   readContextSessionResumePointer,
   writeActiveLaunch
 } from "../io/context-session-cache";
 import type {
+  focusCompanionWindow,
   launchClaudeCompanion
 } from "../services/companion-launcher";
 import type {
@@ -39,6 +41,8 @@ export type CodeStartLaunchDependencies = {
   defaultUsageDataDir: typeof defaultUsageDataDir;
   ensureBridgeInstalled: typeof ensureBridgeInstalled;
   launchClaudeCompanion: typeof launchClaudeCompanion;
+  findRunningCompanionLaunch: typeof findRunningCompanionLaunch;
+  focusCompanionWindow: typeof focusCompanionWindow;
   claudeConversationExists: typeof claudeConversationExists;
   clearContextSessionResumePointer: typeof clearContextSessionResumePointer;
   readContextSessionResumePointer: typeof readContextSessionResumePointer;
@@ -79,7 +83,8 @@ export function configuredBindingId(settings: CodeStartLaunchSettings): string |
 export function defaultCodeStartLaunchDependencies(
   overrides: Pick<
     CodeStartLaunchDependencies,
-    "ensureBridgeInstalled" | "launchClaudeCompanion" | "claudeConversationExists" |
+    "ensureBridgeInstalled" | "launchClaudeCompanion" | "findRunningCompanionLaunch" |
+      "focusCompanionWindow" | "claudeConversationExists" |
       "clearContextSessionResumePointer" | "readContextSessionResumePointer" |
       "renderCodeStartKeyImage" | "validateLaunchFolder" | "writeActiveLaunch" | "logger"
   >
@@ -124,6 +129,23 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
   }
 
   try {
+    // A second press for the same folder focuses the app that is already
+    // open instead of spawning a twin, which would also rotate the launch id
+    // and orphan the key's snapshot stream.
+    const running = await dependencies.findRunningCompanionLaunch(
+      dependencies.defaultUsageDataDir(),
+      bindingId,
+      folder
+    );
+    if (running) {
+      const focused = await dependencies.focusCompanionWindow(running.processId);
+      dependencies.logger.info(
+        `Code Start already running for this folder (pid=${running.processId}); focused=${focused}.`
+      );
+      await action.showOk();
+      return;
+    }
+
     await action.setImage(
       dependencies.renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
     );

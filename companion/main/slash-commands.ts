@@ -10,14 +10,18 @@ import type { SlashCommand } from "../shared/slash-commands";
  * and skills (namespaced `plugin:name`). All of these are prompt expansions,
  * which `claude --print` executes.
  *
- * Interactive-only CLI builtins (/config, /copy, /vim, …) are deliberately
- * absent: they drive the terminal UI and do nothing in print mode. /compact
- * is also absent — probing print mode showed it hangs with no result, which
- * would leave the Companion stuck "working". /clear is listed but handled by
- * the Companion itself (new conversation), never sent to the CLI.
+ * Only builtins probed to actually answer in print mode are listed:
+ * /status and /release-notes reply "isn't available in this environment",
+ * /compact returns empty output (so it stays out until that UX is solved),
+ * and interactive-only builtins (/config, /copy, /vim, …) drive the terminal
+ * UI. /clear is listed but handled by the Companion itself (new
+ * conversation), never sent to the CLI.
  */
 const BUILTIN_COMMANDS: SlashCommand[] = [
-  { name: "clear", description: "새 대화 시작", source: "builtin" }
+  { name: "clear", description: "새 대화 시작", source: "builtin" },
+  { name: "usage", description: "구독 사용량 한도 확인", source: "builtin" },
+  { name: "cost", description: "현재 세션 비용·사용량", source: "builtin" },
+  { name: "context", description: "컨텍스트 사용량 분석", source: "builtin" }
 ];
 
 /** First `description:` line of the file's YAML frontmatter, if any. */

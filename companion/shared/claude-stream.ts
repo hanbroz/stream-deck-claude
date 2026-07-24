@@ -38,7 +38,10 @@ const LONG_CONTEXT_WINDOW = 1_000_000;
  * is a factual correction to make here, not a structural change.
  */
 export function contextWindowForModel(model: string): number {
-  if (/\[1m\]/iu.test(model) || /opus|sonnet/iu.test(model)) {
+  // Fable proved to be a 1M model in the field: a live conversation reached
+  // 462k tokens, which a 200k window cannot hold (the 200k denominator showed
+  // CTX 100% when the truth was 46%).
+  if (/\[1m\]/iu.test(model) || /opus|sonnet|fable/iu.test(model)) {
     return LONG_CONTEXT_WINDOW;
   }
   return DEFAULT_CONTEXT_WINDOW;

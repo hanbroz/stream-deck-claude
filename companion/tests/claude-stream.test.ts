@@ -192,6 +192,9 @@ describe("context usage", () => {
     // Passing --model opus strips the [1m] marker but the window is still 1M.
     expect(contextWindowForModel("claude-opus-4-8")).toBe(1_000_000);
     expect(contextWindowForModel("claude-sonnet-5")).toBe(1_000_000);
+    // A live Fable conversation reached 462k tokens — impossible in 200k, so
+    // fable counts as a 1M model (the 200k denominator showed CTX 100%).
+    expect(contextWindowForModel("claude-fable-5")).toBe(1_000_000);
     expect(contextWindowForModel("claude-haiku-4-5")).toBe(200_000);
     expect(contextWindowForModel("")).toBe(200_000);
   });

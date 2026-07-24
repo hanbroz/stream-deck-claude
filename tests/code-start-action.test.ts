@@ -58,6 +58,10 @@ function createDependencies() {
       async () => undefined
     );
   const writeActiveLaunch = vi.fn(async () => undefined);
+  const findRunningCompanionLaunch =
+    vi.fn<CodeStartLaunchDependencies["findRunningCompanionLaunch"]>(async () => undefined);
+  const focusCompanionWindow =
+    vi.fn<CodeStartLaunchDependencies["focusCompanionWindow"]>(async () => true);
   const renderCodeStartKeyImage = vi.fn((projectName: string, state: { kind: string; activity: string }) =>
     `${projectName}:${state.kind}:${state.activity}`
   );
@@ -66,6 +70,8 @@ function createDependencies() {
     defaultUsageDataDir: () => "D:\\Data\\ClaudeUsageDeck",
     ensureBridgeInstalled,
     launchClaudeCompanion,
+    findRunningCompanionLaunch,
+    focusCompanionWindow,
     claudeConversationExists,
     clearContextSessionResumePointer,
     readContextSessionResumePointer,
@@ -82,6 +88,8 @@ function createDependencies() {
     ensureBridgeInstalled,
     validateLaunchFolder,
     launchClaudeCompanion,
+    findRunningCompanionLaunch,
+    focusCompanionWindow,
     claudeConversationExists,
     clearContextSessionResumePointer,
     readContextSessionResumePointer,
@@ -103,6 +111,35 @@ describe("Code Start relaunch guard", () => {
 
     expect(guard.isLaunching("binding-1")).toBe(false);
     expect(guard.begin("binding-1")).toBe(true);
+  });
+
+  it("focuses the existing Companion instead of launching a twin for the same folder", async () => {
+    const harness = createDependencies();
+    harness.findRunningCompanionLaunch.mockResolvedValue({
+      schemaVersion: 2,
+      actionId: "binding-1",
+      launchId: "launch-old",
+      folder: "D:\\Projects\\Demo",
+      startedAt: 1,
+      terminal: "companion",
+      processId: 7777
+    });
+    const action = createAction();
+
+    await launchConfiguredCodeStart({
+      action,
+      settings: { bindingId: "binding-1", folder: "D:\\Projects\\Demo", projectName: "Demo" },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    });
+
+    expect(harness.focusCompanionWindow).toHaveBeenCalledWith(7777);
+    // No second spawn, and the old launch id must survive untouched.
+    expect(harness.launchClaudeCompanion).not.toHaveBeenCalled();
+    expect(harness.writeActiveLaunch).not.toHaveBeenCalled();
+    expect(action.showOk).toHaveBeenCalled();
+    expect(action.showAlert).not.toHaveBeenCalled();
   });
 
   it("writes the active launch and reports success when a configured action launches", async () => {

@@ -498,6 +498,38 @@ export async function findReconnectableBindingId(
   return uniqueCandidates.length === 1 ? uniqueCandidates[0] : undefined;
 }
 
+/**
+ * The action's currently running Companion launch for this folder, if its
+ * process is still alive — Code Start focuses that window instead of opening
+ * a second app for the same project (which would also rotate the launch id
+ * and orphan the key's snapshot stream).
+ */
+export async function findRunningCompanionLaunch(
+  dataDir: string,
+  actionId: string,
+  folder: string,
+  isRunning: (processId: number) => boolean = isProcessRunning
+): Promise<ActiveCodeLaunch | undefined> {
+  try {
+    const value = await readJson(activeLaunchPath(dataDir, actionId));
+    if (value === undefined || asRecord(value)?.schemaVersion === 1) {
+      return undefined;
+    }
+    const active = parseActiveLaunch(value);
+    if (
+      active.actionId !== actionId ||
+      active.terminal !== "companion" ||
+      !sameFolder(active.folder, folder) ||
+      !isRunning(active.processId)
+    ) {
+      return undefined;
+    }
+    return active;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function loadCodeStartDisplayState(
   dataDir: string,
   actionId: string,

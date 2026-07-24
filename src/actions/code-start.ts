@@ -21,12 +21,13 @@ import {
   claudeConversationExists,
   clearContextSessionResumePointer,
   findReconnectableBindingId,
+  findRunningCompanionLaunch,
   loadCodeStartDisplayState,
   readContextSessionResumePointer,
   writeActiveLaunch
 } from "../io/context-session-cache";
 import { showFolderPicker } from "../services/folder-picker";
-import { launchClaudeCompanion } from "../services/companion-launcher";
+import { focusCompanionWindow, launchClaudeCompanion } from "../services/companion-launcher";
 import { validateLaunchFolder } from "../services/terminal-launcher";
 import { renderCodeStartKeyImage } from "../ui/code-start-renderer";
 import { CodeStartLaunchGuard } from "./code-start-launch-guard";
@@ -100,6 +101,8 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
         claudeConversationExists,
         clearContextSessionResumePointer,
         ensureBridgeInstalled,
+        findRunningCompanionLaunch,
+        focusCompanionWindow,
         launchClaudeCompanion,
         logger: streamDeck.logger,
         readContextSessionResumePointer,

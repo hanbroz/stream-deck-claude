@@ -134,6 +134,42 @@ export function createCompanionLaunchPlan(
   };
 }
 
+/**
+ * Bring an already-running Companion window to the foreground. A plain
+ * SetForegroundWindow from the (background) plugin process is silently
+ * swallowed by Windows' foreground lock, so this uses the proven combo:
+ * minimise→restore raises the window past the lock, and an Alt key pulse
+ * unlocks SetForegroundWindow for good measure.
+ */
+export async function focusCompanionWindow(processId: number): Promise<boolean> {
+  if (!Number.isInteger(processId) || processId <= 0) {
+    return false;
+  }
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `$p = Get-Process -Id ${processId}`,
+    "$h = $p.MainWindowHandle",
+    "if ($h -eq [IntPtr]::Zero) { exit 1 }",
+    "Add-Type -Namespace ClaudeDeck -Name Win32 -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow); [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);'",
+    "[ClaudeDeck.Win32]::ShowWindowAsync($h, 6) | Out-Null",
+    "Start-Sleep -Milliseconds 150",
+    "[ClaudeDeck.Win32]::ShowWindowAsync($h, 9) | Out-Null",
+    "[ClaudeDeck.Win32]::keybd_event(0xA4, 0, 0, [UIntPtr]::Zero)",
+    "[ClaudeDeck.Win32]::keybd_event(0xA4, 0, 2, [UIntPtr]::Zero)",
+    "[ClaudeDeck.Win32]::SetForegroundWindow($h) | Out-Null",
+    `(New-Object -ComObject WScript.Shell).AppActivate(${processId}) | Out-Null`
+  ].join("; ");
+  return await new Promise<boolean>((resolve) => {
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      { windowsHide: true, stdio: "ignore" }
+    );
+    child.once("error", () => resolve(false));
+    child.once("close", (code) => resolve(code === 0));
+  });
+}
+
 export async function launchClaudeCompanion(
   folder: string,
   bindingId: string,
