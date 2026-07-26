@@ -250,3 +250,39 @@ describe("withLastGoodHold", () => {
     expect(withLastGoodHold(setup, lastGood, nowMs + 1_000).state).toEqual(setup);
   });
 });
+
+describe("fresh snapshot with an already-passed reset", () => {
+  const cacheBody = (capturedAt: number) => JSON.stringify({
+    schemaVersion: 1,
+    capturedAt,
+    rateLimits: { fiveHour: { usedPercentage: 44, resetsAt: 1_700_000_000 - 60 } }
+  });
+
+  it("shows 0% (next window not started) instead of RESET DUE", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
+    const cachePath = path.join(root, "usage.json");
+    const nowMs = 1_700_000_000_000;
+    await writeFile(cachePath, cacheBody(nowMs - 60_000), "utf8");
+
+    await expect(
+      loadUsageDisplayState("fiveHour", { cachePath, bridgeInstalled: true, nowMs })
+    ).resolves.toEqual({ kind: "ready", percentage: 0, remaining: "--" });
+    // Same rule on the conflict path.
+    await expect(
+      loadUsageDisplayState("fiveHour", {
+        cachePath, bridgeInstalled: false, statusLineConflict: true, nowMs
+      })
+    ).resolves.toEqual({ kind: "ready", percentage: 0, remaining: "--" });
+  });
+
+  it("keeps RESET DUE when the snapshot itself is stale (0% would be a guess)", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
+    const cachePath = path.join(root, "usage.json");
+    const nowMs = 1_700_000_000_000;
+    await writeFile(cachePath, cacheBody(nowMs - 20 * 60 * 1000), "utf8");
+
+    await expect(
+      loadUsageDisplayState("fiveHour", { cachePath, bridgeInstalled: true, nowMs })
+    ).resolves.toEqual({ kind: "expired", remaining: "REFRESH" });
+  });
+});

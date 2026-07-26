@@ -44,6 +44,33 @@ export function withLastGoodHold(
   return { state, lastGood };
 }
 
+/**
+ * Display a window from a cache snapshot. When the snapshot is FRESH but the
+ * window's reset has already passed, the truth is simply that the next
+ * window has not started yet (usage windows begin at the first message) —
+ * that is 0% used, not stale data, so the key shows "0% / RESET --" instead
+ * of parking on RESET DUE until the user sends something. A stale snapshot
+ * keeps the RESET DUE card: there 0% would be a guess.
+ */
+function displayFromCache(
+  cache: UsageCacheLike,
+  kind: RateLimitKind,
+  nowMs: number,
+  fresh: boolean
+): UsageDisplayState | undefined {
+  const window = selectRateLimitWindow(cache, kind);
+  if (!window) {
+    return undefined;
+  }
+  const state = getDisplayState(window, nowMs);
+  if (state.kind === "expired" && fresh) {
+    return { kind: "ready", percentage: 0, remaining: "--" };
+  }
+  return state;
+}
+
+type UsageCacheLike = Parameters<typeof selectRateLimitWindow>[0];
+
 export async function loadUsageDisplayState(
   kind: RateLimitKind,
   options: DisplayLoaderOptions
@@ -57,9 +84,9 @@ export async function loadUsageDisplayState(
       // let a poisoned OMC cache (0% with an inflated reset time, seen in
       // the field after an OMC update) beat correct numbers.
       if (localCache && nowMs - localCache.capturedAt <= LOCAL_CACHE_FRESH_MS) {
-        const localWindow = selectRateLimitWindow(localCache, kind);
-        if (localWindow) {
-          return getDisplayState(localWindow, nowMs);
+        const localState = displayFromCache(localCache, kind, nowMs, true);
+        if (localState) {
+          return localState;
         }
       }
       const externalCache = options.externalUsageCachePath
@@ -79,11 +106,14 @@ export async function loadUsageDisplayState(
       return options.bridgeInstalled ? { kind: "waiting" } : { kind: "setup" };
     }
 
-    const window = selectRateLimitWindow(cache, kind);
-    if (!window) {
-      return { kind: "waiting" };
-    }
-    return getDisplayState(window, options.nowMs);
+    const nowMs = options.nowMs ?? Date.now();
+    const state = displayFromCache(
+      cache,
+      kind,
+      nowMs,
+      nowMs - cache.capturedAt <= LOCAL_CACHE_FRESH_MS
+    );
+    return state ?? { kind: "waiting" };
   } catch {
     return { kind: "error" };
   }
