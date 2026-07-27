@@ -16,12 +16,15 @@ export type InlineNode =
   | { type: "italic"; text: string }
   | { type: "code"; text: string };
 
+export type TableAlign = "left" | "center" | "right" | null;
+
 export type MarkdownBlock =
   | { type: "paragraph"; inline: InlineNode[] }
   | { type: "heading"; level: number; inline: InlineNode[] }
   | { type: "code"; language: string; code: string }
   | { type: "list"; ordered: boolean; items: InlineNode[][] }
-  | { type: "quote"; inline: InlineNode[] };
+  | { type: "quote"; inline: InlineNode[] }
+  | { type: "table"; header: InlineNode[][]; align: TableAlign[]; rows: InlineNode[][][] };
 
 // Ordered so that code spans win over emphasis: `**x**` inside backticks stays literal.
 const INLINE_PATTERN =
@@ -53,6 +56,30 @@ export function parseInline(source: string): InlineNode[] {
 }
 
 const FENCE = /^\s{0,3}(?:```|~~~)\s*([A-Za-z0-9_+-]*)\s*$/u;
+// GFM table delimiter row, e.g. `|---|:---:|`. The `|` requirement keeps a
+// plain `----` rule from turning the previous paragraph into a table.
+const TABLE_SEPARATOR = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/u;
+
+function splitTableRow(line: string): string[] {
+  let trimmed = line.trim();
+  if (trimmed.startsWith("|")) {
+    trimmed = trimmed.slice(1);
+  }
+  if (trimmed.endsWith("|")) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  // ponytail: escaped pipes inside cells are rare enough to ignore.
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+function parseTableAlign(cell: string): TableAlign {
+  const left = cell.startsWith(":");
+  const right = cell.endsWith(":");
+  if (left && right) return "center";
+  if (right) return "right";
+  if (left) return "left";
+  return null;
+}
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*)$/u;
 const UNORDERED = /^\s*[-*+]\s+(.*)$/u;
 const ORDERED = /^\s*\d+[.)]\s+(.*)$/u;
@@ -89,6 +116,40 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
 
     if (line.trim().length === 0) {
       flushParagraph();
+      continue;
+    }
+
+    // A header row followed by a delimiter row starts a table.
+    if (
+      line.includes("|") &&
+      index + 1 < lines.length &&
+      lines[index + 1].includes("|") &&
+      TABLE_SEPARATOR.test(lines[index + 1])
+    ) {
+      flushParagraph();
+      const headerCells = splitTableRow(line);
+      const separatorCells = splitTableRow(lines[index + 1]);
+      const align: TableAlign[] = headerCells.map(
+        (_cell, column) => parseTableAlign(separatorCells[column] ?? "")
+      );
+      const rows: InlineNode[][][] = [];
+      index += 2;
+      while (
+        index < lines.length &&
+        lines[index].trim().length > 0 &&
+        lines[index].includes("|")
+      ) {
+        const cells = splitTableRow(lines[index]);
+        rows.push(headerCells.map((_cell, column) => parseInline(cells[column] ?? "")));
+        index += 1;
+      }
+      index -= 1;
+      blocks.push({
+        type: "table",
+        header: headerCells.map((cell) => parseInline(cell)),
+        align,
+        rows
+      });
       continue;
     }
 

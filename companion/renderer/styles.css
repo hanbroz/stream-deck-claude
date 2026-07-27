@@ -787,6 +787,36 @@ body.is-split-resizing.is-resizing-rows * {
   margin-bottom: 3px;
 }
 
+.md-table-wrap {
+  margin: 0 0 8px;
+  overflow-x: auto; /* wide tables scroll instead of stretching the console */
+}
+
+.md-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  word-break: keep-all;
+}
+
+.md-table th,
+.md-table td {
+  border: 1px solid #3a3a3a;
+  padding: 4px 10px;
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+
+.md-table th {
+  background: #26221c;
+  color: #f0f0f0;
+  font-weight: 700;
+}
+
+.md-table tbody tr:nth-child(even) {
+  background: #1c1c1c;
+}
+
 .md-quote {
   margin: 0 0 8px;
   padding-left: 10px;

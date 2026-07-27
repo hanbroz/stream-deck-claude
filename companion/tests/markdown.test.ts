@@ -106,3 +106,39 @@ describe("paragraph line breaks", () => {
     expect(paragraph.inline.some((node) => node.type === "code" && node.text.startsWith("★ Insight"))).toBe(true);
   });
 });
+
+describe("tables", () => {
+  it("parses a GFM table with inline formatting and alignment", () => {
+    const blocks = parseMarkdown([
+      "| 항목 | 값 |",
+      "|:---|---:|",
+      "| **모델** | `opus` |",
+      "| 상태 | 대기 |"
+    ].join("\n"));
+
+    expect(blocks).toEqual([{
+      type: "table",
+      header: [
+        [{ type: "text", text: "항목" }],
+        [{ type: "text", text: "값" }]
+      ],
+      align: ["left", "right"],
+      rows: [
+        [[{ type: "bold", text: "모델" }], [{ type: "code", text: "opus" }]],
+        [[{ type: "text", text: "상태" }], [{ type: "text", text: "대기" }]]
+      ]
+    }]);
+  });
+
+  it("pads short rows to the header width", () => {
+    const blocks = parseMarkdown("| a | b | c |\n|---|---|---|\n| 1 | 2 |");
+    const table = blocks[0] as { type: "table"; rows: unknown[][] };
+    expect(table.rows[0]).toHaveLength(3);
+  });
+
+  it("leaves pipe-containing text without a delimiter row as a paragraph", () => {
+    const blocks = parseMarkdown("5h:[----]0% | wk:[----]0%\n일반 문장입니다.");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe("paragraph");
+  });
+});

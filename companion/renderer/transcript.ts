@@ -100,6 +100,48 @@ function createQuestionCard(code: string): HTMLElement | null {
   return card;
 }
 
+function createTable(block: Extract<MarkdownBlock, { type: "table" }>): HTMLElement {
+  // The wrapper scrolls horizontally so a wide table never stretches the
+  // transcript; cells stay textContent-only like every other block.
+  const wrap = document.createElement("div");
+  wrap.className = "md-table-wrap";
+  const table = document.createElement("table");
+  table.className = "md-table";
+
+  const applyAlign = (cell: HTMLElement, column: number): void => {
+    const align = block.align[column];
+    if (align) {
+      cell.style.textAlign = align;
+    }
+  };
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  block.header.forEach((cell, column) => {
+    const th = document.createElement("th");
+    applyAlign(th, column);
+    appendInline(th, cell);
+    headRow.append(th);
+  });
+  thead.append(headRow);
+
+  const tbody = document.createElement("tbody");
+  for (const row of block.rows) {
+    const tr = document.createElement("tr");
+    row.forEach((cell, column) => {
+      const td = document.createElement("td");
+      applyAlign(td, column);
+      appendInline(td, cell);
+      tr.append(td);
+    });
+    tbody.append(tr);
+  }
+
+  table.append(thead, tbody);
+  wrap.append(table);
+  return wrap;
+}
+
 export function renderMarkdown(source: string): DocumentFragment {
   const fragment = document.createDocumentFragment();
 
@@ -109,6 +151,10 @@ export function renderMarkdown(source: string): DocumentFragment {
       // plain code block and upgrades to the card on the final repaint.
       const card = block.language === "question" ? createQuestionCard(block.code) : null;
       fragment.append(card ?? createCodeBlock(block));
+      continue;
+    }
+    if (block.type === "table") {
+      fragment.append(createTable(block));
       continue;
     }
     if (block.type === "list") {
