@@ -260,3 +260,51 @@ describe("summarizeToolInput", () => {
     expect(summarizeToolInput("Task", undefined)).toBe("");
   });
 });
+
+describe("text block boundaries", () => {
+  it("starts a new paragraph when a fresh text block follows earlier output", () => {
+    const parser = new ClaudeStreamParser();
+    parser.push(line({ type: "system", subtype: "init" }));
+
+    let out = "";
+    out += texts(parser.push(line({
+      type: "stream_event",
+      event: { type: "content_block_start", content_block: { type: "text" } }
+    })));
+    out += texts(parser.push(line({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "재빌드 후 검증합니다." } }
+    })));
+    // tool call happens in between…
+    out += texts(parser.push(line({
+      type: "stream_event",
+      event: { type: "content_block_start", content_block: { type: "tool_use", name: "Bash" } }
+    })));
+    // …then a NEW text block must not glue to the previous sentence.
+    out += texts(parser.push(line({
+      type: "stream_event",
+      event: { type: "content_block_start", content_block: { type: "text" } }
+    })));
+    out += texts(parser.push(line({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "6단계 전부 통과했습니다." } }
+    })));
+
+    expect(out).toBe("재빌드 후 검증합니다.\n\n6단계 전부 통과했습니다.");
+  });
+
+  it("adds no separator when the previous block already ended with a newline", () => {
+    const parser = new ClaudeStreamParser();
+    parser.push(line({ type: "system", subtype: "init" }));
+    let out = "";
+    for (const payload of [
+      { type: "content_block_start", content_block: { type: "text" } },
+      { type: "content_block_delta", delta: { type: "text_delta", text: "첫 줄\n" } },
+      { type: "content_block_start", content_block: { type: "text" } },
+      { type: "content_block_delta", delta: { type: "text_delta", text: "둘째" } }
+    ]) {
+      out += texts(parser.push(line({ type: "stream_event", event: payload })));
+    }
+    expect(out).toBe("첫 줄\n둘째");
+  });
+});

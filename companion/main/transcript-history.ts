@@ -56,7 +56,8 @@ function extractText(content: unknown): string {
       imageCount += 1;
     }
   }
-  const text = parts.join("").trim();
+  // Separate text blocks are separate paragraphs (tool calls sat between them).
+  const text = parts.join("\n\n").trim();
   if (imageCount > 0) {
     return text.length > 0 ? `${text}\n[이미지 ${imageCount}장]` : `[이미지 ${imageCount}장]`;
   }

@@ -71,7 +71,9 @@ function textBlocks(value: unknown): string {
     .filter(isRecord)
     .filter((block) => block.type === "text" && typeof block.text === "string")
     .map((block) => block.text as string)
-    .join("");
+    // Text blocks are separate paragraphs (tool calls sit between them);
+    // joining bare would glue "…검증합니다." + "6단계 통과" into one line.
+    .join("\n\n");
 }
 
 function baseName(filePath: string): string {
@@ -151,6 +153,10 @@ export function isMissingClaudeConversationError(data: string): boolean {
 export class ClaudeStreamParser {
   private buffer = "";
   private hasPartialAssistantText = false;
+  // Tracks streamed text across content blocks so a NEW text block (after
+  // tool calls) starts on its own paragraph instead of gluing to the last.
+  private emittedStreamText = false;
+  private lastStreamTextEnd = "\n";
   private ready = false;
   private hooksStarted = 0;
   private hooksDone = 0;
@@ -288,6 +294,11 @@ export class ClaudeStreamParser {
         return this.phase("thinking");
       }
       if (block.type === "text") {
+        // A fresh text block after earlier output is a new paragraph.
+        if (this.emittedStreamText && this.lastStreamTextEnd !== "\n") {
+          this.lastStreamTextEnd = "\n";
+          return [...this.phase("responding"), { kind: "text", text: "\n\n" }];
+        }
         return this.phase("responding");
       }
       if (block.type === "tool_use" && typeof block.name === "string") {
@@ -299,6 +310,10 @@ export class ClaudeStreamParser {
     if (event.type === "content_block_delta" && isRecord(event.delta)) {
       if (event.delta.type === "text_delta" && typeof event.delta.text === "string") {
         this.hasPartialAssistantText = true;
+        if (event.delta.text.length > 0) {
+          this.emittedStreamText = true;
+          this.lastStreamTextEnd = event.delta.text.slice(-1);
+        }
         return [...this.phase("responding"), { kind: "text", text: event.delta.text }];
       }
       return [];
