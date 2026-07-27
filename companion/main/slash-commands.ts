@@ -25,7 +25,10 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   // Probed working in print mode ("Reloaded skills: N skills available").
   // /reload-plugins is interactive-only — irrelevant here anyway, since every
   // Companion message spawns a fresh CLI that reloads plugins from disk.
-  { name: "reload-skills", description: "스킬 목록 다시 로드", source: "builtin" }
+  { name: "reload-skills", description: "스킬 목록 다시 로드", source: "builtin" },
+  // Read-only in this architecture: per-message runs take the model from the
+  // composer dropdown, so /model <name> would not stick past one reply.
+  { name: "model", description: "현재 모델 확인 (변경은 하단 Model 선택)", source: "builtin" }
 ];
 
 /** First `description:` line of the file's YAML frontmatter, if any. */

@@ -250,6 +250,22 @@ describe("ClaudePtyManager (per-message runs)", () => {
     expect(runs[1].spec.args).toEqual(expect.arrayContaining(["--resume", "conv-1"]));
   });
 
+  it("stays silent on hook-failure stderr noise (e.g. the SessionEnd hook we cancel)", () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    manager.write(started.sessionId, "hi");
+    runs[0].error.emit(
+      "error",
+      "SessionEnd hook [export PATH=...; node bun-runner.js worker-service.cjs hook claude-code session-complete] failed: Hook cancelled"
+    );
+
+    const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(events.filter((event) => event.kind === "error")).toEqual([]);
+  });
+
   it("surfaces stderr as an error event", () => {
     const { manager, runs } = makeManager();
     const started = manager.start({ cwd: "D:\\repo" });

@@ -134,6 +134,16 @@ export function encodeClaudeUserMessage(
   })}\n`;
 }
 
+/**
+ * Hook failures on stderr are ambient noise for the conversation — above all
+ * the SessionEnd hook the Companion itself cancels by killing the finished
+ * per-message run ("SessionEnd hook [...] failed: Hook cancelled"). They must
+ * not surface as red error turns in the transcript.
+ */
+export function isHookFailureNoise(data: string): boolean {
+  return /\bhook\b/iu.test(data) && /\b(failed|cancell?ed)\b/iu.test(data);
+}
+
 export function isMissingClaudeConversationError(data: string): boolean {
   return /No conversation found with session ID:/iu.test(data);
 }

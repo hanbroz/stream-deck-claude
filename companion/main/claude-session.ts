@@ -13,6 +13,7 @@ import {
 import {
   ClaudeStreamParser,
   encodeClaudeUserMessage,
+  isHookFailureNoise,
   isMissingClaudeConversationError,
   type ClaudeEvent
 } from "../shared/claude-stream";
@@ -294,8 +295,8 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
         return;
       }
       const trimmed = message.trim();
-      diag("main.run.stderr", { sessionId, length: trimmed.length });
-      if (trimmed.length > 0) {
+      diag("main.run.stderr", { sessionId, length: trimmed.length, hookNoise: isHookFailureNoise(trimmed) });
+      if (trimmed.length > 0 && !isHookFailureNoise(trimmed)) {
         emit([{
           kind: "error",
           message: trimmed,

@@ -9,7 +9,7 @@ import type { ClaudeModel } from "./claude-command";
  * step with the picker options in renderer/index.html.
  */
 export const REPRESENTATIVE_MODEL_ID: Record<ClaudeModel, string> = {
-  opus: "claude-opus-4-8",
+  opus: "claude-opus-5",
   sonnet: "claude-sonnet-5",
   haiku: "claude-haiku-4-5",
   fable: "claude-fable-5"
