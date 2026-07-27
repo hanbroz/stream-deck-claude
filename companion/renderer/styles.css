@@ -698,6 +698,11 @@ body.is-split-resizing.is-resizing-rows * {
 
 .md-paragraph {
   margin: 0 0 8px;
+  /* The parser keeps single newlines inside a paragraph (chat output uses
+     them meaningfully — e.g. the ★ Insight marker lines); render them as real
+     line breaks instead of collapsing everything onto one line. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .md-paragraph:last-child {

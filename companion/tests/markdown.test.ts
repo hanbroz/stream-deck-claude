@@ -89,3 +89,20 @@ describe("block markdown", () => {
     ]);
   });
 });
+
+describe("paragraph line breaks", () => {
+  it("keeps single newlines inside a paragraph (Insight marker lines)", () => {
+    const blocks = parseMarkdown(
+      "프로젝트를 구성합니다.\n`★ Insight ─────`\n요점 하나\n`─────────`\nNow the build:"
+    );
+    expect(blocks).toHaveLength(1);
+    const paragraph = blocks[0] as { type: "paragraph"; inline: Array<{ type: string; text: string }> };
+    expect(paragraph.type).toBe("paragraph");
+    // The newlines survive in the text nodes around the code spans, so the
+    // pre-wrap renderer shows the marker on its own line.
+    expect(paragraph.inline.map((node) => node.text).join("")).toBe(
+      "프로젝트를 구성합니다.\n★ Insight ─────\n요점 하나\n─────────\nNow the build:"
+    );
+    expect(paragraph.inline.some((node) => node.type === "code" && node.text.startsWith("★ Insight"))).toBe(true);
+  });
+});
