@@ -39,7 +39,10 @@ import {
   launchConfiguredCodeStart
 } from "./code-start-launch";
 
-const REFRESH_INTERVAL_MS = 1_000;
+// 500ms so the key flips to "waiting for input" almost immediately when a
+// turn ends or is interrupted — the user watches the keys to know the moment
+// a session is ready for its next instruction.
+const REFRESH_INTERVAL_MS = 500;
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bridgeSourcePath = path.join(pluginRoot, "bridge", "statusline-bridge.js");
 

@@ -190,6 +190,9 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     session.busy = false;
     session.claudeSessionId = undefined;
     session.mode = "new";
+    // The session is idle again; without this the key's activity record
+    // would keep whatever state the killed run left behind.
+    this.emit("data", sessionId, [{ kind: "phase", phase: "ready" }]);
   }
 
   /**
@@ -209,6 +212,10 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     session.busy = false;
     run.kill();
     diag("main.run.interrupt", { sessionId });
+    // The killed run can never report end_turn, so hand the waiting state
+    // back explicitly — otherwise the Stream Deck key's activity record
+    // stays "running" forever after an Esc interrupt.
+    this.emit("data", sessionId, [{ kind: "phase", phase: "ready" }]);
     return true;
   }
 

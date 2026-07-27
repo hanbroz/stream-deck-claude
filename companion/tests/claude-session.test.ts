@@ -240,6 +240,15 @@ describe("ClaudePtyManager (per-message runs)", () => {
     expect(manager.interrupt(started.sessionId)).toBe(true);
     expect(runs[0].kill).toHaveBeenCalled();
 
+    // The killed run can never report end_turn, so interrupt itself hands
+    // the waiting state back (keeps the Stream Deck key from sticking on
+    // "running" after an Esc).
+    const phases = data.mock.calls
+      .flatMap(([, events]) => events as ClaudeEvent[])
+      .filter((event) => event.kind === "phase")
+      .map((event) => (event as { phase: string }).phase);
+    expect(phases.at(-1)).toBe("ready");
+
     // The killed run's late exit must not surface an error…
     data.mockClear();
     runs[0].exit.emit("exit", { exitCode: 1 });
