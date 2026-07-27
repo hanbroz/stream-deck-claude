@@ -142,6 +142,36 @@ describe("Code Start relaunch guard", () => {
     expect(action.showAlert).not.toHaveBeenCalled();
   });
 
+  it("launches fresh when the recorded pid is not a focusable Companion (pid reuse)", async () => {
+    const harness = createDependencies();
+    harness.findRunningCompanionLaunch.mockResolvedValue({
+      schemaVersion: 2,
+      actionId: "binding-1",
+      launchId: "launch-old",
+      folder: "D:\\Projects\\Demo",
+      startedAt: 1,
+      terminal: "companion",
+      processId: 7777
+    });
+    // Windows reused pid 7777 for a foreign process — focusing must fail…
+    harness.focusCompanionWindow.mockResolvedValue(false);
+    const action = createAction();
+
+    await launchConfiguredCodeStart({
+      action,
+      settings: { bindingId: "binding-1", folder: "D:\\Projects\\Demo", projectName: "Demo" },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    });
+
+    // …and the press falls through to a real launch that rewrites the state.
+    expect(harness.launchClaudeCompanion).toHaveBeenCalled();
+    expect(harness.writeActiveLaunch).toHaveBeenCalled();
+    expect(action.showOk).toHaveBeenCalled();
+    expect(action.showAlert).not.toHaveBeenCalled();
+  });
+
   it("writes the active launch and reports success when a configured action launches", async () => {
     const harness = createDependencies();
     const action = createAction();

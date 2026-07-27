@@ -148,6 +148,10 @@ export async function focusCompanionWindow(processId: number): Promise<boolean> 
   const script = [
     "$ErrorActionPreference = 'Stop'",
     `$p = Get-Process -Id ${processId}`,
+    // Windows reuses PIDs: the recorded id may now belong to a foreign
+    // process. Only a real Companion window is worth focusing — anything
+    // else reports failure so the caller launches a fresh app instead.
+    "if ($p.ProcessName -ne 'Claude Deck Companion') { exit 2 }",
     "$h = $p.MainWindowHandle",
     "if ($h -eq [IntPtr]::Zero) { exit 1 }",
     "Add-Type -Namespace ClaudeDeck -Name Win32 -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow); [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);'",

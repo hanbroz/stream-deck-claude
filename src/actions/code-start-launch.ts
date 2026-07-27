@@ -139,11 +139,20 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
     );
     if (running) {
       const focused = await dependencies.focusCompanionWindow(running.processId);
+      if (focused) {
+        dependencies.logger.info(
+          `Code Start already running for this folder (pid=${running.processId}); focused existing window.`
+        );
+        await action.showOk();
+        return;
+      }
+      // The recorded pid exists but is not a focusable Companion (Windows
+      // reused the pid, or the window is gone). Treat the record as stale
+      // and fall through to a normal launch — this also rewrites
+      // active.json with the real new pid, correcting the key state.
       dependencies.logger.info(
-        `Code Start already running for this folder (pid=${running.processId}); focused=${focused}.`
+        `Stale active launch for this folder (pid=${running.processId} not a Companion window); launching fresh.`
       );
-      await action.showOk();
-      return;
     }
 
     await action.setImage(
