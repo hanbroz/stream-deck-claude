@@ -10,25 +10,69 @@ import type { SlashCommand } from "../shared/slash-commands";
  * and skills (namespaced `plugin:name`). All of these are prompt expansions,
  * which `claude --print` executes.
  *
- * Only builtins probed to actually answer in print mode are listed:
- * /status and /release-notes reply "isn't available in this environment",
- * /compact returns empty output (so it stays out until that UX is solved),
- * and interactive-only builtins (/config, /copy, /vim, …) drive the terminal
- * UI. /clear is listed but handled by the Companion itself (new
- * conversation), never sent to the CLI.
+ * The full builtin roster, mirroring the terminal's "/" list. The CLI offers
+ * no way to enumerate its own commands from print mode (/help replies "isn't
+ * available in this environment" — probed), and blind-probing each candidate
+ * is unsafe (/init, /login, … actually run), so this list is maintained by
+ * hand; update it when the CLI adds commands.
+ *
+ * Entries the CLI cannot serve in print mode carry a "터미널 전용" tag —
+ * picking one still gets the CLI's own polite refusal, never a hang.
+ * /clear is handled by the Companion itself (new conversation).
  */
+const TERMINAL_ONLY_BUILTINS: Array<[string, string]> = [
+  ["add-dir", "작업 디렉터리 추가"],
+  ["agents", "에이전트 관리"],
+  ["bug", "버그 리포트 전송"],
+  ["compact", "대화 컨텍스트 압축"],
+  ["config", "설정 열기"],
+  ["copy", "마지막 응답 클립보드 복사"],
+  ["doctor", "설치 상태 진단"],
+  ["export", "대화 내보내기"],
+  ["help", "도움말"],
+  ["hooks", "훅 관리"],
+  ["ide", "IDE 연결"],
+  ["install-github-app", "GitHub 앱 설치"],
+  ["login", "계정 로그인"],
+  ["logout", "로그아웃"],
+  ["mcp", "MCP 서버 관리"],
+  ["memory", "메모리(CLAUDE.md) 편집"],
+  ["output-style", "출력 스타일 변경"],
+  ["permissions", "권한 관리"],
+  ["plugin", "플러그인 관리"],
+  ["pr-comments", "PR 코멘트 조회"],
+  ["privacy-settings", "개인정보 설정"],
+  ["release-notes", "릴리스 노트"],
+  ["reload-plugins", "플러그인 다시 로드 (Companion은 매 메시지 자동 재로드)"],
+  ["resume", "이전 대화 재개 (Companion은 Code Start가 자동 재개)"],
+  ["rewind", "체크포인트 되감기"],
+  ["statusline", "상태줄 설정"],
+  ["status", "연결 상태"],
+  ["terminal-setup", "터미널 키 설정"],
+  ["todos", "할 일 목록"],
+  ["upgrade", "플랜 업그레이드"],
+  ["vim", "Vim 입력 모드"]
+];
+
 const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "clear", description: "새 대화 시작", source: "builtin" },
+  // Probed working in print mode:
   { name: "usage", description: "구독 사용량 한도 확인", source: "builtin" },
   { name: "cost", description: "현재 세션 비용·사용량", source: "builtin" },
   { name: "context", description: "컨텍스트 사용량 분석", source: "builtin" },
-  // Probed working in print mode ("Reloaded skills: N skills available").
-  // /reload-plugins is interactive-only — irrelevant here anyway, since every
-  // Companion message spawns a fresh CLI that reloads plugins from disk.
   { name: "reload-skills", description: "스킬 목록 다시 로드", source: "builtin" },
   // Read-only in this architecture: per-message runs take the model from the
   // composer dropdown, so /model <name> would not stick past one reply.
-  { name: "model", description: "현재 모델 확인 (변경은 하단 Model 선택)", source: "builtin" }
+  { name: "model", description: "현재 모델 확인 (변경은 하단 Model 선택)", source: "builtin" },
+  // Prompt-expansion builtins — they run as a normal agentic turn:
+  { name: "init", description: "CLAUDE.md 초기화 생성", source: "builtin" },
+  { name: "review", description: "코드 리뷰 실행", source: "builtin" },
+  { name: "security-review", description: "보안 리뷰 실행", source: "builtin" },
+  ...TERMINAL_ONLY_BUILTINS.map(([name, description]): SlashCommand => ({
+    name,
+    description: `${description} · 터미널 전용`,
+    source: "builtin"
+  }))
 ];
 
 /** First `description:` line of the file's YAML frontmatter, if any. */

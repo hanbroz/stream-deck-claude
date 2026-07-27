@@ -74,11 +74,20 @@ describe("listSlashCommands", () => {
     expect(byName.get("handoff")).toMatchObject({ source: "user", description: undefined });
   });
 
-  it("returns only builtins when no commands directories exist", async () => {
+  it("returns the full builtin roster when no commands directories exist", async () => {
     const commands = await listSlashCommands({ configDir, projectRoot });
-    expect(commands.map((command) => command.name)).toEqual([
-      "clear", "usage", "cost", "context", "reload-skills", "model"
-    ]);
+    const byName = new Map(commands.map((command) => [command.name, command]));
+
+    // Print-mode-capable builtins carry plain descriptions…
+    for (const name of ["clear", "usage", "cost", "context", "reload-skills", "model"]) {
+      expect(byName.get(name)?.description).not.toContain("터미널 전용");
+    }
+    // …terminal-only ones are tagged but still listed (terminal parity).
+    for (const name of ["help", "config", "compact", "resume", "vim", "status"]) {
+      expect(byName.get(name)?.description).toContain("터미널 전용");
+    }
+    expect(commands.length).toBeGreaterThanOrEqual(35);
+    expect(commands.every((command) => command.source === "builtin")).toBe(true);
   });
 
   it("lists skills and installed plugin commands/skills with namespaced names", async () => {
