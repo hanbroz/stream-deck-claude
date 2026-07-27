@@ -558,6 +558,9 @@ function selectCommand(index: number): void {
 // left alone stays plain text.
 let projectFiles: string[] = [];
 let projectFilesScannedAtMs = 0;
+// Messages sent while Claude is still generating wait here and auto-send
+// when the turn ends (terminal parity), instead of failing with an error.
+const pendingSendQueue: SubmitIntent[] = [];
 let mentionMatches: string[] = [];
 let mentionIndex = 0;
 const pickedMentions = new Set<string>();
@@ -1612,6 +1615,7 @@ async function clearSession(): Promise<void> {
   clearConsoleOutput();
   lastContextPercentage = undefined;
   lastStreamModel = undefined;
+  pendingSendQueue.length = 0; // a fresh conversation abandons queued sends
   renderStatus({ state: lastSessionState, contextPercentage: null });
   renderClaudeStatus("ready");
   showToast("새 대화를 시작했습니다.");
@@ -1641,6 +1645,31 @@ async function sendIntent(intent: SubmitIntent): Promise<void> {
     // instead of sending the text to Claude.
     if (intent.text.trim() === "/clear" && intent.images.length === 0) {
       await clearSession();
+      return;
+    }
+
+    // Terminal-only builtins never reach print mode; answer locally and
+    // instantly instead of paying a CLI round-trip for a polite refusal.
+    const firstToken = intent.text.trim().split(/\s+/u)[0] ?? "";
+    if (firstToken.startsWith("/") && intent.images.length === 0) {
+      const command = slashCommands.find((entry) => `/${entry.name}` === firstToken);
+      if (command?.description?.includes("터미널 전용")) {
+        finishAssistantTurn();
+        appendTurn("user", intent.text);
+        const hint = command.description.replace(/\s*·\s*터미널 전용\s*$/u, "");
+        appendTurn(
+          "assistant",
+          `${firstToken} 명령은 Claude Code 터미널 전용이라 Companion에서는 실행되지 않습니다. (${hint})`
+        );
+        return;
+      }
+    }
+
+    // A message sent while Claude is still generating queues instead of
+    // failing (terminal parity): it auto-sends the moment the turn ends.
+    if (claudeStatus.dataset.busy === "true") {
+      pendingSendQueue.push(intent);
+      showToast("응답 생성 중 — 완료되면 자동 전송됩니다.");
       return;
     }
 
@@ -1801,6 +1830,13 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
         finishAssistantTurn();
       }
       renderClaudeStatus(event.phase, event.detail);
+      // The turn is over: flush the message the user queued mid-generation.
+      if ((event.phase === "waiting" || event.phase === "ready") && pendingSendQueue.length > 0) {
+        const queued = pendingSendQueue.shift();
+        if (queued) {
+          setTimeout(() => { void sendIntent(queued); }, 0);
+        }
+      }
     } else if (event.kind === "context") {
       diag("renderer.context", { usedTokens: event.usedTokens, windowTokens: event.windowTokens });
       if (event.model) {
