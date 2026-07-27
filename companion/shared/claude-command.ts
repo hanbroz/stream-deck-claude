@@ -69,6 +69,7 @@ export const COMPANION_IPC = {
   claudeExit: "companion:claude:exit",
   claudeCommands: "companion:claude:commands",
   pathDelete: "companion:path:delete",
+  pathFiles: "companion:path:files",
   terminalStart: "companion:terminal:start",
   terminalWrite: "companion:terminal:write",
   terminalResize: "companion:terminal:resize",

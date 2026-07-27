@@ -155,8 +155,10 @@
 
           <footer id="composer" class="composer" aria-label="Prompt composer">
             <div id="command-menu" class="command-menu" role="listbox" aria-label="Slash commands" hidden></div>
+            <div id="mention-menu" class="command-menu" role="listbox" aria-label="File mentions" hidden></div>
             <div id="image-preview" class="image-preview" aria-live="polite"></div>
             <div class="composer__row">
+              <div id="prompt-highlight" class="prompt-highlight" aria-hidden="true"></div>
               <textarea
                 id="prompt-input"
                 rows="8"

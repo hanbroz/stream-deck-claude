@@ -1170,6 +1170,7 @@ body.is-split-resizing.is-resizing-rows * {
 }
 
 .composer__row {
+  position: relative; /* anchors the mention-highlight mirror layer */
   display: block;
   min-height: 0;
   flex: 1;
@@ -1177,6 +1178,37 @@ body.is-split-resizing.is-resizing-rows * {
   border-radius: 12px;
   background: var(--surface-2);
   padding: 10px 12px;
+}
+
+/*
+ * Mirror layer behind the textarea for "@" mention chips. It renders the
+ * SAME text with the SAME metrics but transparent ink, so only the chip
+ * backgrounds show through the (transparent-background) textarea above.
+ */
+.prompt-highlight {
+  position: absolute;
+  inset: 10px 12px; /* must equal .composer__row padding */
+  overflow: hidden;
+  color: transparent;
+  font-family: "Cascadia Code", "D2Coding", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.prompt-highlight__mention {
+  border-radius: 4px;
+  background: rgba(217, 119, 87, 0.24);
+  outline: 1px solid rgba(217, 119, 87, 0.45);
+}
+
+#prompt-input {
+  position: relative; /* stays above the mirror layer */
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .composer__row:focus-within {

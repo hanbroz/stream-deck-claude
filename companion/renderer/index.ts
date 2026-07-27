@@ -51,6 +51,7 @@ import {
   filterSlashCommands,
   type SlashCommand
 } from "../shared/slash-commands";
+import { applyMention, filterMentionFiles, mentionQueryAt } from "../shared/mention";
 import { diag, setDiagSink } from "../shared/diag";
 import { createTurn, paintTurn, type Turn, type TurnRole } from "./transcript";
 import { companionBuildVersion } from "../shared/build-version";
@@ -117,6 +118,8 @@ const modelSelect = mustElement<HTMLSelectElement>("model-select");
 const effortSelect = mustElement<HTMLSelectElement>("effort-select");
 const applyModelButton = mustElement<HTMLButtonElement>("apply-model");
 const commandMenu = mustElement<HTMLElement>("command-menu");
+const mentionMenu = mustElement<HTMLElement>("mention-menu");
+const promptHighlight = mustElement<HTMLElement>("prompt-highlight");
 const clearSessionButton = mustElement<HTMLButtonElement>("clear-session");
 const windowMinimize = mustElement<HTMLButtonElement>("window-minimize");
 const windowMaximize = mustElement<HTMLButtonElement>("window-maximize");
@@ -457,6 +460,14 @@ promptInput.addEventListener("input", () => {
   // Real typing leaves history navigation and starts a fresh draft.
   historyIndex = inputHistory.length;
   updateCommandMenu();
+  updateMentionMenu();
+  updatePromptHighlight();
+});
+
+// The mirror layer must scroll in lockstep with the textarea.
+promptInput.addEventListener("scroll", () => {
+  promptHighlight.scrollTop = promptInput.scrollTop;
+  promptHighlight.scrollLeft = promptInput.scrollLeft;
 });
 
 // ── Slash command menu ──
@@ -541,16 +552,149 @@ function selectCommand(index: number): void {
   promptInput.focus();
 }
 
+// ── "@" file mention menu ──
+// Typing "@" lists project files at the caret; picking one inserts
+// "@<relative path> " and highlights it in the input (mirror layer). An "@"
+// left alone stays plain text.
+let projectFiles: string[] = [];
+let projectFilesScannedAtMs = 0;
+let mentionMatches: string[] = [];
+let mentionIndex = 0;
+const pickedMentions = new Set<string>();
+
+function hideMentionMenu(): void {
+  mentionMatches = [];
+  mentionMenu.hidden = true;
+}
+
+function updateMentionMenu(): void {
+  const caret = promptInput.selectionStart ?? promptInput.value.length;
+  const query = mentionQueryAt(promptInput.value, caret);
+  if (!query) {
+    hideMentionMenu();
+    return;
+  }
+  // Refresh the file inventory while the picker is in use (30s cooldown), so
+  // files created after launch appear without a restart.
+  if (Date.now() - projectFilesScannedAtMs > 30_000) {
+    projectFilesScannedAtMs = Date.now();
+    void api?.paths.files().then((files) => {
+      projectFiles = files;
+      updateMentionMenu();
+    }).catch(() => {});
+  }
+  const matches = filterMentionFiles(projectFiles, query.query);
+  if (matches.length === 0) {
+    hideMentionMenu();
+    return;
+  }
+  mentionMatches = matches;
+  mentionIndex = Math.min(mentionIndex, matches.length - 1);
+  renderMentionMenu();
+}
+
+function renderMentionMenu(): void {
+  mentionMenu.replaceChildren();
+  mentionMatches.forEach((file, index) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `command-item${index === mentionIndex ? " is-active" : ""}`;
+    item.setAttribute("role", "option");
+
+    const name = document.createElement("span");
+    name.className = "command-item__name";
+    name.textContent = file.slice(file.lastIndexOf("/") + 1);
+
+    const directory = document.createElement("span");
+    directory.className = "command-item__desc";
+    directory.textContent = file;
+
+    item.append(name, directory);
+    item.addEventListener("mousedown", (event) => {
+      event.preventDefault(); // keep the textarea focused
+      selectMention(index);
+    });
+    item.addEventListener("mouseenter", () => {
+      mentionIndex = index;
+      renderMentionMenu();
+    });
+    mentionMenu.append(item);
+  });
+  mentionMenu.hidden = false;
+  mentionMenu.querySelector(".command-item.is-active")?.scrollIntoView({ block: "nearest" });
+}
+
+function selectMention(index: number): void {
+  const picked = mentionMatches[index];
+  const caret = promptInput.selectionStart ?? promptInput.value.length;
+  const query = mentionQueryAt(promptInput.value, caret);
+  if (!picked || !query) {
+    hideMentionMenu();
+    return;
+  }
+  const applied = applyMention(promptInput.value, query, caret, picked);
+  pickedMentions.add(picked);
+  promptInput.value = applied.text;
+  composer = setComposerText(composer, applied.text);
+  promptInput.setSelectionRange(applied.caret, applied.caret);
+  hideMentionMenu();
+  updatePromptHighlight();
+  promptInput.focus();
+}
+
+/**
+ * Mirror layer behind the textarea: transparent text, but each mention the
+ * user picked through the UI gets a coloured chip background that shows
+ * through. Hand-typed "@" text never highlights.
+ */
+function updatePromptHighlight(): void {
+  promptHighlight.replaceChildren();
+  const text = promptInput.value;
+  if (pickedMentions.size === 0 || text.length === 0) {
+    return;
+  }
+  const tokens = [...pickedMentions]
+    .map((path) => `@${path}`)
+    .sort((a, b) => b.length - a.length);
+  let index = 0;
+  while (index < text.length) {
+    let bestPosition = -1;
+    let bestToken = "";
+    for (const token of tokens) {
+      const position = text.indexOf(token, index);
+      if (position !== -1 && (bestPosition === -1 || position < bestPosition)) {
+        bestPosition = position;
+        bestToken = token;
+      }
+    }
+    if (bestPosition === -1) {
+      promptHighlight.append(document.createTextNode(text.slice(index)));
+      break;
+    }
+    if (bestPosition > index) {
+      promptHighlight.append(document.createTextNode(text.slice(index, bestPosition)));
+    }
+    const chip = document.createElement("span");
+    chip.className = "prompt-highlight__mention";
+    chip.textContent = bestToken;
+    promptHighlight.append(chip);
+    index = bestPosition + bestToken.length;
+  }
+}
+
 function setPromptValue(text: string): void {
   // Programmatic value changes do not fire "input", so update composer here.
   promptInput.value = text;
   composer = setComposerText(composer, text);
   promptInput.setSelectionRange(text.length, text.length);
   updateCommandMenu();
+  updateMentionMenu();
+  updatePromptHighlight();
 }
 
 promptInput.addEventListener("blur", () => {
   hideCommandMenu();
+  hideMentionMenu();
 });
 
 function caretOnFirstLine(): boolean {
@@ -570,6 +714,28 @@ promptInput.addEventListener("compositionend", () => {
 });
 
 promptInput.addEventListener("keydown", (event) => {
+  // The "@" mention menu owns navigation keys while open (same contract as
+  // the slash menu below; the two are never open at the same time).
+  if (mentionMatches.length > 0 && !(event.isComposing || composer.isComposing)) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      mentionIndex = (mentionIndex + step + mentionMatches.length) % mentionMatches.length;
+      renderMentionMenu();
+      return;
+    }
+    if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      selectMention(mentionIndex);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      hideMentionMenu();
+      return;
+    }
+  }
   // While the command menu is open it owns the navigation keys: Enter/Tab pick
   // (never send), arrows move, Escape closes without interrupting Claude.
   if (commandMatches.length > 0 && !(event.isComposing || composer.isComposing)) {
@@ -1339,6 +1505,11 @@ function submitPrompt(): void {
   historyDraft = "";
 
   promptInput.value = composer.text;
+  // The draft is gone; picked mentions belong to it, so hand-typed copies of
+  // the same path in the NEXT draft must not auto-highlight.
+  pickedMentions.clear();
+  updatePromptHighlight();
+  hideMentionMenu();
   renderImagePreview();
   void sendIntent(result.intent);
 }

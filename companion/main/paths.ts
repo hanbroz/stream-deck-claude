@@ -135,6 +135,55 @@ function assertSafeName(name: string, label: string): void {
   }
 }
 
+// Directories that never belong in the "@" file picker.
+const MENTION_IGNORED_DIRECTORIES = new Set([
+  ".git", "node_modules", "dist", "build", "out", ".next", ".venv", "__pycache__", ".omc"
+]);
+
+/**
+ * Relative paths (forward slashes) of the project's files for the composer's
+ * "@" mention picker. Depth- and count-capped so a giant repository cannot
+ * stall the scan; the renderer filters as the user types.
+ */
+export async function listProjectFilesRecursive(
+  root: string,
+  maxEntries = 2000,
+  maxDepth = 6
+): Promise<string[]> {
+  const realRoot = await realpath(path.resolve(root));
+  const files: string[] = [];
+
+  async function visit(directory: string, depth: number): Promise<void> {
+    if (files.length >= maxEntries || depth > maxDepth) {
+      return;
+    }
+    let entries: Dirent[];
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      return; // unreadable folder — skip silently
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      if (files.length >= maxEntries) {
+        return;
+      }
+      if (entry.isDirectory()) {
+        if (!MENTION_IGNORED_DIRECTORIES.has(entry.name.toLowerCase())) {
+          await visit(path.join(directory, entry.name), depth + 1);
+        }
+      } else if (entry.isFile()) {
+        files.push(
+          path.relative(realRoot, path.join(directory, entry.name)).split(path.sep).join("/")
+        );
+      }
+    }
+  }
+
+  await visit(realRoot, 0);
+  return files;
+}
+
 export async function resolveCompanionRoot(
   env: NodeJS.ProcessEnv
 ): Promise<string> {

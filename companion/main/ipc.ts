@@ -16,6 +16,7 @@ import {
   createContainedFile,
   deleteContainedPath,
   listContainedDirectory,
+  listProjectFilesRecursive,
   openContainedPath,
   revealContainedPath,
   resolveContainedDirectory,
@@ -246,6 +247,9 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   );
   deps.ipcMain.handle(COMPANION_IPC.claudeCommands, async (): Promise<SlashCommand[]> =>
     (await deps.slashCommands?.()) ?? []
+  );
+  deps.ipcMain.handle(COMPANION_IPC.pathFiles, async (): Promise<string[]> =>
+    listProjectFilesRecursive(deps.rootPath)
   );
   deps.ipcMain.handle(COMPANION_IPC.pathDelete, async (_event: SenderEvent, path: unknown) => {
     await deleteContainedPath(deps.rootPath, requireString(path, "path"), deps.shell);

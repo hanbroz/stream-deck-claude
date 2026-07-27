@@ -17,6 +17,7 @@ import {
   claudeConversationExists,
   deleteContainedPath,
   listContainedDirectory,
+  listProjectFilesRecursive,
   openContainedPath,
   resolveCompanionRuntimeEnv,
   resolveCompanionRoot,
@@ -214,6 +215,24 @@ describe("contained path operations", () => {
     await expect(openContainedPath(root, "..", shell)).rejects.toThrow(
       "Path is outside the allowed root"
     );
+  });
+
+  it("lists project files recursively with ignored directories and a cap", async () => {
+    await mkdir(path.join(root, "src", "deep"), { recursive: true });
+    await mkdir(path.join(root, "node_modules", "pkg"), { recursive: true });
+    await writeFile(path.join(root, "sample.txt"), "s", "utf8");
+    await writeFile(path.join(root, "src", "main.ts"), "m", "utf8");
+    await writeFile(path.join(root, "src", "deep", "util.ts"), "u", "utf8");
+    await writeFile(path.join(root, "node_modules", "pkg", "index.js"), "x", "utf8");
+
+    const files = await listProjectFilesRecursive(root);
+    expect(files).toContain("sample.txt");
+    expect(files).toContain("src/main.ts");
+    expect(files).toContain("src/deep/util.ts");
+    expect(files.some((file) => file.includes("node_modules"))).toBe(false);
+
+    const capped = await listProjectFilesRecursive(root, 2);
+    expect(capped).toHaveLength(2);
   });
 
   it("moves contained entries to the trash but never the root or outside paths", async () => {
