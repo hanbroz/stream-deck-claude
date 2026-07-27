@@ -10,7 +10,11 @@ import { createCompanionWindow } from "./window";
 import os from "node:os";
 
 import { ClaudePtyManager } from "./claude-session";
-import { writeContextSnapshot } from "./context-snapshot";
+import {
+  writeContextSnapshot,
+  writeRuntimeActivity,
+  type CompanionActivity
+} from "./context-snapshot";
 import { writeModelPrefs } from "./model-prefs";
 import { listSlashCommands } from "./slash-commands";
 import { CLAUDE_MODELS, type ClaudeModel } from "../shared/claude-command";
@@ -142,11 +146,7 @@ async function start(): Promise<void> {
       // The most recent context the stream reported, so applying a model can
       // refresh the key with the real usage instead of resetting it to 0%.
       let lastContext: { claudeSessionId: string; usedTokens: number; windowTokens: number } | undefined;
-      registerCompanionIpc({
-        ipcMain,
-        window: createdWindow,
-        rootPath: runtimeEnv.rootPath,
-        ptyManager: new ClaudePtyManager({
+      const ptyManager = new ClaudePtyManager({
           command: runtimeEnv.claudePath,
           onContext: (info) => {
             if (info.claudeSessionId.length > 0) {
@@ -175,7 +175,43 @@ async function start(): Promise<void> {
               // The key simply keeps its last value if the snapshot write fails.
             });
           }
-        }),
+      });
+
+      // Mirror the conversation phase onto the key's activity dot: without
+      // this record the plugin assumes "running" for the whole app lifetime,
+      // so an idle app kept the green running indicator.
+      let lastActivity: CompanionActivity | undefined;
+      const recordActivity = (activity: CompanionActivity): void => {
+        if (!runtimeEnv.bindingId || !runtimeEnv.launchId || activity === lastActivity) {
+          return;
+        }
+        lastActivity = activity;
+        void writeRuntimeActivity({
+          dataDir: runtimeEnv.usageDataDir,
+          bindingId: runtimeEnv.bindingId,
+          launchId: runtimeEnv.launchId,
+          activity,
+          capturedAt: Date.now()
+        }).catch(() => {
+          lastActivity = undefined; // retry on the next phase change
+        });
+      };
+      ptyManager.on("data", (_sessionId: string, events: readonly { kind: string; phase?: string }[]) => {
+        for (const event of events) {
+          if (event.kind === "phase") {
+            recordActivity(event.phase === "waiting" || event.phase === "ready" ? "waiting" : "running");
+          } else if (event.kind === "error") {
+            recordActivity("waiting");
+          }
+        }
+      });
+      recordActivity("waiting"); // the app opens idle, waiting for input
+
+      registerCompanionIpc({
+        ipcMain,
+        window: createdWindow,
+        rootPath: runtimeEnv.rootPath,
+        ptyManager,
         sessionStatus: () => readCompanionSessionStatus({
           dataDir: runtimeEnv.usageDataDir,
           bindingId: runtimeEnv.bindingId,

@@ -245,6 +245,8 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
       bindingId,
       folder
     );
-    await actionInstance.setImage(renderCodeStartKeyImage(projectName, state));
+    // The 1s refresh advances the frame, animating the sweep while running.
+    const frame = Math.floor(Date.now() / 1000);
+    await actionInstance.setImage(renderCodeStartKeyImage(projectName, state, frame));
   }
 }

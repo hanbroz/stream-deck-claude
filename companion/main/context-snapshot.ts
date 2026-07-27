@@ -58,6 +58,41 @@ export function buildContextSnapshot(input: ContextSnapshotInput): Record<string
   };
 }
 
+export type CompanionActivity = "idle" | "running" | "waiting" | "ended";
+
+/**
+ * The key's activity dot reads a runtime-state file the Companion writes on
+ * phase changes. Without it the plugin defaults to "running" for the whole
+ * app lifetime, so an idle app still showed the green running dot.
+ * Shape and hashed path must match src/io/context-session-cache.ts
+ * (parseRuntime / contextSessionRuntimePath, schemaVersion 2).
+ */
+export async function writeRuntimeActivity(input: {
+  dataDir: string;
+  bindingId: string;
+  launchId: string;
+  activity: CompanionActivity;
+  capturedAt: number;
+}): Promise<void> {
+  const target = path.join(
+    input.dataDir,
+    "context-sessions",
+    digest(input.bindingId),
+    `${digest(input.launchId)}.state.json`
+  );
+  const record = {
+    schemaVersion: 2,
+    actionId: input.bindingId,
+    launchId: input.launchId,
+    activity: input.activity,
+    capturedAt: input.capturedAt
+  };
+  await mkdir(path.dirname(target), { recursive: true });
+  const tmp = `${target}.${process.pid}.${input.capturedAt}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  await rename(tmp, target);
+}
+
 export async function writeContextSnapshot(input: ContextSnapshotInput): Promise<void> {
   const target = path.join(
     input.dataDir,

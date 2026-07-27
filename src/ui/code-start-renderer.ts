@@ -70,9 +70,27 @@ function activityColor(activity: CodeSessionActivity): string {
   return "#ff6b74";
 }
 
+/**
+ * A bright segment that sweeps along the context track while the session is
+ * actively generating. The plugin repaints keys once per second, so `frame`
+ * (any monotonically growing integer, e.g. seconds) advances the sweep and
+ * makes "this session is working right now" visible at a glance.
+ */
+function runningSweep(activity: CodeSessionActivity, frame: number): string {
+  if (activity !== "running") {
+    return "";
+  }
+  const steps = 6;
+  const phase = ((frame % steps) + steps) % steps;
+  const sweepWidth = 26;
+  const x = 18 + Math.round((108 - sweepWidth) * (phase / (steps - 1)));
+  return `\n  <rect data-role="context-sweep" x="${x}" y="101" width="${sweepWidth}" height="12" rx="6" fill="#ffffff" opacity="0.32"/>`;
+}
+
 export function renderCodeStartKey(
   projectName: string,
-  state: CodeStartDisplayState
+  state: CodeStartDisplayState,
+  frame = 0
 ): string {
   if (state.kind === "closed") {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
@@ -97,13 +115,14 @@ export function renderCodeStartKey(
   <text x="72" y="53" text-anchor="middle" fill="#fffaf5" font-family="Arial, sans-serif" font-size="25" font-weight="800"${projectFitAttributes(projectName)}>${projectLabel(projectName)}</text>
   <text data-role="model-text" x="72" y="84" text-anchor="middle" fill="${statusColor}" font-family="Arial, sans-serif" font-size="17" font-weight="800"${modelFitAttributes(statusText)}>${escapeXml(statusText)}</text>
   <rect data-role="context-track" x="18" y="101" width="108" height="12" rx="6" fill="#493a30"/>
-  <rect data-role="context-fill" x="18" y="101" width="${progress}" height="12" rx="6" fill="${progressColor}"/>
+  <rect data-role="context-fill" x="18" y="101" width="${progress}" height="12" rx="6" fill="${progressColor}"/>${runningSweep(state.activity, frame)}
 </svg>`;
 }
 
 export function renderCodeStartKeyImage(
   projectName: string,
-  state: CodeStartDisplayState
+  state: CodeStartDisplayState,
+  frame = 0
 ): string {
-  return `data:image/svg+xml,${encodeURIComponent(renderCodeStartKey(projectName, state))}`;
+  return `data:image/svg+xml,${encodeURIComponent(renderCodeStartKey(projectName, state, frame))}`;
 }

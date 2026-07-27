@@ -138,3 +138,28 @@ describe("renderCodeStartKey", () => {
     expect(svg).not.toContain("SET FOLDER");
   });
 });
+
+describe("running sweep animation", () => {
+  const base = {
+    kind: "ready" as const,
+    percentage: 40,
+    model: { displayName: "Opus 5" }
+  };
+
+  it("draws a sweep segment only while the session is running", () => {
+    const running = renderCodeStartKey("DEMO", { ...base, activity: "running" }, 0);
+    expect(running).toContain('data-role="context-sweep"');
+    const waiting = renderCodeStartKey("DEMO", { ...base, activity: "waiting" }, 0);
+    expect(waiting).not.toContain("context-sweep");
+  });
+
+  it("moves the sweep as the frame advances and wraps around", () => {
+    const xAt = (frame: number): string =>
+      /data-role="context-sweep" x="(\d+)"/.exec(
+        renderCodeStartKey("DEMO", { ...base, activity: "running" }, frame)
+      )?.[1] ?? "";
+    expect(xAt(0)).toBe("18");
+    expect(xAt(1)).not.toBe(xAt(0));
+    expect(xAt(6)).toBe(xAt(0)); // 6-step cycle
+  });
+});

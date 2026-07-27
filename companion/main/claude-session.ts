@@ -239,7 +239,14 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
       command: this.command,
       args,
       cwd: session.cwd,
-      env: { ...this.env, TERM: this.env.TERM ?? "xterm-256color" }
+      env: {
+        ...this.env,
+        TERM: this.env.TERM ?? "xterm-256color",
+        // The Companion writes the key's runtime activity itself; this tells
+        // the statusline bridge to yield that file (a --print payload has no
+        // activity signal and used to clobber it with "idle").
+        CLAUDE_DECK_RUNTIME_OWNER: "companion"
+      }
     });
     session.activeRun = run;
     session.busy = true;

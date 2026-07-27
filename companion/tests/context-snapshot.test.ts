@@ -8,7 +8,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildContextSnapshot,
   displayModelName,
-  writeContextSnapshot
+  writeContextSnapshot,
+  writeRuntimeActivity
 } from "../main/context-snapshot";
 
 describe("displayModelName", () => {
@@ -89,5 +90,38 @@ describe("writeContextSnapshot", () => {
       model: { displayName: "Opus 4.8" },
       context: { usedPercentage: 10 }
     });
+  });
+});
+
+describe("writeRuntimeActivity", () => {
+  it("writes the schemaVersion-2 runtime record the key parser expects", async () => {
+    const { mkdtemp, readFile: read, rm: remove } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { createHash } = await import("node:crypto");
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "companion-runtime-"));
+    try {
+      await writeRuntimeActivity({
+        dataDir,
+        bindingId: "binding-1",
+        launchId: "launch-1",
+        activity: "waiting",
+        capturedAt: 123
+      });
+      const digest = (value: string): string =>
+        createHash("sha256").update(value, "utf8").digest("hex");
+      const target = path.join(
+        dataDir, "context-sessions", digest("binding-1"), `${digest("launch-1")}.state.json`
+      );
+      expect(JSON.parse(await read(target, "utf8"))).toEqual({
+        schemaVersion: 2,
+        actionId: "binding-1",
+        launchId: "launch-1",
+        activity: "waiting",
+        capturedAt: 123
+      });
+    } finally {
+      await remove(dataDir, { recursive: true, force: true });
+    }
   });
 });

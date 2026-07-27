@@ -65,6 +65,13 @@ async function writeContextCache(dataDir: string, payload: unknown): Promise<voi
 }
 
 async function writeRuntimeCache(dataDir: string, payload: unknown): Promise<void> {
+  // Companion-owned launches track activity themselves from conversation
+  // phases. Their per-message --print runs inherit the launch env, but a
+  // print statusline payload carries no real activity signal (it read as
+  // "idle" and clobbered the accurate record) — so yield the runtime file.
+  if (process.env.CLAUDE_DECK_RUNTIME_OWNER === "companion") {
+    return;
+  }
   const bindingId = sessionBindingId();
   const launchId = process.env.CLAUDE_STREAM_DECK_LAUNCH_ID;
   const runtime = extractContextSessionRuntime(
