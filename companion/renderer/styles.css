@@ -981,6 +981,10 @@ body.is-split-resizing.is-resizing-rows * {
 }
 
 .claude-status__text {
+  /* Never yields width to a long detail: without this, flexbox squeezes the
+     label to one word per line ("작업/진행/중") before the detail ellipsizes. */
+  flex: 0 0 auto;
+  white-space: nowrap;
   color: #c9c9c9;
 }
 
