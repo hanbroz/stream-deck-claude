@@ -1822,11 +1822,12 @@ function renderClaudeStatus(phase: ClaudePhase | "error", detail?: string): void
   const label = phase === "error"
     ? { text: "오류", detail: detail ?? "", busy: false }
     : formatClaudePhase(phase, detail);
-  // Running subagents get a persistent n/m prefix so parallel work stays
-  // visible even while the strip churns through tool/thinking phases.
+  // Parallel subagents (2+) get a persistent n/m prefix so the fan-out stays
+  // visible while the strip churns through tool/thinking phases. A lone agent
+  // is ordinary tool work and needs no extra label.
   const counts = agentCounts();
   const running = counts.total - counts.done;
-  const detailText = running > 0 && label.busy
+  const detailText = running > 0 && counts.total >= 2 && label.busy
     ? `Agent ${counts.done}/${counts.total}${label.detail ? ` · ${label.detail}` : ""}`
     : label.detail;
   claudeStatus.dataset.phase = phase;
@@ -1883,20 +1884,30 @@ function ensureAgentTimer(): void {
 
 function handleAgentEvent(event: Extract<ClaudeEvent, { kind: "agent" }>): void {
   if (event.op === "start") {
-    // A fresh batch (previous board fully settled) opens its own board, placed
-    // after the current assistant text so the console stays chronological.
+    // A settled batch (everything finished) makes way for a fresh one; its
+    // board stays in the console as the historical record.
     const counts = agentCounts();
-    if (!agentBoardRows || (counts.total > 0 && counts.done === counts.total)) {
+    if (counts.total > 0 && counts.done === counts.total) {
       agentRows.clear();
+      agentBoardRows = undefined;
+    }
+    const refs = createAgentRow(event.agentType, event.description);
+    agentRows.set(event.toolUseId, { refs, startedAt: Date.now(), done: false });
+    // A lone agent is already covered by the status strip; the board only
+    // appears once agents actually run in parallel, placed after the current
+    // assistant text so the console stays chronological.
+    if (!agentBoardRows && agentRows.size >= 2) {
       finishAssistantTurn();
       const board = createAgentBoard();
       agentBoardRows = board.rows;
+      for (const row of agentRows.values()) {
+        agentBoardRows.append(row.refs.root);
+      }
       consoleElement.append(board.root);
       scrollConsoleToBottom();
+    } else if (agentBoardRows) {
+      agentBoardRows.append(refs.root);
     }
-    const refs = createAgentRow(event.agentType, event.description);
-    agentBoardRows.append(refs.root);
-    agentRows.set(event.toolUseId, { refs, startedAt: Date.now(), done: false });
     ensureAgentTimer();
   } else if (event.op === "activity") {
     const row = agentRows.get(event.toolUseId);

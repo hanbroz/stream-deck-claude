@@ -97,12 +97,13 @@ describe("renderCodeStartKey", () => {
     ["idle", "#ff6b74"],
     ["waiting", "#70c7ff"]
   ] as const)("renders %s model text as %s", (activity, color) => {
+    // Frame 1 is the dark phase of the waiting blink — the key's normal look.
     const svg = renderCodeStartKey("Project A", {
       kind: "ready",
       percentage: 42,
       activity,
       model: { displayName: "Opus 4.8" }
-    });
+    }, 1);
 
     expect(svg).toContain(`data-role="model-text"`);
     expect(svg).toContain(`data-role="model-text" x="72" y="84" text-anchor="middle" fill="${color}"`);
@@ -171,26 +172,28 @@ describe("waiting blink", () => {
     model: { displayName: "Opus 5" }
   };
 
-  const borderOf = (svg: string): string =>
-    /data-role="key-border"[^>]*stroke="([^"]+)"/.exec(svg)?.[1] ?? "";
+  const backgroundOf = (svg: string): string =>
+    /data-role="key-bg"[^>]*fill="([^"]+)"/.exec(svg)?.[1] ?? "";
   const modelColorOf = (svg: string): string =>
     /data-role="model-text"[^>]*fill="([^"]+)"/.exec(svg)?.[1] ?? "";
 
-  it("alternates border and model text between bright and dim blue while waiting", () => {
+  it("flashes the whole key body to pastel blue while waiting", () => {
     const on = renderCodeStartKey("DEMO", { ...base, activity: "waiting" }, 0);
-    expect(borderOf(on)).toBe("#70c7ff");
-    expect(modelColorOf(on)).toBe("#70c7ff");
+    expect(backgroundOf(on)).toBe("#aacfe6");
+    expect(modelColorOf(on)).toBe("#175d84"); // dark text stays readable on pastel
     const off = renderCodeStartKey("DEMO", { ...base, activity: "waiting" }, 1);
-    expect(borderOf(off)).toBe("#40342b");
-    expect(modelColorOf(off)).toBe("#3f80ad"); // dim phase stays readable
+    expect(backgroundOf(off)).toBe("#17130f");
+    expect(modelColorOf(off)).toBe("#70c7ff"); // normal waiting look
     // 1s-on/1s-off: the two-frame cycle repeats.
-    expect(borderOf(renderCodeStartKey("DEMO", { ...base, activity: "waiting" }, 2))).toBe("#70c7ff");
+    expect(backgroundOf(renderCodeStartKey("DEMO", { ...base, activity: "waiting" }, 2))).toBe("#aacfe6");
+    // The border never blinks — the bezel crops it at shallow angles.
+    expect(on).toContain('stroke="#40342b"');
   });
 
-  it("keeps the border static for running and idle sessions", () => {
+  it("keeps the background static for running and idle sessions", () => {
     for (const activity of ["running", "idle"] as const) {
       for (const frame of [0, 1]) {
-        expect(borderOf(renderCodeStartKey("DEMO", { ...base, activity }, frame))).toBe("#40342b");
+        expect(backgroundOf(renderCodeStartKey("DEMO", { ...base, activity }, frame))).toBe("#17130f");
       }
     }
   });

@@ -71,10 +71,12 @@ function activityColor(activity: CodeSessionActivity): string {
 }
 
 /**
- * Waiting-for-input pulses the key border and model text between bright and
- * dim blue. `frame` ticks once per second, so the blink is a calm 1s-on /
- * 1s-off — noticeable across a desk without strobing, and the dim phase
- * keeps the model text readable.
+ * Waiting-for-input flashes the whole key body to a pastel blue. `frame`
+ * ticks once per second, so the blink is a calm 1s-on/1s-off. The flash
+ * lives in the body rather than the border because the Stream Deck bezel
+ * crops the outer edge at shallow viewing angles, which made a blinking
+ * border look clipped. Text flips dark during the light phase so both
+ * phases stay readable.
  */
 function waitingPulseOn(activity: CodeSessionActivity, frame: number): boolean {
   return activity === "waiting" && ((frame % 2) + 2) % 2 === 0;
@@ -116,19 +118,19 @@ export function renderCodeStartKey(
     : undefined;
   const progress = percentage === undefined ? 0 : Math.round((108 * percentage) / 100);
   const pulseOn = waitingPulseOn(state.activity, frame);
-  const borderColor = pulseOn ? "#70c7ff" : "#40342b";
-  const statusColor = state.activity === "waiting" && !pulseOn
-    ? "#3f80ad"
-    : activityColor(state.activity);
+  const bgColor = pulseOn ? "#aacfe6" : "#17130f";
+  const projectColor = pulseOn ? "#1d2b36" : "#fffaf5";
+  const trackColor = pulseOn ? "#87aec6" : "#493a30";
+  const statusColor = pulseOn ? "#175d84" : activityColor(state.activity);
   const progressColor = percentage === undefined ? "#74675e" : usageColor(percentage);
   const statusText = state.model?.displayName ?? "MODEL --";
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
-  <rect width="144" height="144" rx="22" fill="#17130f"/>
-  <rect data-role="key-border" x="1.5" y="1.5" width="141" height="141" rx="20.5" fill="none" stroke="${borderColor}" stroke-width="3"/>
-  <text x="72" y="53" text-anchor="middle" fill="#fffaf5" font-family="Arial, sans-serif" font-size="25" font-weight="800"${projectFitAttributes(projectName)}>${projectLabel(projectName)}</text>
+  <rect data-role="key-bg" width="144" height="144" rx="22" fill="${bgColor}"/>
+  <rect x="1.5" y="1.5" width="141" height="141" rx="20.5" fill="none" stroke="#40342b" stroke-width="3"/>
+  <text x="72" y="53" text-anchor="middle" fill="${projectColor}" font-family="Arial, sans-serif" font-size="25" font-weight="800"${projectFitAttributes(projectName)}>${projectLabel(projectName)}</text>
   <text data-role="model-text" x="72" y="84" text-anchor="middle" fill="${statusColor}" font-family="Arial, sans-serif" font-size="17" font-weight="800"${modelFitAttributes(statusText)}>${escapeXml(statusText)}</text>
-  <rect data-role="context-track" x="18" y="101" width="108" height="12" rx="6" fill="#493a30"/>
+  <rect data-role="context-track" x="18" y="101" width="108" height="12" rx="6" fill="${trackColor}"/>
   <rect data-role="context-fill" x="18" y="101" width="${progress}" height="12" rx="6" fill="${progressColor}"/>${runningSweep(state.activity, frame)}
 </svg>`;
 }
