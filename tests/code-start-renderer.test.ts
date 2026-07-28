@@ -163,3 +163,35 @@ describe("running sweep animation", () => {
     expect(xAt(6)).toBe(xAt(0)); // 6-step cycle
   });
 });
+
+describe("waiting blink", () => {
+  const base = {
+    kind: "ready" as const,
+    percentage: 40,
+    model: { displayName: "Opus 5" }
+  };
+
+  const borderOf = (svg: string): string =>
+    /data-role="key-border"[^>]*stroke="([^"]+)"/.exec(svg)?.[1] ?? "";
+  const modelColorOf = (svg: string): string =>
+    /data-role="model-text"[^>]*fill="([^"]+)"/.exec(svg)?.[1] ?? "";
+
+  it("alternates border and model text between bright and dim blue while waiting", () => {
+    const on = renderCodeStartKey("DEMO", { ...base, activity: "waiting" }, 0);
+    expect(borderOf(on)).toBe("#70c7ff");
+    expect(modelColorOf(on)).toBe("#70c7ff");
+    const off = renderCodeStartKey("DEMO", { ...base, activity: "waiting" }, 1);
+    expect(borderOf(off)).toBe("#40342b");
+    expect(modelColorOf(off)).toBe("#3f80ad"); // dim phase stays readable
+    // 1s-on/1s-off: the two-frame cycle repeats.
+    expect(borderOf(renderCodeStartKey("DEMO", { ...base, activity: "waiting" }, 2))).toBe("#70c7ff");
+  });
+
+  it("keeps the border static for running and idle sessions", () => {
+    for (const activity of ["running", "idle"] as const) {
+      for (const frame of [0, 1]) {
+        expect(borderOf(renderCodeStartKey("DEMO", { ...base, activity }, frame))).toBe("#40342b");
+      }
+    }
+  });
+});

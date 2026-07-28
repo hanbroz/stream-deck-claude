@@ -71,6 +71,16 @@ function activityColor(activity: CodeSessionActivity): string {
 }
 
 /**
+ * Waiting-for-input pulses the key border and model text between bright and
+ * dim blue. `frame` ticks once per second, so the blink is a calm 1s-on /
+ * 1s-off — noticeable across a desk without strobing, and the dim phase
+ * keeps the model text readable.
+ */
+function waitingPulseOn(activity: CodeSessionActivity, frame: number): boolean {
+  return activity === "waiting" && ((frame % 2) + 2) % 2 === 0;
+}
+
+/**
  * A bright segment that sweeps along the context track while the session is
  * actively generating. The plugin repaints keys once per second, so `frame`
  * (any monotonically growing integer, e.g. seconds) advances the sweep and
@@ -105,13 +115,17 @@ export function renderCodeStartKey(
     ? Math.round(Math.min(100, Math.max(0, state.percentage)))
     : undefined;
   const progress = percentage === undefined ? 0 : Math.round((108 * percentage) / 100);
-  const statusColor = activityColor(state.activity);
+  const pulseOn = waitingPulseOn(state.activity, frame);
+  const borderColor = pulseOn ? "#70c7ff" : "#40342b";
+  const statusColor = state.activity === "waiting" && !pulseOn
+    ? "#3f80ad"
+    : activityColor(state.activity);
   const progressColor = percentage === undefined ? "#74675e" : usageColor(percentage);
   const statusText = state.model?.displayName ?? "MODEL --";
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
   <rect width="144" height="144" rx="22" fill="#17130f"/>
-  <rect x="1.5" y="1.5" width="141" height="141" rx="20.5" fill="none" stroke="#40342b" stroke-width="3"/>
+  <rect data-role="key-border" x="1.5" y="1.5" width="141" height="141" rx="20.5" fill="none" stroke="${borderColor}" stroke-width="3"/>
   <text x="72" y="53" text-anchor="middle" fill="#fffaf5" font-family="Arial, sans-serif" font-size="25" font-weight="800"${projectFitAttributes(projectName)}>${projectLabel(projectName)}</text>
   <text data-role="model-text" x="72" y="84" text-anchor="middle" fill="${statusColor}" font-family="Arial, sans-serif" font-size="17" font-weight="800"${modelFitAttributes(statusText)}>${escapeXml(statusText)}</text>
   <rect data-role="context-track" x="18" y="101" width="108" height="12" rx="6" fill="#493a30"/>
