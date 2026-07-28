@@ -264,6 +264,6 @@ app.on("window-all-closed", () => {
 });
 
 void start().catch((error: unknown) => {
-  console.error("Claude Deck Companion failed to start:", error);
+  console.error("Code Deck Companion failed to start:", error);
   app.quit();
 });

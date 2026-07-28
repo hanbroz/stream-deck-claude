@@ -1,0 +1,59 @@
+Code Deck for Claude Code — End User License Agreement (EULA)
+
+Copyright (c) 2026 hanbroz. All rights reserved.
+
+This software, comprising the "Code Deck for Claude Code" Stream Deck plugin
+and the "Code Deck Companion" desktop application (together, the "Software"),
+is licensed, not sold.
+
+1. LICENSE GRANT
+   Subject to this agreement, the author grants you a personal,
+   non-exclusive, non-transferable license to install and use the Software
+   on devices you own or control, for the purpose of operating Elgato
+   Stream Deck hardware and software with Anthropic's Claude Code CLI.
+
+2. RESTRICTIONS
+   You may not, except to the extent permitted by applicable law:
+   (a) copy, redistribute, sell, rent, lease, or sublicense the Software;
+   (b) modify, decompile, reverse engineer, or create derivative works of
+       the Software;
+   (c) remove or alter any proprietary notices in the Software.
+
+3. THIRD-PARTY COMPONENTS
+   The Software includes open-source components that are licensed under
+   their own terms. Those terms are listed in the accompanying
+   THIRD-PARTY-NOTICES.md file and apply to those components in place of
+   this agreement.
+
+4. NOT AFFILIATED WITH ANTHROPIC OR ELGATO
+   The Software is an unofficial, independent tool. It is not affiliated
+   with, endorsed by, or sponsored by Anthropic, PBC or CORSAIR (Elgato).
+   "Claude" and "Claude Code" are trademarks of Anthropic, PBC.
+   "Stream Deck" is a trademark of CORSAIR. The Software requires your own
+   Claude Code installation and account; your use of Claude Code remains
+   governed by Anthropic's own terms of service.
+
+5. DATA
+   The Software runs entirely on your machine. It does not transmit your
+   prompts, credentials, or usage data to the author or any third party.
+   It reads and writes local state (usage snapshots, session metadata)
+   under your user profile solely to render Stream Deck keys and the
+   Companion window.
+
+6. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+   The Software depends on the output and behavior of the Claude Code CLI,
+   which may change at any time; displayed usage figures are informational
+   estimates, not authoritative billing data.
+
+7. LIMITATION OF LIABILITY
+   TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL THE AUTHOR BE
+   LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION
+   OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+   WITH THE SOFTWARE OR THE USE OF OR OTHER DEALINGS IN THE SOFTWARE.
+
+8. TERMINATION
+   This license terminates automatically if you breach this agreement.
+   Upon termination you must delete all copies of the Software.

@@ -1,8 +1,11 @@
-# Claude for Stream Deck
+# Code Deck for Claude Code
 
 [English](#english) · [한국어](#korean) · [简体中文](#chinese) · [日本語](#japanese)
 
-A personal Windows Stream Deck plugin for controlling Claude Code and displaying usage and session status directly on Stream Deck keys.
+A Windows Stream Deck plugin for controlling Claude Code and displaying usage and session status directly on Stream Deck keys.
+
+> [!NOTE]
+> **Unofficial tool / 비공식 도구** — Code Deck for Claude Code is an independent third-party tool. It is not affiliated with, endorsed by, or sponsored by Anthropic, PBC or CORSAIR (Elgato). "Claude" and "Claude Code" are trademarks of Anthropic, PBC; "Stream Deck" is a trademark of CORSAIR. Using it requires your own Claude Code installation and account, and your Claude Code usage remains subject to Anthropic's terms. See [LICENSE](LICENSE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Preview
 
@@ -18,7 +21,7 @@ A personal Windows Stream Deck plugin for controlling Claude Code and displaying
 
 ### Overview
 
-Claude for Stream Deck displays Claude Code subscription limits, launches configured projects, and tracks the context usage and activity of each launched session.
+Code Deck for Claude Code displays Claude Code subscription limits, launches configured projects, and tracks the context usage and activity of each launched session.
 
 > [!WARNING]
 > `Code Start` intentionally launches `claude --dangerously-skip-permissions`. Use it only with folders and repositories you trust.
@@ -27,7 +30,7 @@ Claude for Stream Deck displays Claude Code subscription limits, launches config
 
 - **5-Hour Usage**: Displays the used percentage and reset countdown for the five-hour window.
 - **Weekly Usage**: Displays the used percentage and reset countdown for the seven-day window.
-- **Code Start**: Opens Claude Deck Companion in a configured project folder, starts Claude Code inside that app, and displays that session's project name, current model, context usage bar, and activity status.
+- **Code Start**: Opens Code Deck Companion in a configured project folder, starts Claude Code inside that app, and displays that session's project name, current model, context usage bar, and activity status.
 
 Each action has a separate UUID and can be placed on an independent key. A Code Start placement persists its session binding, so moving a running button to another key keeps the same context display.
 
@@ -53,7 +56,7 @@ Requirements: Windows 10 or later, Stream Deck 7.1 or later, Claude Code, and Wi
 1. Download the Windows release ZIP from the [latest GitHub release](https://github.com/hanbroz/stream-deck-claude/releases/latest), extract it, and run `Install.cmd`.
 2. In Stream Deck, drag a usage action or `Code Start` onto a key.
 3. For Code Start, enter a project name, select the Claude Code folder, and save the settings.
-4. Press the key once. Claude Deck Companion opens for that folder, the plugin backs up `~/.claude/settings.json`, installs the bridge and lifecycle hooks, and preserves existing status-line commands and hooks.
+4. Press the key once. Code Deck Companion opens for that folder, the plugin backs up `~/.claude/settings.json`, installs the bridge and lifecycle hooks, and preserves existing status-line commands and hooks.
 5. Send one Claude Code message. Usage keys display current percentages and reset countdowns, while Code Start displays the launched session's current model and context usage bar.
 
 When Companion opens, it automatically starts Claude in structured streaming mode (`claude --dangerously-skip-permissions --print --input-format stream-json --output-format stream-json --include-partial-messages --verbose`) in the configured project root. Only Claude conversation text is rendered in the read-only `Claude Console`; prompts and clipboard images are sent only from the bottom composer. Press Enter or the `전송` button to submit a message; the renderer waits for the Companion IPC write acknowledgement and reports a failed send in the console/toast instead of silently dropping it. The explorer also includes a terminal-open action that runs `wt.exe -d <project-folder>` as a separate external terminal. File operations stay inside the configured root.
@@ -68,7 +71,7 @@ The explorer/workspace boundary, console/embedded-terminal boundary, and workspa
 
 The maintained visual contract is documented in [`DESIGN.md`](DESIGN.md). The renderer keeps the reference's 40px title bar, 36px session tabs, 260px explorer, Cascadia Code console, optional embedded terminal split, bottom composer dock, and orange focus states; runtime-only controls are kept in compact explorer actions or context menus so they do not displace the reference layout. The Claude output area is selectable/read-only, while the composer accepts Korean text, clipboard images, Enter-to-send, and Shift+Enter newlines.
 
-If Code Start still opens the previous dark console window with a native `File / Edit / View / Window` menu, the old Companion binary is still being used. For a released/installed plugin, install the matching `Claude Deck Companion Setup *.exe` once and restart Stream Deck. During local development you do not need to reinstall for every change: run `npm run companion:dir`, keep the plugin linked with `npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin`, and Code Start resolves `dist/companion/win-unpacked/Claude Deck Companion.exe` before the per-user installed copy. `CLAUDE_DECK_COMPANION_PATH` can also point Stream Deck at a specific unpacked executable.
+If Code Start still opens the previous dark console window with a native `File / Edit / View / Window` menu, the old Companion binary is still being used. For a released/installed plugin, install the matching `Code Deck Companion Setup *.exe` once and restart Stream Deck. During local development you do not need to reinstall for every change: run `npm run companion:dir`, keep the plugin linked with `npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin`, and Code Start resolves `dist/companion/win-unpacked/Code Deck Companion.exe` before the per-user installed copy. `CLAUDE_DECK_COMPANION_PATH` can also point Stream Deck at a specific unpacked executable.
 
 If the title shows `.` or the embedded terminal says `[project terminal API unavailable]`, the Companion preload or plugin process is stale. Rebuild the Companion, restart the linked plugin, close any old Companion window, and press Code Start again:
 
@@ -129,7 +132,7 @@ Building the Companion installer rebuilds `node-pty` for Electron. The build mac
 
 ### 개요
 
-Claude for Stream Deck은 Claude Code 구독 사용량을 표시하고, 설정한 프로젝트에서 Claude Code를 실행하며, 실행한 각 세션의 컨텍스트 사용량과 활동 상태를 Stream Deck 버튼에 표시하는 Windows용 개인 플러그인입니다.
+Code Deck for Claude Code은 Claude Code 구독 사용량을 표시하고, 설정한 프로젝트에서 Claude Code를 실행하며, 실행한 각 세션의 컨텍스트 사용량과 활동 상태를 Stream Deck 버튼에 표시하는 Windows용 플러그인입니다. Anthropic·CORSAIR와 무관한 비공식 서드파티 도구입니다.
 
 > [!WARNING]
 > `Code Start`는 의도적으로 `claude --dangerously-skip-permissions`를 실행합니다. 신뢰할 수 있는 폴더와 저장소에서만 사용하십시오.
@@ -208,7 +211,7 @@ npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin
 
 ### 概述
 
-Claude for Stream Deck 是一款个人使用的 Windows Stream Deck 插件，可显示 Claude Code 订阅用量、启动已配置的项目，并在 Stream Deck 按键上显示每个已启动会话的上下文用量和活动状态。
+Code Deck for Claude Code 是一款 Windows Stream Deck 插件（非官方第三方工具，与 Anthropic、CORSAIR 无关），可显示 Claude Code 订阅用量、启动已配置的项目，并在 Stream Deck 按键上显示每个已启动会话的上下文用量和活动状态。
 
 > [!WARNING]
 > `Code Start` 会有意执行 `claude --dangerously-skip-permissions`。请仅在您信任的文件夹和代码仓库中使用此功能。
@@ -287,7 +290,7 @@ npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin
 
 ### 概要
 
-Claude for Stream Deckは、Claude Codeのサブスクリプション使用量を表示し、設定したプロジェクトでClaude Codeを起動して、各セッションのコンテキスト使用量と稼働状態をStream Deckのキーに表示する個人向けWindowsプラグインです。
+Code Deck for Claude Codeは、Claude Codeのサブスクリプション使用量を表示し、設定したプロジェクトでClaude Codeを起動して、各セッションのコンテキスト使用量と稼働状態をStream Deckのキーに表示するWindowsプラグインです（Anthropic・CORSAIRとは無関係の非公式サードパーティツールです）。
 
 > [!WARNING]
 > `Code Start`は意図的に`claude --dangerously-skip-permissions`を実行します。信頼できるフォルダーとリポジトリでのみ使用してください。

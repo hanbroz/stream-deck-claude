@@ -134,7 +134,7 @@ const consoleElement = mustElement<HTMLElement>("console-log");
 
 const buildVersion = companionBuildVersion();
 titleBuildVersion.textContent = buildVersion;
-document.title = `Claude Companion ${buildVersion}`;
+document.title = `Code Deck Companion ${buildVersion}`;
 
 // Renderer diagnostics are invisible when Code Start launches with stdio
 // "ignore", so mirror them into the main process log alongside the console.

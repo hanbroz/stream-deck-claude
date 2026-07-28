@@ -1,5 +1,5 @@
 {
-  "Name": "Claude",
+  "Name": "Code Deck for Claude Code",
   "Version": "0.6.1.0",
   "Author": "hanbroz",
   "Actions": [
@@ -53,10 +53,10 @@
       ]
     }
   ],
-  "Category": "Claude",
+  "Category": "Code Deck for Claude Code",
   "CategoryIcon": "imgs/plugin/category-icon",
   "CodePath": "bin/plugin.js",
-  "Description": "Private Stream Deck controls and status displays for Claude.",
+  "Description": "Launch and monitor Claude Code sessions from your Stream Deck: per-project launcher with model and context display, plus 5-hour and weekly usage keys. Unofficial third-party tool, not affiliated with or endorsed by Anthropic; requires your own Claude Code installation and account. Claude is a trademark of Anthropic, PBC.",
   "Icon": "imgs/plugin/marketplace",
   "SDKVersion": 3,
   "Software": {

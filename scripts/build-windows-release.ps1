@@ -5,7 +5,7 @@ $distDir = Join-Path $projectRoot "dist"
 $manifestPath = Join-Path $projectRoot "com.hanbroz.claude-usage.sdPlugin\manifest.json"
 $pluginName = "com.hanbroz.claude-usage.streamDeckPlugin"
 $pluginPath = Join-Path $distDir $pluginName
-$companionInstallerPattern = "Claude Deck Companion Setup *.exe"
+$companionInstallerPattern = "Code Deck Companion Setup *.exe"
 $guidePath = Join-Path $projectRoot "docs\INSTALL_WINDOWS_KO.html"
 $launcherPath = Join-Path $projectRoot "packaging\windows\Install.cmd"
 

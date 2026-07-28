@@ -28,7 +28,7 @@ export type CompanionLookupOptions = {
   pluginRoot?: string;
 };
 
-const COMPANION_EXE_NAME = "Claude Deck Companion.exe";
+const COMPANION_EXE_NAME = "Code Deck Companion.exe";
 const TERMINAL_FALLBACK_FLAG = "CLAUDE_DECK_ALLOW_TERMINAL_FALLBACK";
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -49,7 +49,7 @@ function companionCandidates(options: CompanionLookupOptions = {}): string[] {
     path.join(pluginRoot, "companion", "win-unpacked", COMPANION_EXE_NAME),
     path.join(pluginRoot, "..", "dist", "companion", "win-unpacked", COMPANION_EXE_NAME),
     localAppData
-      ? path.join(localAppData, "Programs", "Claude Deck Companion", COMPANION_EXE_NAME)
+      ? path.join(localAppData, "Programs", "Code Deck Companion", COMPANION_EXE_NAME)
       : undefined
   ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0);
 }
@@ -63,7 +63,7 @@ export async function resolveCompanionExecutable(
     }
   }
   throw new Error(
-    "Claude Deck Companion executable was not found. Set CLAUDE_DECK_ALLOW_TERMINAL_FALLBACK=1 to use the development terminal fallback."
+    "Code Deck Companion executable was not found. Set CLAUDE_DECK_ALLOW_TERMINAL_FALLBACK=1 to use the development terminal fallback."
   );
 }
 
@@ -151,7 +151,7 @@ export async function focusCompanionWindow(processId: number): Promise<boolean> 
     // Windows reuses PIDs: the recorded id may now belong to a foreign
     // process. Only a real Companion window is worth focusing — anything
     // else reports failure so the caller launches a fresh app instead.
-    "if ($p.ProcessName -ne 'Claude Deck Companion') { exit 2 }",
+    "if ($p.ProcessName -ne 'Code Deck Companion') { exit 2 }",
     "$h = $p.MainWindowHandle",
     "if ($h -eq [IntPtr]::Zero) { exit 1 }",
     "Add-Type -Namespace ClaudeDeck -Name Win32 -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow); [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);'",
@@ -214,7 +214,7 @@ export async function launchClaudeCompanion(
     companion.once("spawn", resolve);
   });
   if (!companion.pid || companion.pid <= 0) {
-    throw new Error("Claude Deck Companion did not report a process ID");
+    throw new Error("Code Deck Companion did not report a process ID");
   }
   return { terminal: "companion", processId: companion.pid };
 }

@@ -43,5 +43,8 @@
     "tslib": "^2.6.2",
     "typescript": "^5.2.2",
     "vitest": "4.1.10"
-  }
+  },
+  "license": "UNLICENSED",
+  "author": "hanbroz",
+  "description": "Code Deck for Claude Code: Stream Deck plugin and Companion app for launching and monitoring Claude Code sessions (unofficial, not affiliated with Anthropic)."
 }

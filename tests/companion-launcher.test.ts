@@ -74,7 +74,7 @@ describe("resolveCompanionExecutable", () => {
         localAppData: "C:\\Users\\Me\\AppData\\Local",
         pluginRoot: "D:\\Plugin"
       })
-    ).resolves.toBe("D:\\Plugin\\companion\\win-unpacked\\Claude Deck Companion.exe");
+    ).resolves.toBe("D:\\Plugin\\companion\\win-unpacked\\Code Deck Companion.exe");
   });
 
   it("prefers the current repo release artifact over a stale installed Companion", async () => {
@@ -88,7 +88,7 @@ describe("resolveCompanionExecutable", () => {
         localAppData: "C:\\Users\\Me\\AppData\\Local",
         pluginRoot: "D:\\repo\\com.hanbroz.claude-usage.sdPlugin"
       })
-    ).resolves.toBe("D:\\repo\\dist\\companion\\win-unpacked\\Claude Deck Companion.exe");
+    ).resolves.toBe("D:\\repo\\dist\\companion\\win-unpacked\\Code Deck Companion.exe");
   });
 
   it("also checks the release dist artifact promised by Code Start", async () => {
@@ -102,7 +102,7 @@ describe("resolveCompanionExecutable", () => {
         localAppData: undefined,
         pluginRoot: "D:\\repo\\com.hanbroz.claude-usage.sdPlugin"
       })
-    ).resolves.toBe("D:\\repo\\dist\\companion\\win-unpacked\\Claude Deck Companion.exe");
+    ).resolves.toBe("D:\\repo\\dist\\companion\\win-unpacked\\Code Deck Companion.exe");
   });
 });
 
@@ -111,7 +111,7 @@ describe("createCompanionLaunchPlan", () => {
     vi.stubEnv("ELECTRON_RUN_AS_NODE", "1");
     vi.stubEnv("ELECTRON_NO_ATTACH_CONSOLE", "1");
     const plan = createCompanionLaunchPlan(
-      "D:\\Companion\\Claude Deck Companion.exe",
+      "D:\\Companion\\Code Deck Companion.exe",
       "D:\\Projects\\Demo",
       "binding-1",
       "launch-1",
@@ -121,7 +121,7 @@ describe("createCompanionLaunchPlan", () => {
     );
 
     expect(plan).toMatchObject({
-      command: "D:\\Companion\\Claude Deck Companion.exe",
+      command: "D:\\Companion\\Code Deck Companion.exe",
       args: [],
       cwd: "D:\\Projects\\Demo"
     });
@@ -153,7 +153,7 @@ describe("launchClaudeCompanion", () => {
     ).resolves.toEqual({ terminal: "companion", processId: 9876 });
 
     expect(spawnMock).toHaveBeenCalledWith(
-      expect.stringContaining("Claude Deck Companion.exe"),
+      expect.stringContaining("Code Deck Companion.exe"),
       [],
       expect.objectContaining({
         cwd: "D:\\Projects\\Demo",
@@ -171,7 +171,7 @@ describe("launchClaudeCompanion", () => {
 
     await expect(
       launchClaudeCompanion("D:\\Projects\\Demo", "binding-1", "launch-1")
-    ).rejects.toThrow("Claude Deck Companion executable was not found");
+    ).rejects.toThrow("Code Deck Companion executable was not found");
     vi.stubEnv("CLAUDE_DECK_ALLOW_TERMINAL_FALLBACK", "1");
     await expect(
       launchClaudeCompanion("D:\\Projects\\Demo", "binding-1", "launch-1")
