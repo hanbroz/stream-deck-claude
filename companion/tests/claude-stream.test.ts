@@ -251,8 +251,9 @@ describe("summarizeToolInput", () => {
     expect(summarizeToolInput("Read", { file_path: "D:\\repo\\src\\index.ts" })).toBe("index.ts");
   });
 
-  it("truncates long commands", () => {
-    expect(summarizeToolInput("Bash", { command: "x".repeat(80) })).toBe(`${"x".repeat(48)}…`);
+  it("keeps commands intact up to the safety cap", () => {
+    expect(summarizeToolInput("Bash", { command: "x".repeat(80) })).toBe("x".repeat(80));
+    expect(summarizeToolInput("Bash", { command: "x".repeat(600) })).toBe(`${"x".repeat(500)}…`);
   });
 
   it("returns an empty label when nothing is summarizable", () => {

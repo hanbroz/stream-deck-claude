@@ -97,8 +97,10 @@ export function summarizeToolInput(name: string, input: unknown): string {
   if (!inline) {
     return "";
   }
+  // Width-based truncation is the status line CSS's job (text-overflow:
+  // ellipsis); this cap only bounds pathological inputs like heredoc commits.
   const flat = inline.replace(/\s+/gu, " ").trim();
-  return flat.length > 48 ? `${flat.slice(0, 48)}…` : flat;
+  return flat.length > 500 ? `${flat.slice(0, 500)}…` : flat;
 }
 
 export function encodeClaudeUserMessage(

@@ -923,6 +923,10 @@ body.is-split-resizing.is-resizing-rows * {
 }
 
 .claude-status__detail {
+  /* min-width: 0 lets this flex item shrink below its content width, so the
+     ellipsis kicks in at the row's actual edge instead of overflowing. */
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   color: #7d7d7d;
   text-overflow: ellipsis;
