@@ -254,3 +254,41 @@ export function paintTurn(turn: Turn): void {
   }
   turn.body.append(paragraph);
 }
+
+export type AgentRowRefs = {
+  root: HTMLElement;
+  icon: HTMLElement;
+  detail: HTMLElement;
+  time: HTMLElement;
+};
+
+/** Live board for parallel subagents, one console block per launch batch. */
+export function createAgentBoard(): { root: HTMLElement; rows: HTMLElement } {
+  const root = document.createElement("div");
+  root.className = "agent-board";
+  const title = document.createElement("div");
+  title.className = "agent-board__title";
+  title.textContent = "Agents";
+  const rows = document.createElement("div");
+  rows.className = "agent-board__rows";
+  root.append(title, rows);
+  return { root, rows };
+}
+
+export function createAgentRow(agentType: string, description: string): AgentRowRefs {
+  const root = document.createElement("div");
+  root.className = "agent-board__row is-running";
+  const icon = document.createElement("span");
+  icon.className = "agent-board__icon";
+  icon.textContent = "●";
+  const label = document.createElement("span");
+  label.className = "agent-board__label";
+  label.textContent = description.length > 0 ? `${agentType} · ${description}` : agentType;
+  const detail = document.createElement("span");
+  detail.className = "agent-board__detail";
+  const time = document.createElement("span");
+  time.className = "agent-board__time";
+  time.textContent = "0s";
+  root.append(icon, label, detail, time);
+  return { root, icon, detail, time };
+}

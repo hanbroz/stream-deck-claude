@@ -53,7 +53,15 @@ import {
 } from "../shared/slash-commands";
 import { applyMention, filterMentionFiles, mentionQueryAt } from "../shared/mention";
 import { diag, setDiagSink } from "../shared/diag";
-import { createTurn, paintTurn, type Turn, type TurnRole } from "./transcript";
+import {
+  createAgentBoard,
+  createAgentRow,
+  createTurn,
+  paintTurn,
+  type AgentRowRefs,
+  type Turn,
+  type TurnRole
+} from "./transcript";
 import { companionBuildVersion } from "../shared/build-version";
 import { explorerIconPath } from "./explorer-icons";
 import { adjustSplitForKey, clampSplit, type SplitterOrientation } from "./splitter";
@@ -1809,14 +1817,128 @@ function renderContextUsage(usedTokens: number, windowTokens: number): void {
 }
 
 function renderClaudeStatus(phase: ClaudePhase | "error", detail?: string): void {
+  lastStatusPhase = phase;
+  lastStatusDetail = detail;
   const label = phase === "error"
     ? { text: "오류", detail: detail ?? "", busy: false }
     : formatClaudePhase(phase, detail);
+  // Running subagents get a persistent n/m prefix so parallel work stays
+  // visible even while the strip churns through tool/thinking phases.
+  const counts = agentCounts();
+  const running = counts.total - counts.done;
+  const detailText = running > 0 && label.busy
+    ? `Agent ${counts.done}/${counts.total}${label.detail ? ` · ${label.detail}` : ""}`
+    : label.detail;
   claudeStatus.dataset.phase = phase;
   claudeStatus.dataset.busy = String(label.busy);
   claudeStatusText.textContent = label.text;
-  claudeStatusDetail.textContent = label.detail;
-  claudeStatusDetail.title = label.detail;
+  claudeStatusDetail.textContent = detailText;
+  claudeStatusDetail.title = detailText;
+}
+
+type AgentBoardRow = { refs: AgentRowRefs; startedAt: number; done: boolean };
+let agentBoardRows: HTMLElement | undefined;
+const agentRows = new Map<string, AgentBoardRow>();
+let agentTimer: number | undefined;
+let lastStatusPhase: ClaudePhase | "error" = "ready";
+let lastStatusDetail: string | undefined;
+
+function agentCounts(): { done: number; total: number } {
+  let done = 0;
+  for (const row of agentRows.values()) {
+    if (row.done) {
+      done += 1;
+    }
+  }
+  return { done, total: agentRows.size };
+}
+
+function formatAgentElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m${String(seconds).padStart(2, "0")}s` : `${seconds}s`;
+}
+
+function ensureAgentTimer(): void {
+  if (agentTimer !== undefined) {
+    return;
+  }
+  agentTimer = window.setInterval(() => {
+    const now = Date.now();
+    let running = false;
+    for (const row of agentRows.values()) {
+      if (row.done) {
+        continue;
+      }
+      running = true;
+      row.refs.time.textContent = formatAgentElapsed(now - row.startedAt);
+    }
+    if (!running) {
+      window.clearInterval(agentTimer);
+      agentTimer = undefined;
+    }
+  }, 1000);
+}
+
+function handleAgentEvent(event: Extract<ClaudeEvent, { kind: "agent" }>): void {
+  if (event.op === "start") {
+    // A fresh batch (previous board fully settled) opens its own board, placed
+    // after the current assistant text so the console stays chronological.
+    const counts = agentCounts();
+    if (!agentBoardRows || (counts.total > 0 && counts.done === counts.total)) {
+      agentRows.clear();
+      finishAssistantTurn();
+      const board = createAgentBoard();
+      agentBoardRows = board.rows;
+      consoleElement.append(board.root);
+      scrollConsoleToBottom();
+    }
+    const refs = createAgentRow(event.agentType, event.description);
+    agentBoardRows.append(refs.root);
+    agentRows.set(event.toolUseId, { refs, startedAt: Date.now(), done: false });
+    ensureAgentTimer();
+  } else if (event.op === "activity") {
+    const row = agentRows.get(event.toolUseId);
+    if (row && !row.done) {
+      row.refs.detail.textContent = event.detail;
+    }
+  } else {
+    const row = agentRows.get(event.toolUseId);
+    if (row && !row.done) {
+      row.done = true;
+      row.refs.root.classList.remove("is-running");
+      row.refs.root.classList.add(event.ok ? "is-done" : "is-failed");
+      row.refs.icon.textContent = event.ok ? "✓" : "✗";
+      row.refs.time.textContent = formatAgentElapsed(Date.now() - row.startedAt);
+    }
+  }
+  if (lastStatusPhase !== "error") {
+    renderClaudeStatus(lastStatusPhase, lastStatusDetail);
+  }
+}
+
+/** An interrupted turn (ESC, error) leaves no completion events behind. */
+function finalizeRunningAgents(): void {
+  for (const row of agentRows.values()) {
+    if (row.done) {
+      continue;
+    }
+    row.done = true;
+    row.refs.root.classList.remove("is-running");
+    row.refs.root.classList.add("is-stopped");
+    row.refs.icon.textContent = "◼";
+    row.refs.detail.textContent = "중단됨";
+  }
+}
+
+function resetAgentBoard(): void {
+  agentRows.clear();
+  agentBoardRows = undefined;
+  if (agentTimer !== undefined) {
+    window.clearInterval(agentTimer);
+    agentTimer = undefined;
+  }
 }
 
 function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
@@ -1828,6 +1950,9 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       // A finished turn closes the assistant bubble so the next reply is its own.
       if (event.phase === "waiting" || event.phase === "ready") {
         finishAssistantTurn();
+        // Normal completions already ended every row; this only sweeps up
+        // agents orphaned by an ESC interrupt or a killed run.
+        finalizeRunningAgents();
       }
       renderClaudeStatus(event.phase, event.detail);
       // The turn is over: flush the message the user queued mid-generation.
@@ -1844,8 +1969,11 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       }
       renderContextUsage(event.usedTokens, event.windowTokens);
       updateModelOptionLabel(event.model);
+    } else if (event.kind === "agent") {
+      handleAgentEvent(event);
     } else {
       finishAssistantTurn();
+      finalizeRunningAgents();
       renderClaudeStatus("error", event.message);
       appendTurn("error", event.message);
     }
@@ -1915,6 +2043,7 @@ function clearConsoleOutput(): void {
   activeAssistantTurn = undefined;
   turns.length = 0;
   consoleElement.replaceChildren();
+  resetAgentBoard();
   historySessionId = undefined;
   historyOffset = 0;
   historyHasMore = false;

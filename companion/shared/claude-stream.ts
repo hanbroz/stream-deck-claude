@@ -20,6 +20,9 @@ export type ClaudeEvent =
   | { kind: "text"; text: string }
   | { kind: "phase"; phase: ClaudePhase; detail?: string }
   | { kind: "context"; usedTokens: number; windowTokens: number; model: string }
+  | { kind: "agent"; op: "start"; toolUseId: string; agentType: string; description: string }
+  | { kind: "agent"; op: "activity"; toolUseId: string; detail: string }
+  | { kind: "agent"; op: "end"; toolUseId: string; ok: boolean }
   | { kind: "error"; message: string; missingConversation: boolean };
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
@@ -167,6 +170,11 @@ export class ClaudeStreamParser {
   private model = "";
   private contextWindow = DEFAULT_CONTEXT_WINDOW;
   private sessionId: string | undefined;
+  // Live subagents keyed by their Task/Agent tool_use id. Async agents (whose
+  // launch the CLI acks with an immediate tool_result) also sit in asyncAgents
+  // so that ack is not mistaken for completion — they end via task_notification.
+  private readonly knownAgents = new Set<string>();
+  private readonly asyncAgents = new Set<string>();
 
   /** The Claude conversation id seen so far, consumed once by the caller. */
   takeSessionId(): string | undefined {
@@ -215,6 +223,12 @@ export class ClaudeStreamParser {
 
     if (typeof message.session_id === "string" && message.session_id.length > 0) {
       this.sessionId = message.session_id;
+    }
+
+    // Subagent traffic is tagged with the spawning tool_use id. It must never
+    // reach the console as top-level text; it only feeds the agent board.
+    if (typeof message.parent_tool_use_id === "string" && message.parent_tool_use_id.length > 0) {
+      return this.parseSubagent(message.parent_tool_use_id, message);
     }
 
     switch (message.type) {
@@ -267,9 +281,59 @@ export class ClaudeStreamParser {
         return typeof message.estimated_tokens === "number"
           ? this.phase("thinking", `${message.estimated_tokens} tokens`)
           : this.phase("thinking");
+      case "task_started": {
+        // The definitive start signal for async agents, richer than the
+        // tool_use block — and the cue to treat their tool_result as a
+        // launch ack rather than completion.
+        const id = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
+        if (id.length === 0) {
+          return [];
+        }
+        this.asyncAgents.add(id);
+        if (this.knownAgents.has(id)) {
+          return [];
+        }
+        this.knownAgents.add(id);
+        return [{
+          kind: "agent",
+          op: "start",
+          toolUseId: id,
+          agentType: typeof message.subagent_type === "string" ? message.subagent_type : "agent",
+          description: typeof message.description === "string" ? message.description : ""
+        }];
+      }
+      case "task_notification": {
+        const id = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
+        if (id.length === 0 || !this.knownAgents.has(id)) {
+          return [];
+        }
+        this.knownAgents.delete(id);
+        this.asyncAgents.delete(id);
+        return [{ kind: "agent", op: "end", toolUseId: id, ok: message.status === "completed" }];
+      }
       default:
         return [];
     }
+  }
+
+  /** Only a subagent's own tool calls surface, as board activity lines. */
+  private parseSubagent(parentId: string, message: JsonRecord): ClaudeEvent[] {
+    if (message.type !== "assistant" || !this.knownAgents.has(parentId) || !isRecord(message.message)) {
+      return [];
+    }
+    const content = message.message.content;
+    if (!Array.isArray(content)) {
+      return [];
+    }
+    const tool = content
+      .filter(isRecord)
+      .find((block) => block.type === "tool_use" && typeof block.name === "string");
+    if (!tool) {
+      return [];
+    }
+    const name = tool.name as string;
+    const summary = summarizeToolInput(name, tool.input);
+    return [{ kind: "agent", op: "activity", toolUseId: parentId, detail: summary ? `${name} ${summary}` : name }];
   }
 
   private parseStreamEvent(message: JsonRecord): ClaudeEvent[] {
@@ -337,13 +401,31 @@ export class ClaudeStreamParser {
 
     // Refine the tool label once the full input has arrived, e.g. `Read package.json`.
     if (Array.isArray(content)) {
-      const tool = content
+      const tools = content
         .filter(isRecord)
-        .find((block) => block.type === "tool_use" && typeof block.name === "string");
+        .filter((block) => block.type === "tool_use" && typeof block.name === "string");
+      // Task/Agent tool calls open board rows; synchronous CLIs have no
+      // task_started, so the tool_use block is their only start signal.
+      const agentEvents: ClaudeEvent[] = [];
+      for (const block of tools) {
+        if (!/^(task|agent)$/iu.test(block.name as string) || typeof block.id !== "string" || this.knownAgents.has(block.id)) {
+          continue;
+        }
+        const input = isRecord(block.input) ? block.input : {};
+        this.knownAgents.add(block.id);
+        agentEvents.push({
+          kind: "agent",
+          op: "start",
+          toolUseId: block.id,
+          agentType: typeof input.subagent_type === "string" ? input.subagent_type : "agent",
+          description: typeof input.description === "string" ? input.description : ""
+        });
+      }
+      const tool = tools[0];
       if (tool) {
         const name = tool.name as string;
         const summary = summarizeToolInput(name, tool.input);
-        return this.phase("tool", summary ? `${name} ${summary}` : name);
+        return [...agentEvents, ...this.phase("tool", summary ? `${name} ${summary}` : name)];
       }
     }
 
@@ -360,13 +442,25 @@ export class ClaudeStreamParser {
     if (!isRecord(message.message) || !Array.isArray(message.message.content)) {
       return [];
     }
-    const result = message.message.content
+    const results = message.message.content
       .filter(isRecord)
-      .find((block) => block.type === "tool_result");
-    if (!result) {
+      .filter((block) => block.type === "tool_result");
+    if (results.length === 0) {
       return [];
     }
+    // Synchronous agents end with their tool_result. Async ones sit in
+    // asyncAgents — their tool_result is only a launch ack, and completion
+    // arrives later as task_notification.
+    const agentEvents: ClaudeEvent[] = [];
+    for (const block of results) {
+      const id = typeof block.tool_use_id === "string" ? block.tool_use_id : "";
+      if (id.length === 0 || !this.knownAgents.has(id) || this.asyncAgents.has(id)) {
+        continue;
+      }
+      this.knownAgents.delete(id);
+      agentEvents.push({ kind: "agent", op: "end", toolUseId: id, ok: block.is_error !== true });
+    }
     // The tool finished; Claude goes back to the model with its output.
-    return this.phase("requesting");
+    return [...agentEvents, ...this.phase("requesting")];
   }
 }

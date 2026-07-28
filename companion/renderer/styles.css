@@ -771,6 +771,68 @@ body.is-split-resizing.is-resizing-rows * {
   font-weight: 600;
 }
 
+.agent-board {
+  margin: 10px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent, #d97757);
+  border-radius: 4px;
+  background: rgba(217, 119, 87, 0.06);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.agent-board__title {
+  color: #9a9a9a;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agent-board__row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  word-break: keep-all;
+}
+
+.agent-board__icon {
+  flex: 0 0 auto;
+  width: 14px;
+  text-align: center;
+}
+
+.agent-board__row.is-running .agent-board__icon {
+  color: var(--accent, #d97757);
+  animation: claude-status-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-board__row.is-done .agent-board__icon { color: #4f9d69; }
+.agent-board__row.is-failed .agent-board__icon { color: #c8553d; }
+.agent-board__row.is-stopped .agent-board__icon { color: #6e6e6e; }
+
+.agent-board__label {
+  flex: 0 0 auto;
+  color: #c9c9c9;
+}
+
+.agent-board__detail {
+  /* min-width: 0 lets the activity column shrink so the ellipsis lands at
+     the row's real edge, mirroring .claude-status__detail. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #7d7d7d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-board__time {
+  flex: 0 0 auto;
+  color: #9a9a9a;
+  font-variant-numeric: tabular-nums;
+}
+
 .md-heading {
   margin: 14px 0 6px;
   color: #f0f0f0;

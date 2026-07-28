@@ -309,3 +309,91 @@ describe("text block boundaries", () => {
     expect(out).toBe("첫 줄\n둘째");
   });
 });
+
+describe("agent tracking", () => {
+  const agents = (events: readonly ClaudeEvent[]): Extract<ClaudeEvent, { kind: "agent" }>[] =>
+    events.filter((event): event is Extract<ClaudeEvent, { kind: "agent" }> => event.kind === "agent");
+
+  const startAsync = (parser: ClaudeStreamParser, id: string, description: string): ClaudeEvent[] => [
+    ...parser.push(line({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", name: "Agent", id, input: { description, subagent_type: "general-purpose" } }] }
+    })),
+    ...parser.push(line({
+      type: "system",
+      subtype: "task_started",
+      tool_use_id: id,
+      description,
+      subagent_type: "general-purpose"
+    }))
+  ];
+
+  it("starts an agent once from tool_use and task_started", () => {
+    const parser = new ClaudeStreamParser();
+    const events = agents(startAsync(parser, "toolu_1", "Return ALPHA"));
+    expect(events).toEqual([
+      { kind: "agent", op: "start", toolUseId: "toolu_1", agentType: "general-purpose", description: "Return ALPHA" }
+    ]);
+  });
+
+  it("ignores the async launch-ack tool_result and ends on task_notification", () => {
+    const parser = new ClaudeStreamParser();
+    startAsync(parser, "toolu_1", "Return ALPHA");
+    const ack = parser.push(line({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: [{ type: "text", text: "Async agent launched successfully." }] }] }
+    }));
+    expect(agents(ack)).toEqual([]);
+    const done = parser.push(line({ type: "system", subtype: "task_notification", tool_use_id: "toolu_1", status: "completed" }));
+    expect(agents(done)).toEqual([{ kind: "agent", op: "end", toolUseId: "toolu_1", ok: true }]);
+    // A repeated notification for a finished agent is silent.
+    expect(agents(parser.push(line({ type: "system", subtype: "task_notification", tool_use_id: "toolu_1", status: "completed" })))).toEqual([]);
+  });
+
+  it("ends a synchronous agent (no task_started) on its tool_result", () => {
+    const parser = new ClaudeStreamParser();
+    parser.push(line({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", name: "Task", id: "toolu_9", input: { description: "검토", subagent_type: "reviewer" } }] }
+    }));
+    const done = parser.push(line({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_9", is_error: true, content: "boom" }] }
+    }));
+    expect(agents(done)).toEqual([{ kind: "agent", op: "end", toolUseId: "toolu_9", ok: false }]);
+  });
+
+  it("turns subagent tool calls into activity and keeps their text out of the console", () => {
+    const parser = new ClaudeStreamParser();
+    startAsync(parser, "toolu_1", "Return ALPHA");
+    const activity = parser.push(line({
+      type: "assistant",
+      parent_tool_use_id: "toolu_1",
+      message: { content: [{ type: "tool_use", name: "Grep", id: "toolu_inner", input: { pattern: "auth" } }] }
+    }));
+    expect(agents(activity)).toEqual([{ kind: "agent", op: "activity", toolUseId: "toolu_1", detail: "Grep auth" }]);
+    const innerText = parser.push(line({
+      type: "assistant",
+      parent_tool_use_id: "toolu_1",
+      message: { content: [{ type: "text", text: "내부 독백은 콘솔에 나오면 안 된다" }] }
+    }));
+    expect(texts(innerText)).toBe("");
+    expect(agents(innerText)).toEqual([]);
+  });
+
+  it("suppresses parent-tagged traffic from unknown or non-assistant sources", () => {
+    const parser = new ClaudeStreamParser();
+    // Unknown parent id: nothing was started.
+    expect(parser.push(line({
+      type: "assistant",
+      parent_tool_use_id: "toolu_ghost",
+      message: { content: [{ type: "text", text: "유령" }] }
+    }))).toEqual([]);
+    startAsync(parser, "toolu_1", "Return ALPHA");
+    expect(parser.push(line({
+      type: "user",
+      parent_tool_use_id: "toolu_1",
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_inner", content: "internal" }] }
+    }))).toEqual([]);
+  });
+});
