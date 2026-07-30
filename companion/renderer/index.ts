@@ -1820,6 +1820,28 @@ async function offerRelogin(): Promise<void> {
   }
 }
 
+/**
+ * Give up on queued messages when the turn ends in failure.
+ *
+ * The queue only flushes on a `waiting`/`ready` phase, which a failed or
+ * auth-expired turn never reaches. Without this the "다음 작업 예약" badge kept a
+ * promise it could not honour: the turn sat on screen greyed out forever, and a
+ * later message landed *below* it, so the transcript order lied too.
+ */
+function releasePendingSends(reason: string): void {
+  if (pendingSendQueue.length === 0) {
+    return;
+  }
+  const released = pendingSendQueue.splice(0, pendingSendQueue.length);
+  for (const { turn } of released) {
+    turn.element.classList.add("is-unsent");
+  }
+  appendTurn(
+    "notice",
+    `${reason} 예약해 둔 메시지 ${released.length}건은 전송되지 않았습니다. 다시 보내주세요.`
+  );
+}
+
 async function setTerminalSplit(open: boolean, cwd = terminalCwdForSelection()): Promise<void> {
   appShell.classList.toggle("is-terminal-split", open);
   terminalSplitSign.textContent = open ? "x" : "+";
@@ -2058,11 +2080,13 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       // The conversation is intact and the session is free again — the account
       // just has to sign in, so the strip goes back to inviting input.
       renderClaudeStatus("ready");
+      releasePendingSends("로그인이 만료되어");
       void offerRelogin();
     } else {
       finishAssistantTurn();
       renderClaudeStatus("error", event.message);
       appendTurn("error", event.message);
+      releasePendingSends("턴이 오류로 끝나");
     }
   }
 }

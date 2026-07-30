@@ -196,7 +196,10 @@ async function start(): Promise<void> {
           activity,
           capturedAt: Date.now()
         }).catch(() => {
-          lastActivity = undefined; // retry on the next phase change
+          // lastActivity is deliberately kept. Clearing it made the next heartbeat
+          // publish "waiting" through the `?? "waiting"` fallback for a session that
+          // was still running, and dedup then held that wrong value until the next
+          // phase change. The heartbeat re-publishes the correct value in 30s.
         });
       };
       const recordActivity = (activity: CompanionActivity): void => {
@@ -225,6 +228,11 @@ async function start(): Promise<void> {
       );
       app.on("before-quit", () => {
         clearInterval(heartbeat);
+        // A run held open for its background agents would otherwise outlive the
+        // app: the idle timer that reclaims it lives in this process and dies with
+        // it, stranding a `claude --print` subtree that runs with
+        // --dangerously-skip-permissions and has nobody left to supervise it.
+        ptyManager.killAll();
         if (!runtimeEnv.bindingId || !runtimeEnv.launchId) {
           return;
         }

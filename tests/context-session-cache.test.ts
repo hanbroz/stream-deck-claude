@@ -10,6 +10,7 @@ import {
   contextSessionRuntimePath,
   contextSessionSnapshotPath,
   findReconnectableBindingId,
+  findRunningCompanionLaunch,
   loadCodeStartDisplayState,
   readContextSessionResumePointer,
   refreshResumePointerFromIdentity,
@@ -38,7 +39,9 @@ describe("context session cache", () => {
     });
 
     await expect(
-      findReconnectableBindingId(root, "d:\\projects\\moved")
+      // These fixtures stamp startedAt at epoch 100ms, so "now" is pinned to the
+      // same era — reconnect now applies the same freshness rule as the display.
+      findReconnectableBindingId(root, "d:\\projects\\moved", new Set<string>(), FRESH_NOW)
     ).resolves.toBe("old-action-instance");
   });
 
@@ -57,16 +60,17 @@ describe("context session cache", () => {
     }
 
     await expect(
-      findReconnectableBindingId(root, "D:\\Projects\\Shared")
+      findReconnectableBindingId(root, "D:\\Projects\\Shared", new Set<string>(), FRESH_NOW)
     ).resolves.toBeUndefined();
     await expect(
-      findReconnectableBindingId(root, "D:\\Projects\\Shared", new Set(["action-1"]))
+      findReconnectableBindingId(root, "D:\\Projects\\Shared", new Set(["action-1"]), FRESH_NOW)
     ).resolves.toBe("action-2");
     await expect(
       findReconnectableBindingId(
         root,
         "D:\\Projects\\Shared",
-        new Set(["action-1", "action-2"])
+        new Set(["action-1", "action-2"]),
+        FRESH_NOW
       )
     ).resolves.toBeUndefined();
   });
@@ -99,8 +103,9 @@ describe("context session cache", () => {
     await expect(
       loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({
+      // No activity record for this launch yet, so it is not claimed to be running.
       kind: "starting",
-      activity: "running"
+      activity: "idle"
     });
   });
 
@@ -118,7 +123,7 @@ describe("context session cache", () => {
 
     await expect(
       loadCodeStartDisplayState(root, "action-companion", "D:\\Projects\\Demo", FRESH_NOW)
-    ).resolves.toEqual({ kind: "starting", activity: "running" });
+    ).resolves.toEqual({ kind: "starting", activity: "idle" });
   });
 
   it("reports closed — never a live session — when no app is running for the folder", async () => {
@@ -147,6 +152,72 @@ describe("context session cache", () => {
     await expect(
       loadCodeStartDisplayState(root, "action-moved", folder, FRESH_NOW)
     ).resolves.toEqual({ kind: "closed", activity: "ended" });
+  });
+
+  it("rejects an activity record stamped in the future instead of trusting it forever", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    // A clock that ran ahead (dual boot, restored VM snapshot) leaves a record dated
+    // later than "now". A lower-bound-only freshness check makes the difference
+    // negative, switching the rule off and bringing the PID-reuse bug back.
+    await writeActiveLaunch(root, {
+      schemaVersion: 2,
+      actionId: "action-future",
+      launchId: "launch-future",
+      folder: "D:\\Projects\\Demo",
+      startedAt: FRESH_NOW,
+      terminal: "companion",
+      processId: process.pid
+    });
+    await writeContextSessionRuntime(root, {
+      schemaVersion: 2,
+      actionId: "action-future",
+      launchId: "launch-future",
+      activity: "waiting",
+      capturedAt: FRESH_NOW + 10 * 60 * 1000
+    });
+
+    await expect(
+      loadCodeStartDisplayState(root, "action-future", "D:\\Projects\\Demo", FRESH_NOW)
+    ).resolves.toEqual({ kind: "closed", activity: "ended" });
+  });
+
+  it("agrees between the display and the press path about a stale launch", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    const folder = "D:\\Projects\\Demo";
+    // process.pid stands in for a reused PID that now belongs to another Companion,
+    // which passes a process-name check. When only the display path applied the
+    // freshness rule, the key read "Closed" while pressing it focused that stranger's
+    // window and skipped the launch — so the key had no way back.
+    await writeActiveLaunch(root, {
+      schemaVersion: 2,
+      actionId: "action-split",
+      launchId: "launch-split",
+      folder,
+      startedAt: FRESH_NOW,
+      terminal: "companion",
+      processId: process.pid
+    });
+    await writeContextSessionRuntime(root, {
+      schemaVersion: 2,
+      actionId: "action-split",
+      launchId: "launch-split",
+      activity: "waiting",
+      capturedAt: FRESH_NOW
+    });
+
+    const stale = FRESH_NOW + 120_000;
+    await expect(
+      loadCodeStartDisplayState(root, "action-split", folder, stale)
+    ).resolves.toEqual({ kind: "closed", activity: "ended" });
+    // The press path must reach the same verdict, so the press launches afresh.
+    await expect(
+      findRunningCompanionLaunch(root, "action-split", folder, () => true, stale)
+    ).resolves.toBeUndefined();
+
+    // While the record is fresh, both agree it is live.
+    await expect(
+      findRunningCompanionLaunch(root, "action-split", folder, () => true, FRESH_NOW + 1_000)
+    ).resolves.toMatchObject({ launchId: "launch-split" });
   });
 
   it("closes a key whose PID is alive but whose activity record went stale", async () => {
@@ -198,7 +269,7 @@ describe("context session cache", () => {
     // Just launched: no record yet is normal, so the key shows it starting.
     await expect(
       loadCodeStartDisplayState(root, "action-silent", "D:\\Projects\\Demo", FRESH_NOW + 1_000)
-    ).resolves.toEqual({ kind: "starting", activity: "running" });
+    ).resolves.toEqual({ kind: "starting", activity: "idle" });
 
     // Still nothing much later: the app never came up, so stop reporting it.
     await expect(
@@ -415,7 +486,7 @@ describe("context session cache", () => {
       loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({
       kind: "starting",
-      activity: "running",
+      activity: "idle",
       model: { displayName: "Opus 4.8" }
     });
 
@@ -437,7 +508,7 @@ describe("context session cache", () => {
     ).resolves.toEqual({
       kind: "ready",
       percentage: 48,
-      activity: "running",
+      activity: "idle",
       model: { displayName: "Opus 4.8" }
     });
   });

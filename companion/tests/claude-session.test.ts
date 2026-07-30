@@ -321,6 +321,70 @@ describe("ClaudePtyManager (per-message runs)", () => {
     });
   });
 
+  it("still kills the run after end_turn while the CLI keeps printing", async () => {
+    // grace > 0 on purpose: with grace 0 the timer fires on the next macrotask, so
+    // a re-armed timer still looks fine. The CLI keeps writing after end_turn (a
+    // late `result`, async hook lines) and those chunks yield no events — re-arming
+    // the grace timer on each of them postponed the kill indefinitely.
+    const { manager, runs } = makeManager(40);
+    const started = manager.start({ cwd: "D:\\repo" });
+
+    manager.write(started.sessionId, "hi");
+    runs[0].data.emit("data", endTurn);
+    for (let index = 0; index < 6; index += 1) {
+      await tick(15);
+      runs[0].data.emit("data", line({ type: "system", subtype: "hook_response" }));
+    }
+
+    // 90ms have passed against a 40ms grace, so the kill must already have happened
+    // *while output was still flowing*. Asserting after the flow stops would pass
+    // either way, because a re-armed timer fires once the chunks end.
+    expect(runs[0].kill).toHaveBeenCalled();
+  });
+
+  it("does not mistake another tool's login message for the session losing its login", () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    manager.write(started.sessionId, "hi");
+    // A hook checking a different service prints this. Treating it as Claude's own
+    // auth failure suppressed the run's real error and offered a needless re-login.
+    runs[0].error.emit("error", "gh: not logged in to github.com");
+    runs[0].exit.emit("exit", { exitCode: 1 });
+
+    const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(events.filter((event) => event.kind === "login")).toEqual([]);
+    expect(events).toContainEqual({
+      kind: "error",
+      message: "gh: not logged in to github.com",
+      missingConversation: false
+    });
+    // The genuine failure must still reach the user.
+    expect(events).toContainEqual({
+      kind: "error",
+      message: "Claude 세션이 응답 없이 종료되었습니다",
+      missingConversation: false
+    });
+  });
+
+  it("kills runs held for background agents when the app tears down", async () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+
+    manager.write(started.sessionId, "에이전트 실행");
+    runs[0].data.emit("data", agentStarted("t1"));
+    runs[0].data.emit("data", endTurn);
+    await tick();
+    expect(runs[0].kill).not.toHaveBeenCalled();
+
+    // The idle timer that would reclaim this run lives in the main process, so
+    // quitting without this leaves an unsupervised claude subtree behind.
+    manager.killAll();
+    expect(runs[0].kill).toHaveBeenCalled();
+  });
+
   it("holds the run open while background agents keep working past end_turn", async () => {
     const { manager, runs } = makeManager();
     const started = manager.start({ cwd: "D:\\repo" });

@@ -38,6 +38,24 @@ export const POWERSHELL_PROMPT_SCRIPT =
   "if($r -and $p.ToLower().StartsWith($r.ToLower())){ $rel=$p.Substring($r.Length); " +
   "if([string]::IsNullOrEmpty($rel)){'> '}else{ $rel+'> ' } } else { $p+'> ' } }";
 
+/**
+ * The embedded terminal is a plain project shell, not the Code Start session.
+ *
+ * The Companion is launched with `CLAUDE_STREAM_DECK_*` identifiers naming the
+ * key's binding and launch, and handing those to this shell made any `claude`
+ * started here write the key's own files: its SessionEnd hook flipped the key to
+ * "Closed" while the app was still open, and its status line overwrote the key's
+ * model and context with the terminal session's numbers. A project shell must not
+ * be able to speak for the key, so the identifiers are stripped.
+ */
+export function projectShellEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(env).filter(([key]) =>
+      !key.startsWith("CLAUDE_STREAM_DECK_") && !key.startsWith("CLAUDE_DECK_")
+    )
+  );
+}
+
 function commandForShell(
   shell: TerminalShell,
   hasPromptRoot: boolean
@@ -73,7 +91,7 @@ export class ProjectTerminalManager extends EventEmitter<ProjectTerminalEvents> 
     const terminal = this.ptyFactory(command.file, command.args, {
       cwd: request.cwd,
       env: {
-        ...this.env,
+        ...projectShellEnv(this.env),
         TERM: this.env.TERM ?? "xterm-256color",
         ...(promptRoot !== undefined ? { CLAUDE_TERMINAL_ROOT: promptRoot } : {})
       },

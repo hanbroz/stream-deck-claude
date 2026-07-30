@@ -14,6 +14,7 @@ import path from "node:path";
 
 import type {
   ActiveCodeLaunch,
+  CodeSessionActivity,
   CodeSessionModel,
   CodeStartDisplayState,
   ContextSessionIdentity,
@@ -469,10 +470,58 @@ export function isProcessRunning(processId: number): boolean {
   }
 }
 
+type LaunchLiveness =
+  | { live: false }
+  | { live: true; activity: CodeSessionActivity };
+
+/**
+ * Is the launch recorded in `active` still live, and what is it doing?
+ *
+ * Every caller asks through here, and that is the point. A PID cannot answer the
+ * question: Windows reuses PIDs, and a reused id can belong to *another Companion*,
+ * which sails through a process-name check. While only the display path applied the
+ * freshness rule, a key could read "Closed" and yet pressing it focused the stale
+ * PID's window and skipped the launch — leaving the key with no way back.
+ */
+async function resolveLaunchLiveness(
+  dataDir: string,
+  active: ActiveCodeLaunch,
+  nowMs: number,
+  isRunning: (processId: number) => boolean
+): Promise<LaunchLiveness> {
+  if (!isRunning(active.processId)) {
+    return { live: false };
+  }
+
+  const runtimeValue = await readJson(
+    contextSessionRuntimePath(dataDir, active.actionId, active.launchId)
+  );
+  const runtime = runtimeValue === undefined ? undefined : parseRuntime(runtimeValue);
+  const matchesLaunch =
+    runtime?.actionId === active.actionId && runtime.launchId === active.launchId;
+  // With no record yet the launch's own age stands in: only a just-started app
+  // legitimately has none.
+  const lastSeenAt = matchesLaunch ? runtime.capturedAt : active.startedAt;
+  // Math.abs, not a lower bound. A record stamped in the future — a clock that ran
+  // ahead, a restored VM snapshot — makes the difference negative, which would
+  // switch the freshness rule off entirely and bring the PID-reuse bug back.
+  if (Math.abs(nowMs - lastSeenAt) > ACTIVITY_STALE_MS) {
+    return { live: false };
+  }
+  if (matchesLaunch && runtime.activity === "ended") {
+    return { live: false };
+  }
+  // Before the first heartbeat the app has reported nothing, so "running" would be a
+  // guess — and it drew a live sweep animation over a seeded snapshot, making a
+  // launch that never came up look like a working session.
+  return { live: true, activity: matchesLaunch ? runtime.activity : "idle" };
+}
+
 export async function findReconnectableBindingId(
   dataDir: string,
   folder: string,
-  unavailableBindingIds: ReadonlySet<string> = new Set<string>()
+  unavailableBindingIds: ReadonlySet<string> = new Set<string>(),
+  nowMs = Date.now()
 ): Promise<string | undefined> {
   const sessionsDir = path.join(dataDir, "context-sessions");
   let entries;
@@ -499,7 +548,9 @@ export async function findReconnectableBindingId(
             entry.name !== digest(active.actionId) ||
             unavailableBindingIds.has(active.actionId) ||
             !sameFolder(active.folder, folder) ||
-            !isProcessRunning(active.processId)
+            // Adopting a launch the display path calls dead would bind the key to a
+            // corpse and persist that choice in settings.
+            !(await resolveLaunchLiveness(dataDir, active, nowMs, isProcessRunning)).live
           ) {
             return undefined;
           }
@@ -523,7 +574,8 @@ export async function findRunningCompanionLaunch(
   dataDir: string,
   actionId: string,
   folder: string,
-  isRunning: (processId: number) => boolean = isProcessRunning
+  isRunning: (processId: number) => boolean = isProcessRunning,
+  nowMs = Date.now()
 ): Promise<ActiveCodeLaunch | undefined> {
   try {
     const value = await readJson(activeLaunchPath(dataDir, actionId));
@@ -535,7 +587,10 @@ export async function findRunningCompanionLaunch(
       active.actionId !== actionId ||
       active.terminal !== "companion" ||
       !sameFolder(active.folder, folder) ||
-      !isRunning(active.processId)
+      // The press path must agree with what the key displays. Without this a key
+      // showing "Closed" still focused a stranger's Companion window (a reused PID
+      // passes the process-name check) and returned without launching.
+      !(await resolveLaunchLiveness(dataDir, active, nowMs, isRunning)).live
     ) {
       return undefined;
     }
@@ -567,27 +622,11 @@ export async function loadCodeStartDisplayState(
     if (!sameFolder(active.folder, folder)) {
       return { kind: "closed", activity: "ended" };
     }
-    if (!isProcessRunning(active.processId)) {
+    const liveness = await resolveLaunchLiveness(dataDir, active, nowMs, isProcessRunning);
+    if (!liveness.live) {
       return { kind: "closed", activity: "ended" };
     }
-
-    const runtimeValue = await readJson(
-      contextSessionRuntimePath(dataDir, actionId, active.launchId)
-    );
-    const runtime = runtimeValue === undefined ? undefined : parseRuntime(runtimeValue);
-    const matchesLaunch =
-      runtime?.actionId === actionId && runtime.launchId === active.launchId;
-    // The last moment this launch was known to be alive. A live PID proves
-    // nothing, so freshness decides; with no record yet the launch's own age
-    // stands in, since only a just-started app legitimately has none.
-    const lastSeenAt = matchesLaunch ? runtime.capturedAt : active.startedAt;
-    if (nowMs - lastSeenAt > ACTIVITY_STALE_MS) {
-      return { kind: "closed", activity: "ended" };
-    }
-    const activity = matchesLaunch ? runtime.activity : "running";
-    if (activity === "ended") {
-      return { kind: "closed", activity: "ended" };
-    }
+    const activity = liveness.activity;
 
     const snapshotValue = await readJson(
       contextSessionSnapshotPath(dataDir, actionId, active.launchId)

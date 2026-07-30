@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 
 import { POWERSHELL_PROMPT_SCRIPT, ProjectTerminalManager } from "../main/terminal-session";
+import type { PtyFactory } from "../main/pty-types";
 
 function fakePty() {
   const data = new EventEmitter();
@@ -20,6 +21,36 @@ function fakePty() {
 }
 
 describe("ProjectTerminalManager", () => {
+  it("does not hand the key's launch identifiers to the project shell", () => {
+    const terminal = fakePty();
+    const ptyFactory = vi.fn<PtyFactory>(() => terminal);
+    const manager = new ProjectTerminalManager({
+      ptyFactory,
+      env: {
+        Path: "test-bin",
+        // The Companion is launched with these; passing them on made any `claude`
+        // started in this shell write the key's own state files — its SessionEnd
+        // hook flipped the key to "Closed" while the app was still open, and its
+        // status line overwrote the key's model and context.
+        CLAUDE_STREAM_DECK_BINDING_ID: "binding-1",
+        CLAUDE_STREAM_DECK_LAUNCH_ID: "launch-1",
+        CLAUDE_STREAM_DECK_FOLDER: "D:\\repo",
+        CLAUDE_DECK_RUNTIME_OWNER: "companion"
+      }
+    });
+
+    manager.start({ cwd: "D:\\repo", promptRoot: "D:\\repo" });
+
+    const env = ptyFactory.mock.calls[0][2].env;
+    expect(env.Path).toBe("test-bin");
+    expect(env.CLAUDE_TERMINAL_ROOT).toBe("D:\\repo");
+    for (const leaked of Object.keys(env)) {
+      expect(leaked.startsWith("CLAUDE_STREAM_DECK_")).toBe(false);
+      expect(leaked.startsWith("CLAUDE_DECK_")).toBe(false);
+    }
+  });
+
+
   it("starts a real interactive PowerShell PTY in the project folder", () => {
     const terminal = fakePty();
     const ptyFactory = vi.fn(() => terminal);

@@ -174,6 +174,21 @@ export function isClaudeAuthError(data: string): boolean {
     .test(data);
 }
 
+/**
+ * The stderr counterpart, deliberately narrower than `isClaudeAuthError`.
+ *
+ * A stdout auth failure is confirmed by a structured flag before its text is even
+ * consulted. stderr has no such flag, and plenty of things print there: a hook
+ * checking `gh auth`, an MCP server with a bad key, any tool saying "not logged
+ * in" about its own service. Treating those as the session losing its Claude login
+ * suppressed the run's real failure — the generic exit error is skipped once a
+ * login is reported — and opened a re-login terminal for an account that was fine.
+ * Only the CLI's own remediation sentence counts here.
+ */
+export function isClaudeLoginRequiredLine(data: string): boolean {
+  return /please run \/login/iu.test(data);
+}
+
 export class ClaudeStreamParser {
   private buffer = "";
   private hasPartialAssistantText = false;
@@ -245,10 +260,20 @@ export class ClaudeStreamParser {
       this.sessionId = message.session_id;
     }
 
-    // The auth failure arrives twice — as the synthetic assistant message and
-    // again as the error result — so report it once. It must be caught before
-    // the assistant branch, which would otherwise render the CLI's
-    // "Please run /login" sentence as if Claude had said it.
+
+    // Subagent traffic is tagged with the spawning tool_use id. It must never
+    // reach the console as top-level text; it only feeds the agent board.
+    if (typeof message.parent_tool_use_id === "string" && message.parent_tool_use_id.length > 0) {
+      return this.parseSubagent(message.parent_tool_use_id, message);
+    }
+
+    // An auth failure arrives twice — as the synthetic assistant message and again
+    // as the error result — so report it once. This sits after the subagent route
+    // on purpose: a subagent hitting an API auth error is not the session losing
+    // its login, and promoting it here reset the status strip to idle mid-turn and
+    // opened a re-login terminal the user did not need. It still precedes the
+    // assistant branch, which would otherwise render the CLI's "Please run /login"
+    // sentence as if Claude had said it.
     const loginRequired = this.authFailureText(message);
     if (loginRequired !== undefined) {
       if (this.loginReported) {
@@ -256,12 +281,6 @@ export class ClaudeStreamParser {
       }
       this.loginReported = true;
       return [{ kind: "login", message: loginRequired }];
-    }
-
-    // Subagent traffic is tagged with the spawning tool_use id. It must never
-    // reach the console as top-level text; it only feeds the agent board.
-    if (typeof message.parent_tool_use_id === "string" && message.parent_tool_use_id.length > 0) {
-      return this.parseSubagent(message.parent_tool_use_id, message);
     }
 
     switch (message.type) {

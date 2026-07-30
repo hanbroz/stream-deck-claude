@@ -13,7 +13,7 @@ import {
 import {
   ClaudeStreamParser,
   encodeClaudeUserMessage,
-  isClaudeAuthError,
+  isClaudeLoginRequiredLine,
   isHookFailureNoise,
   isMissingClaudeConversationError,
   type ClaudeEvent
@@ -120,6 +120,12 @@ export type ClaudePtyManagerOptions = {
    *
    * ponytail: backstop for an agent that never reports completion, so a held
    * process cannot leak forever. Raise it if long agent runs get cut short.
+   *
+   * Known trade-off: while a run is held, a following message starts a second
+   * `claude --print --resume` on the SAME conversation id, so two processes append
+   * to one transcript for up to this long. Before background agents were kept
+   * alive the window was ~1.5s. Lowering this shrinks the overlap but cuts agents
+   * short; the CLI's own tolerance for concurrent resume is unverified.
    */
   agentIdleTimeoutMs?: number;
   /** Notified with live context usage so the Stream Deck key can be updated. */
@@ -193,6 +199,22 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     }
     if (options.effort !== undefined) {
       session.effort = options.effort;
+    }
+  }
+
+  /**
+   * End every run this manager still holds, including ones kept alive for their
+   * background agents. Called on app teardown: a `claude --print` subtree running
+   * with --dangerously-skip-permissions must never outlive the app that spawned it,
+   * and the idle timer that would have reclaimed it dies with the main process.
+   */
+  killAll(): void {
+    for (const sessionId of [...this.sessions.keys()]) {
+      try {
+        this.kill(sessionId);
+      } catch {
+        // Tearing down; a session that is already gone needs nothing.
+      }
     }
   }
 
@@ -319,20 +341,35 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
 
     /**
      * Tear the run down once the reply AND every background agent are finished.
-     * While agents are still live the process is held, with an idle cap so a
-     * silent agent cannot strand it forever.
+     *
+     * The grace timer is armed once and never re-armed. The CLI keeps printing
+     * after end_turn — a `result` that can arrive minutes late, async hook lines —
+     * and those chunks yield no events but still reach here; re-arming on each of
+     * them postponed the kill indefinitely, so the process outlived the turn it
+     * belonged to. The agent idle cap is the opposite: every agent event pushes it
+     * out, because activity means the work is still alive.
      */
     const maybeFinalise = (): void => {
       if (!sawEndTurn) {
         return;
       }
-      clearTimers();
       if (liveAgents.size === 0) {
         session.lingeringRuns.delete(run);
-        finaliseTimer = setTimeout(() => run.kill(), this.finaliseGraceMs);
+        if (agentIdleTimer) {
+          clearTimeout(agentIdleTimer);
+          agentIdleTimer = undefined;
+        }
+        finaliseTimer ??= setTimeout(() => run.kill(), this.finaliseGraceMs);
         return;
       }
       session.lingeringRuns.add(run);
+      if (finaliseTimer) {
+        clearTimeout(finaliseTimer);
+        finaliseTimer = undefined;
+      }
+      if (agentIdleTimer) {
+        clearTimeout(agentIdleTimer);
+      }
       agentIdleTimer = setTimeout(() => run.kill(), this.agentIdleTimeoutMs);
     };
 
@@ -393,7 +430,7 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
       if (trimmed.length === 0 || isHookFailureNoise(trimmed)) {
         return;
       }
-      if (isClaudeAuthError(trimmed)) {
+      if (isClaudeLoginRequiredLine(trimmed)) {
         sawLogin = true;
         emit([{ kind: "login", message: trimmed }]);
         return;

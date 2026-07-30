@@ -704,6 +704,14 @@ body.is-split-resizing.is-resizing-rows * {
   letter-spacing: 0.04em;
 }
 
+/* The queue never flushed because the turn failed. Keeps the dashed body of
+   is-queued and only relabels it, so the message is not mistaken for sent.
+   Must stay after the is-queued rule: same specificity, later wins. */
+.turn--user.is-unsent .turn__body::before {
+  content: "전송되지 않음";
+  color: #c8553d;
+}
+
 .turn--error .turn__role {
   color: #c8553d;
 }

@@ -5,6 +5,7 @@ import {
   contextWindowForModel,
   encodeClaudeUserMessage,
   isClaudeAuthError,
+  isClaudeLoginRequiredLine,
   isMissingClaudeConversationError,
   summarizeToolInput,
   usedContextTokens,
@@ -111,6 +112,39 @@ describe("Claude stream protocol", () => {
       message: { content: [{ type: "text", text: "Please run /login to continue." }] }
     }));
     expect(events).toEqual([{ kind: "text", text: "Please run /login to continue.\n" }]);
+  });
+
+  it("keeps a subagent's auth failure off the top level", () => {
+    const parser = new ClaudeStreamParser();
+    // One parallel subagent hitting an API auth error is not the session losing its
+    // login. Promoting it reset the status strip to idle mid-generation and opened a
+    // re-login terminal for an account that was fine.
+    const events = parser.push(line({
+      type: "assistant",
+      parent_tool_use_id: "toolu_agent",
+      message: { content: [{ type: "text", text: "Invalid API key · Please run /login" }] },
+      error: "authentication_failed",
+      is_api_error_message: true
+    }));
+    expect(events.filter((event) => event.kind === "login")).toEqual([]);
+
+    // The session's own auth failure still reports, on the same parser.
+    expect(parser.push(line({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Not logged in · Please run /login" }] },
+      error: "authentication_failed",
+      is_api_error_message: true
+    }))).toEqual([{ kind: "login", message: "Not logged in · Please run /login" }]);
+  });
+
+  it("narrows the stderr login check to the CLI's own remediation line", () => {
+    // stdout auth failures are confirmed by a structured flag; stderr has none, so
+    // this check must not fire on another tool talking about its own login.
+    expect(isClaudeLoginRequiredLine("Not logged in · Please run /login")).toBe(true);
+    expect(isClaudeLoginRequiredLine("Invalid API key · Please run /login")).toBe(true);
+    expect(isClaudeLoginRequiredLine("gh: not logged in to github.com")).toBe(false);
+    expect(isClaudeLoginRequiredLine("mcp bridge: invalid api key")).toBe(false);
+    expect(isClaudeLoginRequiredLine("OAuth token has expired")).toBe(false);
   });
 
   it("recognises the auth wordings that only arrive as text", () => {
