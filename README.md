@@ -111,9 +111,9 @@ npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin
 
 `npm run release:windows` runs the verification pipeline, builds the Companion installer, packages the Stream Deck plugin, and creates a versioned Windows recovery ZIP containing the Companion installer, `.streamDeckPlugin`, Korean installation guide, launcher, and SHA-256 checksums. The Companion NSIS installer opens the bundled Stream Deck plugin after Companion files are installed.
 
-Building the Companion installer rebuilds `node-pty` for Electron. The build machine therefore needs a supported Visual Studio Desktop development with C++ workload and access to the Electron download cache or network; end users do not need Visual Studio.
+Building the Companion installer uses the `node-pty` prebuild that ships in the package (`prebuilds/win32-x64`). `node-pty` is a `node-addon-api` (Node-API) module, and Node-API binaries are ABI-stable, so they load in Electron exactly as they do in Node — no source rebuild, and the build machine needs no Visual Studio, only access to the Electron download cache or network. End users need neither.
 
-`npm run companion:dir` is the fast local-development path and intentionally skips that native rebuild, so renderer/main changes can be picked up without reinstalling the Companion. Run `npm run companion:rebuild` once after changing Electron or `node-pty` versions (the release `companion:package` command performs it automatically).
+`npm run companion:dir` is the fast local-development path: it produces the same unpacked app the installer wraps, so renderer/main changes can be picked up without reinstalling the Companion. `npm run companion:rebuild` rebuilds `node-pty` from source and is only needed if a future Electron or `node-pty` version stops shipping a usable Node-API prebuild; it requires a Visual Studio that `node-gyp` can detect, which it cannot on VS 18.
 
 ### Privacy and local data
 

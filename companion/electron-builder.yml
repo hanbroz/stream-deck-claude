@@ -9,9 +9,11 @@ files:
 asar: true
 asarUnpack:
   - "**/node-pty/**"
-# The local `companion:dir` path reuses the checked-in/prebuilt node-pty binary.
-# Release packaging runs `companion:rebuild` first and therefore still produces
-# an Electron-matched native module.
+# node-pty is a node-addon-api (Node-API) module and ships prebuilds for each
+# platform, e.g. prebuilds/win32-x64. Node-API binaries are ABI-stable, so they
+# load in Electron exactly as they do in Node — both `companion:dir` and release
+# packaging use the prebuild. A source rebuild buys nothing here and needs a
+# Visual Studio that node-gyp can detect, which it cannot on VS 18.
 npmRebuild: false
 win:
   icon: companion/assets/icon.ico
