@@ -33,7 +33,10 @@ describe("renderCodeStartKey", () => {
     }
   });
 
-  it.each(["setup", "idle", "starting", "error"] as const)(
+  // Only states that mean "an app is open" may draw the model line and context
+  // bar. `idle` used to be in this list, which is how a project with no app
+  // running still rendered as a live session.
+  it.each(["setup", "starting", "error"] as const)(
     "keeps the same three-element layout for the %s state",
     (kind) => {
       const svg = renderCodeStartKey("Project A", { kind, activity: "idle" });
@@ -49,7 +52,7 @@ describe("renderCodeStartKey", () => {
 
   it("escapes and truncates long project names", () => {
     const svg = renderCodeStartKey("Alpha & <Long Project>", {
-      kind: "idle",
+      kind: "starting",
       activity: "waiting"
     });
 

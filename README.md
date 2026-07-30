@@ -39,7 +39,7 @@ The Code Start model text changes color according to session activity:
 - Green: Claude Code is running.
 - Red: Claude Code is idle.
 - Blue: Claude Code is waiting for your answer.
-- `Closed`: The terminal session has ended.
+- `Closed`: No app is running for this project — never started, already ended, or stopped reporting. The model line and context bar appear only while an app is actually open.
 
 ### Data source
 
@@ -115,6 +115,19 @@ Building the Companion installer uses the `node-pty` prebuild that ships in the 
 
 `npm run companion:dir` is the fast local-development path: it produces the same unpacked app the installer wraps, so renderer/main changes can be picked up without reinstalling the Companion. `npm run companion:rebuild` rebuilds `node-pty` from source and is only needed if a future Electron or `node-pty` version stops shipping a usable Node-API prebuild; it requires a Visual Studio that `node-gyp` can detect, which it cannot on VS 18.
 
+### Checking which build is running
+
+Both halves name their own build, so a stale binary — or a plugin that was never
+restarted after a rebuild — is visible at a glance:
+
+- **Companion**: the title bar shows `ver. yyyy.MM.dd.HH.mm`, its build time.
+- **Plugin**: the first log line in `com.hanbroz.claude-usage.sdPlugin/logs/` reads
+  `Claude actions registered: v<manifest version> (build yyyy.MM.dd.HH.mm); …`.
+
+A rebuilt plugin bundle only takes effect once Stream Deck restarts the plugin, so
+compare that stamp against the build time before trusting a test result. The two
+stamps should match after a full `release:windows`.
+
 ### Privacy and local data
 
 - The plugin does not read Claude credentials.
@@ -150,7 +163,7 @@ Code Start의 모델 텍스트 색상은 세션 상태에 따라 변경됩니다
 - 녹색: Claude Code 실행 중
 - 빨간색: Claude Code 대기 중
 - 파란색: Claude Code가 사용자 답변을 기다리는 중
-- `Closed`: 버튼으로 실행한 터미널 세션이 종료됨
+- `Closed`: 이 프로젝트로 실행 중인 앱이 없음 — 아직 실행하지 않았거나, 종료되었거나, 상태 보고가 끊긴 경우. 모델 텍스트와 컨텍스트 막대는 앱이 실제로 열려 있을 때만 표시됩니다
 
 ### 데이터 출처
 
@@ -194,6 +207,19 @@ npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin
 
 `npm run release:windows`는 전체 검증 절차를 실행하고 `.streamDeckPlugin` 설치 파일, 한국어 설치 안내서, 실행 도구, SHA-256 체크섬이 포함된 버전별 Windows 복구 ZIP을 생성합니다.
 
+### 실행 중인 빌드 확인
+
+앱과 플러그인 양쪽이 자신의 빌드를 밝히므로, 오래된 실행본이나 재빌드 후 재시작하지
+않은 플러그인을 바로 알아볼 수 있습니다.
+
+- **Companion**: 창 타이틀바에 빌드 시각이 `ver. yyyy.MM.dd.HH.mm` 형식으로 표시됩니다.
+- **플러그인**: `com.hanbroz.claude-usage.sdPlugin/logs/`의 첫 로그 줄이
+  `Claude actions registered: v<manifest 버전> (build yyyy.MM.dd.HH.mm); …` 형태입니다.
+
+재빌드한 플러그인 번들은 Stream Deck이 플러그인을 재시작해야 적용되므로, 테스트 결과를
+신뢰하기 전에 이 값이 빌드 시각과 같은지 확인하십시오. `release:windows`를 완전히 실행한
+뒤에는 두 값이 일치합니다.
+
 ### 개인정보 및 로컬 데이터
 
 - 플러그인은 Claude 인증 정보를 읽지 않습니다.
@@ -229,7 +255,7 @@ Code Start 的模型文字颜色会根据会话状态变化：
 - 绿色：Claude Code 正在运行。
 - 红色：Claude Code 处于空闲状态。
 - 蓝色：Claude Code 正在等待您的回答。
-- `Closed`：由按键启动的终端会话已经结束。
+- `Closed`：该项目没有正在运行的应用 —— 尚未启动、已经结束，或状态上报已中断。模型文字与上下文进度条仅在应用实际打开时显示。
 
 ### 数据来源
 
@@ -308,7 +334,7 @@ Code Startのモデルテキストは、セッションの状態に応じて色�
 - 緑：Claude Codeが実行中です。
 - 赤：Claude Codeが待機中です。
 - 青：Claude Codeがユーザーの回答を待っています。
-- `Closed`：キーから起動したターミナルセッションが終了しました。
+- `Closed`：このプロジェクトで実行中のアプリがありません（未起動、終了済み、または状態報告が途絶えた場合）。モデルテキストとコンテキストバーは、アプリが実際に開いているときだけ表示されます。
 
 ### データソース
 

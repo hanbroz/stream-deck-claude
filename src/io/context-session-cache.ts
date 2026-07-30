@@ -554,18 +554,18 @@ export async function loadCodeStartDisplayState(
   try {
     const activeValue = await readJson(activeLaunchPath(dataDir, actionId));
     if (!activeValue) {
-      return { kind: "idle", activity: "idle" };
+      return { kind: "closed", activity: "ended" };
     }
     const activeRecord = asRecord(activeValue);
     if (activeRecord?.schemaVersion === 1) {
-      return { kind: "idle", activity: "idle" };
+      return { kind: "closed", activity: "ended" };
     }
     const active = parseActiveLaunch(activeValue);
     if (active.actionId !== actionId) {
       return { kind: "error", activity: "idle" };
     }
     if (!sameFolder(active.folder, folder)) {
-      return { kind: "idle", activity: "idle" };
+      return { kind: "closed", activity: "ended" };
     }
     if (!isProcessRunning(active.processId)) {
       return { kind: "closed", activity: "ended" };

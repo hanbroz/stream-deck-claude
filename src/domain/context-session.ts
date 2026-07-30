@@ -45,9 +45,16 @@ export type ContextSessionIdentity = {
   capturedAt: number;
 };
 
+/**
+ * States drawn as a live session — project name, model and a context bar.
+ *
+ * Every member here means "an app is open for this key". There used to be an
+ * `idle` member for "no app running", which the renderer could not tell apart
+ * from a live session, so a closed project still showed `MODEL --` and a context
+ * bar. Absence of a running app is `closed`, and nothing else.
+ */
 type OpenCodeStartDisplayState =
   | { kind: "setup"; activity: CodeSessionActivity }
-  | { kind: "idle"; activity: CodeSessionActivity }
   | { kind: "starting"; activity: CodeSessionActivity }
   | { kind: "ready"; percentage: number; activity: CodeSessionActivity }
   | { kind: "error"; activity: CodeSessionActivity };

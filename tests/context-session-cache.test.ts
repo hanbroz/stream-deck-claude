@@ -121,6 +121,34 @@ describe("context session cache", () => {
     ).resolves.toEqual({ kind: "starting", activity: "running" });
   });
 
+  it("reports closed — never a live session — when no app is running for the folder", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    const folder = "D:\\Projects\\Demo";
+
+    // Field incident: these cases used to return `idle`, which the renderer drew
+    // exactly like a live session — project name, `MODEL --` and a context bar —
+    // so a project with no app open looked open.
+
+    // No launch on record at all.
+    await expect(
+      loadCodeStartDisplayState(root, "action-never-run", folder, FRESH_NOW)
+    ).resolves.toEqual({ kind: "closed", activity: "ended" });
+
+    // The key was re-pointed at another folder, so its launch is not for this one.
+    await writeActiveLaunch(root, {
+      schemaVersion: 2,
+      actionId: "action-moved",
+      launchId: "launch-elsewhere",
+      folder: "D:\\Projects\\Other",
+      startedAt: FRESH_NOW,
+      terminal: "companion",
+      processId: process.pid
+    });
+    await expect(
+      loadCodeStartDisplayState(root, "action-moved", folder, FRESH_NOW)
+    ).resolves.toEqual({ kind: "closed", activity: "ended" });
+  });
+
   it("closes a key whose PID is alive but whose activity record went stale", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
     // Field incident: Windows reused this launch's PID two hours after its app
@@ -433,7 +461,7 @@ describe("context session cache", () => {
 
     await expect(
       loadCodeStartDisplayState(root, "action-legacy", "D:\\Projects\\Demo", FRESH_NOW)
-    ).resolves.toEqual({ kind: "idle", activity: "idle" });
+    ).resolves.toEqual({ kind: "closed", activity: "ended" });
   });
 
   it("keeps idle and user-input waits open, and closes only an ended session", async () => {
