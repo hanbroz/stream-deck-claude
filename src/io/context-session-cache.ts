@@ -445,6 +445,21 @@ export async function refreshResumePointerFromIdentity(
   }
 }
 
+/**
+ * How long an activity record stays trustworthy.
+ *
+ * A live PID is not proof that the launch lives: Windows reuses PIDs, so a
+ * launch whose app has died can point at a stranger's running process. That is
+ * exactly what kept a key blinking for a project closed hours earlier — its PID
+ * had been handed to another Companion two hours later. The record's own age is
+ * the reliable signal, because the Companion re-stamps it every 30s while its
+ * window is open (ACTIVITY_HEARTBEAT_MS in companion/main/main.ts).
+ *
+ * ponytail: three missed beats. Raise it together with the heartbeat interval if
+ * the write ever becomes less frequent.
+ */
+const ACTIVITY_STALE_MS = 90_000;
+
 export function isProcessRunning(processId: number): boolean {
   try {
     process.kill(processId, 0);
@@ -533,7 +548,8 @@ export async function findRunningCompanionLaunch(
 export async function loadCodeStartDisplayState(
   dataDir: string,
   actionId: string,
-  folder: string
+  folder: string,
+  nowMs = Date.now()
 ): Promise<CodeStartDisplayState> {
   try {
     const activeValue = await readJson(activeLaunchPath(dataDir, actionId));
@@ -559,10 +575,16 @@ export async function loadCodeStartDisplayState(
       contextSessionRuntimePath(dataDir, actionId, active.launchId)
     );
     const runtime = runtimeValue === undefined ? undefined : parseRuntime(runtimeValue);
-    const activity =
-      runtime?.actionId === actionId && runtime.launchId === active.launchId
-        ? runtime.activity
-        : "running";
+    const matchesLaunch =
+      runtime?.actionId === actionId && runtime.launchId === active.launchId;
+    // The last moment this launch was known to be alive. A live PID proves
+    // nothing, so freshness decides; with no record yet the launch's own age
+    // stands in, since only a just-started app legitimately has none.
+    const lastSeenAt = matchesLaunch ? runtime.capturedAt : active.startedAt;
+    if (nowMs - lastSeenAt > ACTIVITY_STALE_MS) {
+      return { kind: "closed", activity: "ended" };
+    }
+    const activity = matchesLaunch ? runtime.activity : "running";
     if (activity === "ended") {
       return { kind: "closed", activity: "ended" };
     }

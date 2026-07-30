@@ -19,6 +19,11 @@ import {
   writeContextSessionRuntime
 } from "../src/io/context-session-cache";
 
+// The fixtures below stamp records at epoch 100-140ms. Pinning "now" just past
+// them keeps every activity record inside the freshness window, so these tests
+// stay about launch/snapshot matching rather than the staleness cutoff.
+const FRESH_NOW = 1_000;
+
 describe("context session cache", () => {
   it("finds the one running legacy binding for a moved action folder", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
@@ -92,7 +97,7 @@ describe("context session cache", () => {
     );
 
     await expect(
-      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({
       kind: "starting",
       activity: "running"
@@ -112,8 +117,65 @@ describe("context session cache", () => {
     });
 
     await expect(
-      loadCodeStartDisplayState(root, "action-companion", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-companion", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({ kind: "starting", activity: "running" });
+  });
+
+  it("closes a key whose PID is alive but whose activity record went stale", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    // Field incident: Windows reused this launch's PID two hours after its app
+    // died, handing it to another Companion that was still running. The PID check
+    // passed, so the key kept blinking on a hours-old "waiting" record for a
+    // project that was closed. process.pid stands in for that live stranger.
+    await writeActiveLaunch(root, {
+      schemaVersion: 2,
+      actionId: "action-stale",
+      launchId: "launch-stale",
+      folder: "D:\\Projects\\Demo",
+      startedAt: FRESH_NOW,
+      terminal: "companion",
+      processId: process.pid
+    });
+    await writeContextSessionRuntime(root, {
+      schemaVersion: 2,
+      actionId: "action-stale",
+      launchId: "launch-stale",
+      activity: "waiting",
+      capturedAt: FRESH_NOW
+    });
+
+    // A refreshed record is trusted: the app is genuinely open and waiting.
+    await expect(
+      loadCodeStartDisplayState(root, "action-stale", "D:\\Projects\\Demo", FRESH_NOW + 1_000)
+    ).resolves.toMatchObject({ activity: "waiting" });
+
+    // The heartbeat stopped: gone, whoever holds the PID now.
+    await expect(
+      loadCodeStartDisplayState(root, "action-stale", "D:\\Projects\\Demo", FRESH_NOW + 120_000)
+    ).resolves.toEqual({ kind: "closed", activity: "ended" });
+  });
+
+  it("closes a launch that never wrote an activity record", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    await writeActiveLaunch(root, {
+      schemaVersion: 2,
+      actionId: "action-silent",
+      launchId: "launch-silent",
+      folder: "D:\\Projects\\Demo",
+      startedAt: FRESH_NOW,
+      terminal: "companion",
+      processId: process.pid
+    });
+
+    // Just launched: no record yet is normal, so the key shows it starting.
+    await expect(
+      loadCodeStartDisplayState(root, "action-silent", "D:\\Projects\\Demo", FRESH_NOW + 1_000)
+    ).resolves.toEqual({ kind: "starting", activity: "running" });
+
+    // Still nothing much later: the app never came up, so stop reporting it.
+    await expect(
+      loadCodeStartDisplayState(root, "action-silent", "D:\\Projects\\Demo", FRESH_NOW + 120_000)
+    ).resolves.toEqual({ kind: "closed", activity: "ended" });
   });
 
   it("writes and reads a canonical-folder resume pointer", async () => {
@@ -322,7 +384,7 @@ describe("context session cache", () => {
       "utf8"
     );
     await expect(
-      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({
       kind: "starting",
       activity: "running",
@@ -343,7 +405,7 @@ describe("context session cache", () => {
       "utf8"
     );
     await expect(
-      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({
       kind: "ready",
       percentage: 48,
@@ -370,7 +432,7 @@ describe("context session cache", () => {
     );
 
     await expect(
-      loadCodeStartDisplayState(root, "action-legacy", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-legacy", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({ kind: "idle", activity: "idle" });
   });
 
@@ -394,7 +456,7 @@ describe("context session cache", () => {
     });
 
     await expect(
-      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({ kind: "starting", activity: "waiting" });
 
     await writeFile(
@@ -418,7 +480,7 @@ describe("context session cache", () => {
     });
 
     await expect(
-      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({ kind: "ready", percentage: 23, activity: "idle" });
     await writeContextSessionRuntime(root, {
       schemaVersion: 2,
@@ -428,7 +490,7 @@ describe("context session cache", () => {
       capturedAt: 140
     });
     await expect(
-      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-1", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({ kind: "closed", activity: "ended" });
     await expect(readFile(contextSessionRuntimePath(root, "action-1", "launch-1"), "utf8"))
       .resolves.toContain('"activity": "ended"');
@@ -463,7 +525,7 @@ describe("context session cache", () => {
     );
 
     await expect(
-      loadCodeStartDisplayState(root, "action-legacy-runtime", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-legacy-runtime", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({ kind: "starting", activity: "idle" });
 
     await writeFile(
@@ -478,7 +540,7 @@ describe("context session cache", () => {
       "utf8"
     );
     await expect(
-      loadCodeStartDisplayState(root, "action-legacy-runtime", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-legacy-runtime", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({ kind: "starting", activity: "running" });
   });
 
@@ -495,7 +557,7 @@ describe("context session cache", () => {
     });
 
     await expect(
-      loadCodeStartDisplayState(root, "action-closed", "D:\\Projects\\Demo")
+      loadCodeStartDisplayState(root, "action-closed", "D:\\Projects\\Demo", FRESH_NOW)
     ).resolves.toEqual({ kind: "closed", activity: "ended" });
   });
 });

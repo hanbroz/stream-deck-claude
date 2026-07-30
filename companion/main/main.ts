@@ -13,6 +13,7 @@ import { ClaudePtyManager } from "./claude-session";
 import {
   writeContextSnapshot,
   writeRuntimeActivity,
+  writeRuntimeActivitySync,
   type CompanionActivity
 } from "./context-snapshot";
 import { writeModelPrefs } from "./model-prefs";
@@ -24,6 +25,9 @@ import { diag, setDiagSink } from "../shared/diag";
 import { companionBuildVersion } from "../shared/build-version";
 import { REPRESENTATIVE_MODEL_ID } from "../shared/model-name";
 import { contextWindowForModel } from "../shared/claude-stream";
+
+/** How often the live activity record is re-stamped so the key can trust its age. */
+const ACTIVITY_HEARTBEAT_MS = 30_000;
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } = require("electron");
@@ -181,11 +185,10 @@ async function start(): Promise<void> {
       // this record the plugin assumes "running" for the whole app lifetime,
       // so an idle app kept the green running indicator.
       let lastActivity: CompanionActivity | undefined;
-      const recordActivity = (activity: CompanionActivity): void => {
-        if (!runtimeEnv.bindingId || !runtimeEnv.launchId || activity === lastActivity) {
+      const publishActivity = (activity: CompanionActivity): void => {
+        if (!runtimeEnv.bindingId || !runtimeEnv.launchId) {
           return;
         }
-        lastActivity = activity;
         void writeRuntimeActivity({
           dataDir: runtimeEnv.usageDataDir,
           bindingId: runtimeEnv.bindingId,
@@ -196,6 +199,49 @@ async function start(): Promise<void> {
           lastActivity = undefined; // retry on the next phase change
         });
       };
+      const recordActivity = (activity: CompanionActivity): void => {
+        if (activity === lastActivity) {
+          return;
+        }
+        lastActivity = activity;
+        publishActivity(activity);
+      };
+
+      /**
+       * Re-stamp the activity record while the window lives.
+       *
+       * The key cannot tell a quiet app from a closed one by PID alone: Windows
+       * reuses PIDs, so a launch whose app died can point at a stranger's live
+       * process, and the key kept blinking for a project closed hours earlier.
+       * A record that stops being refreshed is the reliable "app is gone" signal,
+       * and it covers crashes and force-kills that no teardown hook would catch.
+       *
+       * ponytail: paired with ACTIVITY_STALE_MS in src/io/context-session-cache.ts,
+       * which allows three missed beats. Change both together.
+       */
+      const heartbeat = setInterval(
+        () => publishActivity(lastActivity ?? "waiting"),
+        ACTIVITY_HEARTBEAT_MS
+      );
+      app.on("before-quit", () => {
+        clearInterval(heartbeat);
+        if (!runtimeEnv.bindingId || !runtimeEnv.launchId) {
+          return;
+        }
+        try {
+          // A normal quit reports itself immediately instead of waiting out the
+          // staleness window.
+          writeRuntimeActivitySync({
+            dataDir: runtimeEnv.usageDataDir,
+            bindingId: runtimeEnv.bindingId,
+            launchId: runtimeEnv.launchId,
+            activity: "ended",
+            capturedAt: Date.now()
+          });
+        } catch {
+          // Shutting down anyway; the staleness window still retires the record.
+        }
+      });
       ptyManager.on("data", (_sessionId: string, events: readonly { kind: string; phase?: string }[]) => {
         for (const event of events) {
           if (event.kind === "phase") {

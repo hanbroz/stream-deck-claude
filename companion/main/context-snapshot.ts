@@ -1,4 +1,5 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
@@ -60,37 +61,62 @@ export function buildContextSnapshot(input: ContextSnapshotInput): Record<string
 
 export type CompanionActivity = "idle" | "running" | "waiting" | "ended";
 
+export type RuntimeActivityInput = {
+  dataDir: string;
+  bindingId: string;
+  launchId: string;
+  activity: CompanionActivity;
+  capturedAt: number;
+};
+
+function runtimeActivityPath(input: RuntimeActivityInput): string {
+  return path.join(
+    input.dataDir,
+    "context-sessions",
+    digest(input.bindingId),
+    `${digest(input.launchId)}.state.json`
+  );
+}
+
+function runtimeActivityRecord(input: RuntimeActivityInput): string {
+  return `${JSON.stringify({
+    schemaVersion: 2,
+    actionId: input.bindingId,
+    launchId: input.launchId,
+    activity: input.activity,
+    capturedAt: input.capturedAt
+  }, null, 2)}\n`;
+}
+
 /**
  * The key's activity dot reads a runtime-state file the Companion writes on
  * phase changes. Without it the plugin defaults to "running" for the whole
  * app lifetime, so an idle app still showed the green running dot.
  * Shape and hashed path must match src/io/context-session-cache.ts
  * (parseRuntime / contextSessionRuntimePath, schemaVersion 2).
+ *
+ * `capturedAt` is also the key's liveness signal: the plugin treats a record
+ * that has stopped being refreshed as a closed app, because a live PID proves
+ * nothing on Windows, which reuses PIDs.
  */
-export async function writeRuntimeActivity(input: {
-  dataDir: string;
-  bindingId: string;
-  launchId: string;
-  activity: CompanionActivity;
-  capturedAt: number;
-}): Promise<void> {
-  const target = path.join(
-    input.dataDir,
-    "context-sessions",
-    digest(input.bindingId),
-    `${digest(input.launchId)}.state.json`
-  );
-  const record = {
-    schemaVersion: 2,
-    actionId: input.bindingId,
-    launchId: input.launchId,
-    activity: input.activity,
-    capturedAt: input.capturedAt
-  };
+export async function writeRuntimeActivity(input: RuntimeActivityInput): Promise<void> {
+  const target = runtimeActivityPath(input);
   await mkdir(path.dirname(target), { recursive: true });
   const tmp = `${target}.${process.pid}.${input.capturedAt}.tmp`;
-  await writeFile(tmp, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  await writeFile(tmp, runtimeActivityRecord(input), "utf8");
   await rename(tmp, target);
+}
+
+/**
+ * Synchronous twin for app teardown: Electron's `before-quit` cannot await, and
+ * an async write started there is lost when the process exits.
+ */
+export function writeRuntimeActivitySync(input: RuntimeActivityInput): void {
+  const target = runtimeActivityPath(input);
+  mkdirSync(path.dirname(target), { recursive: true });
+  const tmp = `${target}.${process.pid}.${input.capturedAt}.tmp`;
+  writeFileSync(tmp, runtimeActivityRecord(input), "utf8");
+  renameSync(tmp, target);
 }
 
 export async function writeContextSnapshot(input: ContextSnapshotInput): Promise<void> {
