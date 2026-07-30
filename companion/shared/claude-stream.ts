@@ -23,7 +23,9 @@ export type ClaudeEvent =
   | { kind: "agent"; op: "start"; toolUseId: string; agentType: string; description: string }
   | { kind: "agent"; op: "activity"; toolUseId: string; detail: string }
   | { kind: "agent"; op: "end"; toolUseId: string; ok: boolean }
-  | { kind: "error"; message: string; missingConversation: boolean };
+  | { kind: "error"; message: string; missingConversation: boolean }
+  // Not a failure of the conversation: the account simply has to log in again.
+  | { kind: "login"; message: string };
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const LONG_CONTEXT_WINDOW = 1_000_000;
@@ -155,6 +157,23 @@ export function isMissingClaudeConversationError(data: string): boolean {
   return /No conversation found with session ID:/iu.test(data);
 }
 
+/**
+ * An expired or absent login is reported as an API error, not a crash: the run
+ * prints a synthetic assistant message ("Not logged in · Please run /login")
+ * tagged `error: "authentication_failed"`, repeats it as an `is_error` result,
+ * and exits 1. `--print` has no TTY, so /login cannot run inside it — this
+ * condition needs an interactive shell, and showing it as a conversation error
+ * only tells the user that something broke.
+ *
+ * ponytail: the structured tag is the primary signal; this text match covers the
+ * stderr path and builds that only print the sentence. New CLI wording for the
+ * same condition is a factual correction to make here.
+ */
+export function isClaudeAuthError(data: string): boolean {
+  return /please run \/login|not logged in|invalid api key|oauth token[^\n]*(?:expired|revoked)|authentication[ _]failed|credentials?[^\n]*expired/iu
+    .test(data);
+}
+
 export class ClaudeStreamParser {
   private buffer = "";
   private hasPartialAssistantText = false;
@@ -170,6 +189,7 @@ export class ClaudeStreamParser {
   private model = "";
   private contextWindow = DEFAULT_CONTEXT_WINDOW;
   private sessionId: string | undefined;
+  private loginReported = false;
   // Live subagents keyed by their Task/Agent tool_use id. Async agents (whose
   // launch the CLI acks with an immediate tool_result) also sit in asyncAgents
   // so that ack is not mistaken for completion — they end via task_notification.
@@ -225,6 +245,19 @@ export class ClaudeStreamParser {
       this.sessionId = message.session_id;
     }
 
+    // The auth failure arrives twice — as the synthetic assistant message and
+    // again as the error result — so report it once. It must be caught before
+    // the assistant branch, which would otherwise render the CLI's
+    // "Please run /login" sentence as if Claude had said it.
+    const loginRequired = this.authFailureText(message);
+    if (loginRequired !== undefined) {
+      if (this.loginReported) {
+        return [];
+      }
+      this.loginReported = true;
+      return [{ kind: "login", message: loginRequired }];
+    }
+
     // Subagent traffic is tagged with the spawning tool_use id. It must never
     // reach the console as top-level text; it only feeds the agent board.
     if (typeof message.parent_tool_use_id === "string" && message.parent_tool_use_id.length > 0) {
@@ -253,6 +286,27 @@ export class ClaudeStreamParser {
       default:
         return [];
     }
+  }
+
+  /**
+   * The login-required sentence when this line reports an auth failure.
+   *
+   * The structured `error` tag decides it on its own; otherwise the line must
+   * already be flagged as an API error, so an ordinary reply that merely
+   * mentions logging in is never mistaken for one.
+   */
+  private authFailureText(message: JsonRecord): string | undefined {
+    const text = (
+      message.type === "result" && typeof message.result === "string"
+        ? message.result
+        : textBlocks(isRecord(message.message) ? message.message.content : undefined)
+    ).trim();
+    if (message.error === "authentication_failed") {
+      return text.length > 0 ? text : "Not logged in · Please run /login";
+    }
+    const apiError = message.is_api_error_message === true
+      || (message.type === "result" && message.is_error === true);
+    return apiError && isClaudeAuthError(text) ? text : undefined;
   }
 
   private parseSystem(message: JsonRecord): ClaudeEvent[] {

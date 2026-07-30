@@ -688,12 +688,42 @@ body.is-split-resizing.is-resizing-rows * {
   white-space: pre-wrap;
 }
 
+/* Typed while Claude was still generating: on screen, waiting its turn. The
+   badge is CSS-only because a user turn deliberately carries no header. */
+.turn--user.is-queued .turn__body {
+  border-left-style: dashed;
+  color: #a9a9a9;
+}
+
+.turn--user.is-queued .turn__body::before {
+  content: "다음 작업 예약";
+  display: block;
+  margin-bottom: 6px;
+  color: var(--accent, #d97757);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
 .turn--error .turn__role {
   color: #c8553d;
 }
 
 .turn--error .turn__body {
   color: #e0846f;
+}
+
+/* Guidance the app gives the user (e.g. re-login), deliberately not red. */
+.turn--notice .turn__role {
+  color: var(--accent, #d97757);
+}
+
+.turn--notice .turn__body {
+  padding: 8px 12px;
+  border-left: 2px solid var(--accent, #d97757);
+  border-radius: 0 6px 6px 0;
+  background: #242424;
+  color: #d8d8d8;
+  white-space: pre-wrap;
 }
 
 .md-paragraph {

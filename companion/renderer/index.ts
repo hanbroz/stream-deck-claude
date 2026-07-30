@@ -235,6 +235,31 @@ terminalElement.addEventListener("mouseup", () => {
   );
 });
 
+// Right-click pastes, the Windows Terminal convention: PowerShell passes Ctrl+V
+// through to the shell instead of pasting, so the terminal had no paste at all.
+// The text is read in the main process for the same reason the copy above writes
+// there — the sandboxed renderer has no navigator.clipboard.
+terminalElement.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+  const sessionId = terminalSessionId;
+  if (!sessionId) {
+    return;
+  }
+  void api?.clipboardReadText().then(
+    (text) => {
+      if (text.length === 0) {
+        return;
+      }
+      diag("renderer.terminal.paste", { length: text.length });
+      // A PTY reads CR as Enter, and Windows clipboards carry CRLF — pasting it
+      // raw would submit a blank line after every real one.
+      api?.terminal.write(sessionId, text.replace(/\r?\n/gu, "\r"));
+      terminal.focus();
+    },
+    () => { /* nothing usable on the clipboard */ }
+  );
+});
+
 /**
  * The Console is a DOM transcript, not a terminal: turns need roles, Markdown
  * needs real elements, and native selection gives copy/paste for free.
@@ -566,9 +591,11 @@ function selectCommand(index: number): void {
 // left alone stays plain text.
 let projectFiles: string[] = [];
 let projectFilesScannedAtMs = 0;
-// Messages sent while Claude is still generating wait here and auto-send
-// when the turn ends (terminal parity), instead of failing with an error.
-const pendingSendQueue: SubmitIntent[] = [];
+// Messages sent while Claude is still generating wait here and auto-send when
+// the turn ends (terminal parity), instead of failing with an error. Each one
+// keeps the transcript turn it is already shown in, so queueing never hides what
+// the user typed and the same turn is reused when it finally sends.
+const pendingSendQueue: { intent: SubmitIntent; turn: Turn }[] = [];
 let mentionMatches: string[] = [];
 let mentionIndex = 0;
 const pickedMentions = new Set<string>();
@@ -1640,7 +1667,21 @@ async function resumeSession(): Promise<void> {
   await startClaudeSession(sessionId);
 }
 
-async function sendIntent(intent: SubmitIntent): Promise<void> {
+/** The transcript label for a submission, noting any attached images. */
+function composerTurnLabel(intent: SubmitIntent): string {
+  return intent.images.length > 0
+    ? `${intent.text}${intent.text.length > 0 ? "\n" : ""}[이미지 ${intent.images.length}장 첨부]`
+    : intent.text;
+}
+
+/**
+ * Send a message, or queue it when Claude is still generating.
+ *
+ * `queuedTurn` is the turn a queued message is already displayed in: it is
+ * reused rather than appended again, so the message keeps its place in the
+ * transcript from the moment it was typed.
+ */
+async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void> {
   try {
     diag("renderer.sendIntent", {
       activeSessionId: activeClaudeSession?.sessionId ?? "none",
@@ -1673,21 +1714,27 @@ async function sendIntent(intent: SubmitIntent): Promise<void> {
       }
     }
 
-    // A message sent while Claude is still generating queues instead of
-    // failing (terminal parity): it auto-sends the moment the turn ends.
-    if (claudeStatus.dataset.busy === "true") {
-      pendingSendQueue.push(intent);
-      showToast("응답 생성 중 — 완료되면 자동 전송됩니다.");
+    // A message sent while Claude is still generating queues instead of failing
+    // (terminal parity): it auto-sends the moment the turn ends. It is shown as a
+    // pending turn right away — queueing it invisibly read as the input having
+    // been thrown away, since the composer is cleared on submit either way.
+    if (!queuedTurn && claudeStatus.dataset.busy === "true") {
+      const turn = appendTurn("user", composerTurnLabel(intent));
+      turn.element.classList.add("is-queued");
+      pendingSendQueue.push({ intent, turn });
+      showToast("응답 생성 중 — 다음 작업으로 예약했습니다.");
       return;
     }
 
     // Show the question immediately so the transcript reads as a conversation
-    // rather than a stream of answers with no prompts.
+    // rather than a stream of answers with no prompts. A queued message is
+    // already on screen: it only sheds its pending marker.
     finishAssistantTurn();
-    const label = intent.images.length > 0
-      ? `${intent.text}${intent.text.length > 0 ? "\n" : ""}[이미지 ${intent.images.length}장 첨부]`
-      : intent.text;
-    appendTurn("user", label);
+    if (queuedTurn) {
+      queuedTurn.element.classList.remove("is-queued");
+    } else {
+      appendTurn("user", composerTurnLabel(intent));
+    }
     // Respond before the process spawns so Enter feels immediate.
     renderClaudeStatus("requesting");
     if (!activeClaudeSession) {
@@ -1734,6 +1781,42 @@ async function sendIntent(intent: SubmitIntent): Promise<void> {
     const reason = error instanceof Error ? error.message : "unknown error";
     appendConsoleOutput(`[Claude Code error] Message was not sent: ${reason}\n`);
     showToast("Claude message was not sent.");
+  }
+}
+
+const RELOGIN_COMMAND = "claude auth login";
+
+/**
+ * Recover from an expired login without leaving the app.
+ *
+ * `claude --print` carries no TTY, so the sign-in flow cannot run in the
+ * conversation itself. The project terminal is a real PTY, so opening it and
+ * handing it `claude auth login` puts the user one Enter away from being logged
+ * in again. A terminal the user already opened is left alone — it may be running
+ * something — and only gets the panel focus plus the instruction.
+ */
+let reloginPending = false;
+async function offerRelogin(): Promise<void> {
+  if (reloginPending) {
+    return;
+  }
+  reloginPending = true;
+  const hadTerminal = terminalSessionId !== undefined;
+  try {
+    await setTerminalSplit(true, projectRoot);
+    const autoTyped = !hadTerminal && terminalSessionId !== undefined;
+    if (autoTyped) {
+      api?.terminal.write(terminalSessionId as string, `${RELOGIN_COMMAND}\r`);
+    }
+    appendTurn(
+      "notice",
+      autoTyped
+        ? `Claude Code 로그인이 만료되었습니다. 아래 터미널에서 \`${RELOGIN_COMMAND}\` 를 실행했습니다. 로그인을 마친 뒤 메시지를 다시 보내주세요.`
+        : `Claude Code 로그인이 만료되었습니다. 아래 터미널에서 \`${RELOGIN_COMMAND}\` 를 실행해 로그인한 뒤 메시지를 다시 보내주세요.`
+    );
+    showToast("Claude 로그인이 만료되었습니다.");
+  } finally {
+    reloginPending = false;
   }
 }
 
@@ -1824,10 +1907,12 @@ function renderClaudeStatus(phase: ClaudePhase | "error", detail?: string): void
     : formatClaudePhase(phase, detail);
   // Parallel subagents (2+) get a persistent n/m prefix so the fan-out stays
   // visible while the strip churns through tool/thinking phases. A lone agent
-  // is ordinary tool work and needs no extra label.
+  // is ordinary tool work and needs no extra label. It also survives an idle
+  // phase: background agents run on after the reply, and the count is the only
+  // sign they are still working.
   const counts = agentCounts();
   const running = counts.total - counts.done;
-  const detailText = running > 0 && counts.total >= 2 && label.busy
+  const detailText = running > 0 && counts.total >= 2
     ? `Agent ${counts.done}/${counts.total}${label.detail ? ` · ${label.detail}` : ""}`
     : label.detail;
   claudeStatus.dataset.phase = phase;
@@ -1929,20 +2014,6 @@ function handleAgentEvent(event: Extract<ClaudeEvent, { kind: "agent" }>): void 
   }
 }
 
-/** An interrupted turn (ESC, error) leaves no completion events behind. */
-function finalizeRunningAgents(): void {
-  for (const row of agentRows.values()) {
-    if (row.done) {
-      continue;
-    }
-    row.done = true;
-    row.refs.root.classList.remove("is-running");
-    row.refs.root.classList.add("is-stopped");
-    row.refs.icon.textContent = "◼";
-    row.refs.detail.textContent = "중단됨";
-  }
-}
-
 function resetAgentBoard(): void {
   agentRows.clear();
   agentBoardRows = undefined;
@@ -1959,18 +2030,18 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
     } else if (event.kind === "phase") {
       diag("renderer.phase", { phase: event.phase, hasDetail: event.detail !== undefined });
       // A finished turn closes the assistant bubble so the next reply is its own.
+      // Agent rows are deliberately left alone: background agents keep working
+      // after the reply ends, and the main process closes their rows when the
+      // run actually dies.
       if (event.phase === "waiting" || event.phase === "ready") {
         finishAssistantTurn();
-        // Normal completions already ended every row; this only sweeps up
-        // agents orphaned by an ESC interrupt or a killed run.
-        finalizeRunningAgents();
       }
       renderClaudeStatus(event.phase, event.detail);
       // The turn is over: flush the message the user queued mid-generation.
       if ((event.phase === "waiting" || event.phase === "ready") && pendingSendQueue.length > 0) {
         const queued = pendingSendQueue.shift();
         if (queued) {
-          setTimeout(() => { void sendIntent(queued); }, 0);
+          setTimeout(() => { void sendIntent(queued.intent, queued.turn); }, 0);
         }
       }
     } else if (event.kind === "context") {
@@ -1982,9 +2053,14 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       updateModelOptionLabel(event.model);
     } else if (event.kind === "agent") {
       handleAgentEvent(event);
+    } else if (event.kind === "login") {
+      finishAssistantTurn();
+      // The conversation is intact and the session is free again — the account
+      // just has to sign in, so the strip goes back to inviting input.
+      renderClaudeStatus("ready");
+      void offerRelogin();
     } else {
       finishAssistantTurn();
-      finalizeRunningAgents();
       renderClaudeStatus("error", event.message);
       appendTurn("error", event.message);
     }

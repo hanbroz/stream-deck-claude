@@ -55,6 +55,7 @@ export type CompanionIpcDependencies = {
   clipboard: ClipboardImageReader & {
     writeImage?: (image: unknown) => void;
     writeText?: (text: string) => void;
+    readText?: () => string;
   };
   nativeImage?: {
     createFromDataURL(dataUrl: string): unknown;
@@ -316,6 +317,11 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
     // clipboard, which has no such restriction.
     deps.clipboard.writeText?.(requireString(text, "text"));
   });
+  deps.ipcMain.handle(COMPANION_IPC.clipboardReadText, (): string =>
+    // Same restriction in reverse: navigator.clipboard.readText is unavailable
+    // to the sandboxed renderer, so terminal paste reads it here.
+    deps.clipboard.readText?.() ?? ""
+  );
   deps.ipcMain.handle(COMPANION_IPC.claudeConfigure, (_event: SenderEvent, sessionId, options) => {
     const config = (options ?? {}) as { model?: unknown; effort?: unknown };
     ptyManager.configure(requireString(sessionId, "sessionId"), {

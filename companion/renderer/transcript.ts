@@ -1,7 +1,7 @@
 import { parseMarkdown, type InlineNode, type MarkdownBlock } from "../shared/markdown";
 import { parseQuestionBlock } from "../shared/question-block";
 
-export type TurnRole = "user" | "assistant" | "error";
+export type TurnRole = "user" | "assistant" | "error" | "notice";
 
 /**
  * Builds the conversation DOM.
@@ -208,7 +208,10 @@ export type Turn = {
 // deliberately has no header, so it is not listed here.
 const ROLE_LABELS: Record<Exclude<TurnRole, "user">, string> = {
   assistant: "Claude",
-  error: "오류"
+  error: "오류",
+  // The app speaking for itself — an expired login is guidance, not a failure,
+  // and must not be attributed to Claude.
+  notice: "안내"
 };
 
 export function createTurn(role: TurnRole): Turn {

@@ -200,7 +200,7 @@ async function start(): Promise<void> {
         for (const event of events) {
           if (event.kind === "phase") {
             recordActivity(event.phase === "waiting" || event.phase === "ready" ? "waiting" : "running");
-          } else if (event.kind === "error") {
+          } else if (event.kind === "error" || event.kind === "login") {
             recordActivity("waiting");
           }
         }

@@ -13,6 +13,7 @@ import {
 import {
   ClaudeStreamParser,
   encodeClaudeUserMessage,
+  isClaudeAuthError,
   isHookFailureNoise,
   isMissingClaudeConversationError,
   type ClaudeEvent
@@ -114,6 +115,13 @@ export type ClaudePtyManagerOptions = {
   env?: NodeJS.ProcessEnv;
   /** ms to wait after end_turn before killing, letting the transcript flush. */
   finaliseGraceMs?: number;
+  /**
+   * ms of agent silence that ends a run still holding background agents.
+   *
+   * ponytail: backstop for an agent that never reports completion, so a held
+   * process cannot leak forever. Raise it if long agent runs get cut short.
+   */
+  agentIdleTimeoutMs?: number;
   /** Notified with live context usage so the Stream Deck key can be updated. */
   onContext?: (info: ClaudeContextInfo) => void;
 };
@@ -134,6 +142,9 @@ type StoredSession = {
   claudeSessionId?: string;
   busy: boolean;
   activeRun?: ClaudeRun;
+  // Runs kept alive past their own end_turn because background agents are still
+  // working inside them. Tracked so ending the conversation still ends them.
+  lingeringRuns: Set<ClaudeRun>;
 };
 
 export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
@@ -142,6 +153,7 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
   private readonly command: string;
   private readonly env: NodeJS.ProcessEnv;
   private readonly finaliseGraceMs: number;
+  private readonly agentIdleTimeoutMs: number;
   private readonly onContext?: (info: ClaudeContextInfo) => void;
 
   constructor(options: ClaudePtyManagerOptions = {}) {
@@ -150,6 +162,7 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     this.command = options.command ?? "claude";
     this.env = options.env ?? process.env;
     this.finaliseGraceMs = options.finaliseGraceMs ?? 1500;
+    this.agentIdleTimeoutMs = options.agentIdleTimeoutMs ?? 10 * 60 * 1000;
     this.onContext = options.onContext;
   }
 
@@ -166,7 +179,8 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
       model: request.model,
       effort: request.effort,
       claudeSessionId: mode === "resume" ? request.sessionId : undefined,
-      busy: false
+      busy: false,
+      lingeringRuns: new Set()
     });
     return { sessionId, cwd: request.cwd, mode };
   }
@@ -187,6 +201,7 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     const session = this.session(sessionId);
     session.activeRun?.kill();
     session.activeRun = undefined;
+    this.killLingeringRuns(session);
     session.busy = false;
     session.claudeSessionId = undefined;
     session.mode = "new";
@@ -260,7 +275,17 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
 
     const parser = new ClaudeStreamParser();
     let finaliseTimer: NodeJS.Timeout | undefined;
+    let agentIdleTimer: NodeJS.Timeout | undefined;
     let sawEndTurn = false;
+    // An expired login ends the run with exit 1 and no end_turn. That is not a
+    // broken session, so it must not also raise the generic exit error.
+    let sawLogin = false;
+    // Unfinished agents launched by this run. Background agents keep working
+    // inside the process after the reply ends, so end_turn alone must not tear
+    // it down — that killed every parallel agent the moment Claude replied.
+    // Synchronous agents always finish before end_turn, so whatever is still
+    // here at that point is asynchronous by construction.
+    const liveAgents = new Set<string>();
 
     const emit = (events: ClaudeEvent[]): void => {
       if (events.length > 0) {
@@ -268,14 +293,65 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
       }
     };
 
-    run.onData((chunk) => {
-      // Once the next message's run takes over, this run lives on only to be
-      // torn down. Drop its late output so a trailing chunk, session id, or
-      // context event never bleeds into the new turn.
-      if (session.activeRun !== run) {
+    const clearTimers = (): void => {
+      if (finaliseTimer) {
+        clearTimeout(finaliseTimer);
+        finaliseTimer = undefined;
+      }
+      if (agentIdleTimer) {
+        clearTimeout(agentIdleTimer);
+        agentIdleTimer = undefined;
+      }
+    };
+
+    const trackAgents = (events: readonly ClaudeEvent[]): void => {
+      for (const event of events) {
+        if (event.kind !== "agent") {
+          continue;
+        }
+        if (event.op === "start") {
+          liveAgents.add(event.toolUseId);
+        } else if (event.op === "end") {
+          liveAgents.delete(event.toolUseId);
+        }
+      }
+    };
+
+    /**
+     * Tear the run down once the reply AND every background agent are finished.
+     * While agents are still live the process is held, with an idle cap so a
+     * silent agent cannot strand it forever.
+     */
+    const maybeFinalise = (): void => {
+      if (!sawEndTurn) {
         return;
       }
+      clearTimers();
+      if (liveAgents.size === 0) {
+        session.lingeringRuns.delete(run);
+        finaliseTimer = setTimeout(() => run.kill(), this.finaliseGraceMs);
+        return;
+      }
+      session.lingeringRuns.add(run);
+      agentIdleTimer = setTimeout(() => run.kill(), this.agentIdleTimeoutMs);
+    };
+
+    run.onData((chunk) => {
       const events = parser.push(chunk);
+      // Once the next message's run takes over, this run lives on only for the
+      // background agents still working inside it. Their progress must keep
+      // reaching the board, but its text, phases, session id and context would
+      // bleed into the new turn, so only agent events survive.
+      if (session.activeRun !== run) {
+        const agentEvents = events.filter((event) => event.kind === "agent");
+        trackAgents(agentEvents);
+        emit(agentEvents);
+        maybeFinalise();
+        return;
+      }
+      if (events.some((event) => event.kind === "login")) {
+        sawLogin = true;
+      }
       // The freshest conversation id is what the next message resumes.
       const next = parser.takeSessionId();
       if (next) {
@@ -294,14 +370,18 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
           }
         }
       }
+      trackAgents(events);
       if (!sawEndTurn && events.some((e) => e.kind === "phase" && e.phase === "waiting")) {
         sawEndTurn = true;
         // The reply is delivered, so free the session for the next message now.
         // The process is torn down in the background; it must not block input,
         // and we never wait for Claude's ~120s async finalise.
         session.busy = false;
-        finaliseTimer = setTimeout(() => run.kill(), this.finaliseGraceMs);
       }
+      // Every chunk re-evaluates teardown: the reply may have ended, or the last
+      // background agent may have just finished, or an agent event may have
+      // arrived that pushes the idle cap out.
+      maybeFinalise();
     });
 
     run.onError((message) => {
@@ -310,33 +390,50 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
       }
       const trimmed = message.trim();
       diag("main.run.stderr", { sessionId, length: trimmed.length, hookNoise: isHookFailureNoise(trimmed) });
-      if (trimmed.length > 0 && !isHookFailureNoise(trimmed)) {
-        emit([{
-          kind: "error",
-          message: trimmed,
-          missingConversation: isMissingClaudeConversationError(trimmed)
-        }]);
+      if (trimmed.length === 0 || isHookFailureNoise(trimmed)) {
+        return;
       }
+      if (isClaudeAuthError(trimmed)) {
+        sawLogin = true;
+        emit([{ kind: "login", message: trimmed }]);
+        return;
+      }
+      emit([{
+        kind: "error",
+        message: trimmed,
+        missingConversation: isMissingClaudeConversationError(trimmed)
+      }]);
     });
 
     run.onExit(({ exitCode }) => {
-      if (finaliseTimer) {
-        clearTimeout(finaliseTimer);
-      }
-      diag("main.run.exit", { sessionId, exitCode, sawEndTurn });
+      clearTimers();
+      session.lingeringRuns.delete(run);
+      diag("main.run.exit", { sessionId, exitCode, sawEndTurn, liveAgents: liveAgents.size });
+      // The process is gone, so any agent still open died with it. Closing those
+      // rows here — rather than when the reply ended — is what lets background
+      // agents keep running and reporting after end_turn.
+      const abandonedAgents = [...liveAgents].map((toolUseId) => ({
+        kind: "agent" as const,
+        op: "end" as const,
+        toolUseId,
+        ok: false
+      }));
+      liveAgents.clear();
       // A later message already started its own run, or clear()/kill() replaced
       // this one; a superseded run must not touch shared state or surface an
       // error (e.g. after the user pressed Clear).
       if (session.activeRun !== run) {
+        emit(abandonedAgents);
         return;
       }
-      emit(parser.flush());
+      emit([...parser.flush(), ...abandonedAgents]);
       session.activeRun = undefined;
       if (!sawEndTurn) {
         session.busy = false;
         // Ended before delivering a reply (e.g. resume of a deleted transcript);
-        // surface it so the renderer can start a fresh conversation.
-        if (exitCode !== 0) {
+        // surface it so the renderer can start a fresh conversation. An expired
+        // login already explained itself and is being handled as a re-login.
+        if (exitCode !== 0 && !sawLogin) {
           emit([{
             kind: "error",
             message: "Claude 세션이 응답 없이 종료되었습니다",
@@ -358,8 +455,20 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     session.activeRun = undefined;
     session.busy = false;
     run?.kill();
+    this.killLingeringRuns(session);
     this.sessions.delete(sessionId);
     this.emit("exit", sessionId, 0);
+  }
+
+  /**
+   * End the runs held open for background agents. Closing the conversation ends
+   * their work too, and without this they would outlive the session as orphans.
+   */
+  private killLingeringRuns(session: StoredSession): void {
+    for (const run of session.lingeringRuns) {
+      run.kill();
+    }
+    session.lingeringRuns.clear();
   }
 
   pasteClipboardImage(sessionId: string, clipboard: ClipboardImageReader): boolean {

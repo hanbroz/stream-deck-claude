@@ -234,6 +234,19 @@ describe("registerCompanionIpc", () => {
     expect(writeText).toHaveBeenCalledWith("선택한 텍스트");
   });
 
+  it("reads clipboard text for terminal paste, and an empty string when there is none", () => {
+    const withText = registerFor({
+      clipboard: { readImage: () => ({ isEmpty: () => true }), readText: () => "붙여넣을 텍스트" }
+    });
+    expect(withText.handlers.get(COMPANION_IPC.clipboardReadText)?.({})).toBe("붙여넣을 텍스트");
+
+    // No clipboard support at all must not reject the paste path.
+    const withoutText = registerFor({
+      clipboard: { readImage: () => ({ isEmpty: () => true }) }
+    });
+    expect(withoutText.handlers.get(COMPANION_IPC.clipboardReadText)?.({})).toBe("");
+  });
+
   it("validates model/effort on configure and rejects unknown values", () => {
     const configure = vi.fn();
     const clear = vi.fn();

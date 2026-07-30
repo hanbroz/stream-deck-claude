@@ -4,6 +4,7 @@ import {
   ClaudeStreamParser,
   contextWindowForModel,
   encodeClaudeUserMessage,
+  isClaudeAuthError,
   isMissingClaudeConversationError,
   summarizeToolInput,
   usedContextTokens,
@@ -68,6 +69,56 @@ describe("Claude stream protocol", () => {
     expect(parser.push(`${raw.slice(10)}\n`)).toEqual([
       { kind: "error", message: "auth failed", missingConversation: false }
     ]);
+  });
+
+  it("reports an expired login once, as a login prompt instead of an error", () => {
+    const parser = new ClaudeStreamParser();
+    // Captured from `claude --print` with no stored credentials: a synthetic
+    // assistant message tagged authentication_failed, then the error result.
+    const events = [
+      ...parser.push(line({
+        type: "assistant",
+        message: {
+          model: "<synthetic>",
+          content: [{ type: "text", text: "Not logged in · Please run /login" }]
+        },
+        parent_tool_use_id: null,
+        session_id: "conv-1",
+        error: "authentication_failed",
+        is_api_error_message: true
+      })),
+      ...parser.push(line({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        terminal_reason: "api_error",
+        result: "Not logged in · Please run /login",
+        session_id: "conv-1"
+      }))
+    ];
+
+    expect(events).toEqual([
+      { kind: "login", message: "Not logged in · Please run /login" }
+    ]);
+    // The CLI's sentence must not reach the console as Claude's own reply.
+    expect(texts(events)).toBe("");
+  });
+
+  it("keeps an ordinary reply that merely mentions logging in as text", () => {
+    const parser = new ClaudeStreamParser();
+    const events = parser.push(line({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Please run /login to continue." }] }
+    }));
+    expect(events).toEqual([{ kind: "text", text: "Please run /login to continue.\n" }]);
+  });
+
+  it("recognises the auth wordings that only arrive as text", () => {
+    expect(isClaudeAuthError("Invalid API key · Please run /login")).toBe(true);
+    expect(isClaudeAuthError("OAuth token has expired")).toBe(true);
+    expect(isClaudeAuthError("Credentials have expired")).toBe(true);
+    expect(isClaudeAuthError("auth failed")).toBe(false);
+    expect(isClaudeAuthError("No conversation found with session ID: stale")).toBe(false);
   });
 
   it("identifies stale resume-session errors", () => {

@@ -86,6 +86,7 @@ export const COMPANION_IPC = {
   diag: "companion:diag",
   claudeHistory: "companion:claude:history",
   clipboardWriteText: "companion:clipboard:write-text",
+  clipboardReadText: "companion:clipboard:read-text",
   windowMinimize: "companion:window:minimize",
   // (claude resize removed: the per-message --print run has no PTY)
   windowToggleMaximize: "companion:window:toggle-maximize",

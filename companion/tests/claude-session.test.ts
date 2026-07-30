@@ -15,7 +15,7 @@ type FakeRun = {
   kill: ReturnType<typeof vi.fn<() => void>>;
 };
 
-function makeManager(grace = 0) {
+function makeManager(grace = 0, agentIdleTimeoutMs?: number) {
   const runs: FakeRun[] = [];
   const runFactory = (spec: ClaudeRunSpec) => {
     const data = new EventEmitter();
@@ -40,11 +40,40 @@ function makeManager(grace = 0) {
       kill: run.kill
     };
   };
-  const manager = new ClaudePtyManager({ runFactory, command: "claude.exe", finaliseGraceMs: grace });
+  const manager = new ClaudePtyManager({
+    runFactory,
+    command: "claude.exe",
+    finaliseGraceMs: grace,
+    ...(agentIdleTimeoutMs === undefined ? {} : { agentIdleTimeoutMs })
+  });
   return { manager, runs };
 }
 
 const line = (message: unknown): string => `${JSON.stringify(message)}\n`;
+
+/** Let the finalise/idle timers fire before asserting on teardown. */
+const tick = (ms = 0): Promise<void> =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const agentStarted = (toolUseId: string): string => line({
+  type: "system",
+  subtype: "task_started",
+  tool_use_id: toolUseId,
+  subagent_type: "code-reviewer",
+  description: "코드 품질 리뷰"
+});
+
+const agentFinished = (toolUseId: string): string => line({
+  type: "system",
+  subtype: "task_notification",
+  tool_use_id: toolUseId,
+  status: "completed"
+});
+
+const endTurn = line({
+  type: "stream_event",
+  event: { type: "message_delta", delta: { stop_reason: "end_turn" } }
+});
 
 describe("ClaudePtyManager (per-message runs)", () => {
   it("does not spawn until the first message is written", () => {
@@ -290,6 +319,141 @@ describe("ClaudePtyManager (per-message runs)", () => {
       message: "No conversation found with session ID: gone",
       missingConversation: true
     });
+  });
+
+  it("holds the run open while background agents keep working past end_turn", async () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+
+    manager.write(started.sessionId, "에이전트 4개 실행");
+    runs[0].data.emit("data", agentStarted("t1"));
+    runs[0].data.emit("data", agentStarted("t2"));
+    // Claude finishes its reply while both agents are still running.
+    runs[0].data.emit("data", endTurn);
+    await tick();
+    expect(runs[0].kill).not.toHaveBeenCalled();
+
+    runs[0].data.emit("data", agentFinished("t1"));
+    await tick();
+    expect(runs[0].kill).not.toHaveBeenCalled();
+
+    // Only once the last agent reports does the process become disposable.
+    runs[0].data.emit("data", agentFinished("t2"));
+    await tick();
+    expect(runs[0].kill).toHaveBeenCalled();
+  });
+
+  it("tears a held run down when a background agent goes silent", async () => {
+    const { manager, runs } = makeManager(0, 20);
+    const started = manager.start({ cwd: "D:\\repo" });
+
+    manager.write(started.sessionId, "에이전트 실행");
+    runs[0].data.emit("data", agentStarted("t1"));
+    runs[0].data.emit("data", endTurn);
+    await tick();
+    expect(runs[0].kill).not.toHaveBeenCalled();
+
+    // The agent never reports completion; the idle cap must reclaim the process.
+    await tick(60);
+    expect(runs[0].kill).toHaveBeenCalled();
+  });
+
+  it("closes agent rows only when the run actually dies", () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    manager.write(started.sessionId, "에이전트 실행");
+    runs[0].data.emit("data", agentStarted("t1"));
+    runs[0].data.emit("data", endTurn);
+
+    const beforeExit = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(beforeExit.filter((event) => event.kind === "agent" && event.op === "end")).toEqual([]);
+
+    runs[0].exit.emit("exit", { exitCode: 1 });
+    const afterExit = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(afterExit).toContainEqual({ kind: "agent", op: "end", toolUseId: "t1", ok: false });
+  });
+
+  it("still reports background agent progress after the next message takes over", async () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    manager.write(started.sessionId, "first");
+    runs[0].data.emit("data", line({ type: "system", subtype: "init", session_id: "conv-1" }));
+    runs[0].data.emit("data", agentStarted("t1"));
+    runs[0].data.emit("data", endTurn);
+    await tick();
+
+    manager.write(started.sessionId, "second");
+    data.mockClear();
+    // The superseded run's agent finishes: only that may still reach the board.
+    runs[0].data.emit("data", agentFinished("t1"));
+    runs[0].data.emit("data", line({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "stale text" }] }
+    }));
+
+    const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(events).toEqual([{ kind: "agent", op: "end", toolUseId: "t1", ok: true }]);
+  });
+
+  it("ends held background runs when the conversation is cleared", async () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+
+    manager.write(started.sessionId, "에이전트 실행");
+    runs[0].data.emit("data", agentStarted("t1"));
+    runs[0].data.emit("data", endTurn);
+    await tick();
+    expect(runs[0].kill).not.toHaveBeenCalled();
+
+    manager.clear(started.sessionId);
+    expect(runs[0].kill).toHaveBeenCalled();
+  });
+
+  it("treats an expired login as a re-login prompt, not a failed session", () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    manager.write(started.sessionId, "hi");
+    runs[0].data.emit("data", line({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Not logged in · Please run /login" }] },
+      session_id: "conv-1",
+      error: "authentication_failed",
+      is_api_error_message: true
+    }));
+    // The auth failure ends the run with exit 1 and no end_turn.
+    runs[0].exit.emit("exit", { exitCode: 1 });
+
+    const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(events.filter((event) => event.kind === "login")).toEqual([
+      { kind: "login", message: "Not logged in · Please run /login" }
+    ]);
+    expect(events.filter((event) => event.kind === "error")).toEqual([]);
+    // The session is free again, so the next message can be sent after logging in.
+    expect(() => manager.write(started.sessionId, "retry")).not.toThrow();
+  });
+
+  it("surfaces an auth failure that only reaches stderr as a login prompt", () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    manager.write(started.sessionId, "hi");
+    runs[0].error.emit("error", "Invalid API key · Please run /login");
+    runs[0].exit.emit("exit", { exitCode: 1 });
+
+    const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(events).toContainEqual({ kind: "login", message: "Invalid API key · Please run /login" });
+    expect(events.filter((event) => event.kind === "error")).toEqual([]);
   });
 
   it("pastes a clipboard image as an image-only message", () => {
