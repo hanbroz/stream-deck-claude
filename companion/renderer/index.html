@@ -110,6 +110,12 @@
           <div id="work-split" class="work-split">
             <section class="console-pane" aria-label="Read-only Claude console">
               <div id="console-log" class="console-log" aria-live="polite" aria-readonly="true"></div>
+              <!--
+                Live agent board. Stays empty — and so invisible — unless a batch is
+                running. Deliberately not a live region: its rows retick every second,
+                which would leave a screen reader announcing nonstop.
+              -->
+              <div id="agent-live" class="agent-live" role="group" aria-label="실행 중인 에이전트"></div>
               <div id="claude-status" class="claude-status" role="status" aria-live="polite">
                 <span id="claude-status-dot" class="claude-status__dot"></span>
                 <span id="claude-status-text" class="claude-status__text">메시지를 입력하세요</span>

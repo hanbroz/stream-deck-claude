@@ -809,6 +809,33 @@ body.is-split-resizing.is-resizing-rows * {
   font-weight: 600;
 }
 
+/*
+ * The live board is pinned between the transcript and the status strip: a
+ * fan-out runs for minutes and the console keeps scrolling, so a board left
+ * inline drifts out of view and the strip's `n/m` count becomes the only sign
+ * of what is happening. Empty means no batch is running and the slot folds
+ * away; a settled board is moved into the console as the run's record.
+ */
+.agent-live {
+  /* Shrinkable, and capped against the pane rather than the viewport: with
+     `flex-shrink: 0` a wide fan-out ate the transcript first (`.console-log`
+     bottoms out at `min-height: 0`) and then clipped the status strip off the
+     bottom of the pane — the opposite of pinning something above it. */
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(30vh, 40%);
+  margin-top: 10px;
+  overflow-y: auto;
+}
+
+.agent-live:empty {
+  display: none;
+}
+
+.agent-live .agent-board {
+  margin: 0;
+}
+
 .agent-board {
   margin: 10px 0;
   padding: 8px 12px;
@@ -1049,7 +1076,9 @@ body.is-split-resizing.is-resizing-rows * {
 }
 
 .console-log {
-  min-height: 0;
+  /* A floor so the pinned agent panel can never squeeze the transcript to
+     nothing; past it the panel gives ground instead. */
+  min-height: 4em;
   flex: 1;
   overflow-y: auto;
   cursor: text;

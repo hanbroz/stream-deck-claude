@@ -139,6 +139,7 @@ const terminalCopyToast = mustElement<HTMLElement>("terminal-copy-toast");
 const terminalSplitSign = mustElement<HTMLElement>("terminal-split-sign");
 const terminalElement = mustElement<HTMLElement>("terminal");
 const consoleElement = mustElement<HTMLElement>("console-log");
+const agentLive = mustElement<HTMLElement>("agent-live");
 
 const buildVersion = companionBuildVersion();
 titleBuildVersion.textContent = buildVersion;
@@ -1928,10 +1929,13 @@ function renderClaudeStatus(phase: ClaudePhase | "error", detail?: string): void
     ? { text: "오류", detail: detail ?? "", busy: false }
     : formatClaudePhase(phase, detail);
   // Parallel subagents (2+) get a persistent n/m prefix so the fan-out stays
-  // visible while the strip churns through tool/thinking phases. A lone agent
-  // is ordinary tool work and needs no extra label. It also survives an idle
-  // phase: background agents run on after the reply, and the count is the only
-  // sign they are still working.
+  // visible while the strip churns through tool/thinking phases. It also
+  // survives an idle phase: background agents run on after the reply ends.
+  //
+  // The 2+ threshold is deliberately NOT the board's: the pinned panel carries
+  // per-agent detail from the very first agent, so the strip is left to say the
+  // one thing the panel cannot — how big the fan-out is — and a lone agent
+  // needs no count for that.
   const counts = agentCounts();
   const running = counts.total - counts.done;
   const detailText = running > 0 && counts.total >= 2
@@ -1945,7 +1949,7 @@ function renderClaudeStatus(phase: ClaudePhase | "error", detail?: string): void
 }
 
 type AgentBoardRow = { refs: AgentRowRefs; startedAt: number; done: boolean };
-let agentBoardRows: HTMLElement | undefined;
+let agentBoard: { root: HTMLElement; rows: HTMLElement } | undefined;
 const agentRows = new Map<string, AgentBoardRow>();
 let agentTimer: number | undefined;
 let lastStatusPhase: ClaudePhase | "error" = "ready";
@@ -1991,30 +1995,23 @@ function ensureAgentTimer(): void {
 
 function handleAgentEvent(event: Extract<ClaudeEvent, { kind: "agent" }>): void {
   if (event.op === "start") {
-    // A settled batch (everything finished) makes way for a fresh one; its
-    // board stays in the console as the historical record.
-    const counts = agentCounts();
-    if (counts.total > 0 && counts.done === counts.total) {
-      agentRows.clear();
-      agentBoardRows = undefined;
-    }
     const refs = createAgentRow(event.agentType, event.description);
     agentRows.set(event.toolUseId, { refs, startedAt: Date.now(), done: false });
-    // A lone agent is already covered by the status strip; the board only
-    // appears once agents actually run in parallel, placed after the current
-    // assistant text so the console stays chronological.
-    if (!agentBoardRows && agentRows.size >= 2) {
-      finishAssistantTurn();
-      const board = createAgentBoard();
-      agentBoardRows = board.rows;
-      for (const row of agentRows.values()) {
-        agentBoardRows.append(row.refs.root);
-      }
-      consoleElement.append(board.root);
-      scrollConsoleToBottom();
-    } else if (agentBoardRows) {
-      agentBoardRows.append(refs.root);
+    // A lone agent gets a row too. The strip does label a synchronous one
+    // (`작업 진행 중 · Task …`), but that label says nothing about how long it has
+    // been going, which tool it is on, or that it is an agent at all — and a
+    // background agent gets no label whatsoever, because the main thread keeps
+    // churning through its own phases while the agent works.
+    let board = agentBoard;
+    if (!board) {
+      board = createAgentBoard();
+      agentBoard = board;
+      agentLive.append(board.root);
     }
+    board.rows.append(refs.root);
+    // A wide fan-out is taller than the panel, and a row nobody can see reports
+    // nothing; the newest agent is the one worth showing.
+    agentLive.scrollTop = agentLive.scrollHeight;
     ensureAgentTimer();
   } else if (event.op === "activity") {
     const row = agentRows.get(event.toolUseId);
@@ -2036,9 +2033,38 @@ function handleAgentEvent(event: Extract<ClaudeEvent, { kind: "agent" }>): void 
   }
 }
 
+/**
+ * Fold the pinned panel away once every agent in the batch has finished, moving
+ * its board into the console so the run keeps a record.
+ *
+ * The turn that ends is the only trigger — deliberately not the agent `end`
+ * that settles the batch, and not the next `start`. A background agent outlives
+ * its turn, so settling can land while the NEXT turn is already streaming, and
+ * moving the board right then closed that reply's bubble mid-sentence, wedged
+ * an unrelated board into it and yanked the console to the bottom under the
+ * reader. Settling also happens between agents that run one after another
+ * inside a single turn, and retiring there left a one-row board per agent
+ * instead of the one block per turn the console is meant to keep.
+ *
+ * A run that dies now emits an idle phase too, so a batch orphaned by a crash
+ * still lands here rather than sitting in the panel for good.
+ */
+function retireSettledAgentBoard(): void {
+  const counts = agentCounts();
+  if (!agentBoard || counts.total === 0 || counts.done < counts.total) {
+    return;
+  }
+  finishAssistantTurn();
+  consoleElement.append(agentBoard.root);
+  scrollConsoleToBottom();
+  agentRows.clear();
+  agentBoard = undefined;
+}
+
 function resetAgentBoard(): void {
   agentRows.clear();
-  agentBoardRows = undefined;
+  agentBoard = undefined;
+  agentLive.replaceChildren();
   if (agentTimer !== undefined) {
     window.clearInterval(agentTimer);
     agentTimer = undefined;
@@ -2057,6 +2083,9 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       // run actually dies.
       if (event.phase === "waiting" || event.phase === "ready") {
         finishAssistantTurn();
+        // A turn boundary is the safe moment to hand a finished batch over to
+        // the console; nothing is mid-render here.
+        retireSettledAgentBoard();
       }
       renderClaudeStatus(event.phase, event.detail);
       // The turn is over: flush the message the user queued mid-generation.

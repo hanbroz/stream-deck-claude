@@ -440,6 +440,135 @@ describe("ClaudePtyManager (per-message runs)", () => {
     expect(afterExit).toContainEqual({ kind: "agent", op: "end", toolUseId: "t1", ok: false });
   });
 
+  it("frees the status strip when the run dies after a late tool_result", () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    manager.write(started.sessionId, "안녕");
+    runs[0].data.emit("data", endTurn);
+    // The CLI keeps printing after the reply: a background agent's tool_result
+    // lands here and puts the strip back on `requesting`, with no further turn
+    // to take it off again.
+    runs[0].data.emit("data", line({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "late" }] }
+    }));
+    const beforeExit = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(beforeExit.filter((e) => e.kind === "phase").at(-1)).toEqual({
+      kind: "phase",
+      phase: "requesting",
+      detail: undefined
+    });
+
+    runs[0].exit.emit("exit", { exitCode: 1 });
+    const afterExit = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    // toEqual, not toMatchObject: a stale `detail` leaking onto the idle phase
+    // would still match the looser form.
+    expect(afterExit.filter((e) => e.kind === "phase").at(-1))
+      .toEqual({ kind: "phase", phase: "waiting" });
+  });
+
+  it("frees the status strip when the run dies before it ever ends its turn", () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    manager.write(started.sessionId, "안녕");
+    runs[0].data.emit("data", line({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "작업을 시작합니다" }] }
+    }));
+    // No end_turn ever arrives (a stop_reason other than end_turn). A strip left
+    // busy does not just look wrong: the composer queues every later message
+    // behind it, so the window stops accepting input entirely.
+    runs[0].exit.emit("exit", { exitCode: 0 });
+
+    const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(events.filter((e) => e.kind === "phase").at(-1))
+      .toEqual({ kind: "phase", phase: "waiting" });
+  });
+
+  it("reports the failure instead of an idle strip when a run dies badly", () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    manager.write(started.sessionId, "안녕");
+    runs[0].exit.emit("exit", { exitCode: 1 });
+
+    const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    // The error frees the strip on its own AND releases the messages queued
+    // mid-turn. An idle phase in front of it would flush one of them into the
+    // run that just died, and the renderer's release notice would then miscount.
+    expect(events.filter((e) => e.kind === "phase")).toEqual([]);
+    expect(events).toContainEqual({
+      kind: "error",
+      message: "Claude 세션이 응답 없이 종료되었습니다",
+      missingConversation: false
+    });
+  });
+
+  it("closes the abandoned agent and frees the strip when the idle cap reclaims a run", async () => {
+    const { manager, runs } = makeManager(0, 20);
+    const started = manager.start({ cwd: "D:\\repo" });
+    const data = vi.fn();
+    manager.on("data", data);
+
+    manager.write(started.sessionId, "에이전트 실행");
+    runs[0].data.emit("data", agentStarted("t1"));
+    runs[0].data.emit("data", endTurn);
+    await tick(60);
+    expect(runs[0].kill).toHaveBeenCalled();
+    // kill() only asks; the row closes and the panel folds on the real exit.
+    runs[0].exit.emit("exit", { exitCode: 1 });
+
+    const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(events).toContainEqual({ kind: "agent", op: "end", toolUseId: "t1", ok: false });
+    expect(events.filter((e) => e.kind === "phase").at(-1))
+      .toEqual({ kind: "phase", phase: "waiting" });
+    // The reply was delivered, so reclaiming the held process is not a failure.
+    expect(events.filter((e) => e.kind === "error")).toEqual([]);
+  });
+
+  it("stays silent when a killed session's run exits later", () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+    manager.write(started.sessionId, "안녕");
+    manager.kill(started.sessionId);
+
+    const data = vi.fn();
+    manager.on("data", data);
+    runs[0].exit.emit("exit", { exitCode: 1 });
+    expect(data).not.toHaveBeenCalled();
+  });
+
+  // Not a regression test: the superseded-run guard predates this change. It
+  // pins that the idle phase stays BELOW that guard, which is where a careless
+  // edit would put it.
+  it("leaves the strip to the new run when a superseded run dies", () => {
+    const { manager, runs } = makeManager();
+    const started = manager.start({ cwd: "D:\\repo" });
+
+    manager.write(started.sessionId, "첫 메시지");
+    runs[0].data.emit("data", agentStarted("t1"));
+    runs[0].data.emit("data", endTurn);
+    manager.write(started.sessionId, "두 번째 메시지");
+    expect(runs).toHaveLength(2);
+
+    const data = vi.fn();
+    manager.on("data", data);
+    // The old run dies while the new one is mid-reply; its teardown must not
+    // stamp an idle label over the turn that is still running.
+    runs[0].exit.emit("exit", { exitCode: 1 });
+    const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
+    expect(events.filter((e) => e.kind === "phase")).toEqual([]);
+    expect(events).toContainEqual({ kind: "agent", op: "end", toolUseId: "t1", ok: false });
+  });
+
   it("still reports background agent progress after the next message takes over", async () => {
     const { manager, runs } = makeManager();
     const started = manager.start({ cwd: "D:\\repo" });

@@ -49,8 +49,8 @@
 ## Components
 
 - Existing components to reuse: `ClaudePtyManager`, secure path IPC, composer state, tree state, xterm terminal
-- New/changed components: reference-faithful title bar, resizable explorer, session tab strip, independently resizable console/terminal split, resizable chat composer dock, context menu, toast
-- Variants and states: explorer collapsed, terminal split open/closed, session idle/running/waiting/closed, focused composer, context menu open
+- New/changed components: reference-faithful title bar, resizable explorer, session tab strip, independently resizable console/terminal split, resizable chat composer dock, context menu, toast, pinned agent board
+- Variants and states: explorer collapsed, terminal split open/closed, session idle/running/waiting/closed, focused composer, context menu open, agent board live/settled/absent
 - Token/component ownership: `companion/renderer/styles.css` owns visual tokens; `companion/renderer/index.ts` owns interaction state
 
 ## Accessibility
@@ -98,3 +98,5 @@
 - The explorer terminal action still opens an external Windows Terminal window with `wt.exe -d <project-root>`.
 - The Claude console is intentionally selectable/read-only; prompts are entered only in the bottom composer.
 - The header reads the project name from Code Start metadata and polls the current model/context snapshot without taking over another status-line owner.
+- Subagents get a board pinned between the transcript and the status strip, from the first agent onward: one row each carrying agent type, description, the tool it is on and elapsed time. It is pinned rather than inline because a fan-out runs for minutes while the console keeps scrolling, and it is capped so it never squeezes the transcript or the strip. The board is handed to the console as the run's record when the turn ends, never at the moment an agent finishes — a background agent settles mid-way through the *next* turn, and moving it then cuts that reply in half.
+- The status strip is the one signal saying whether the session accepts input, so every ending has to reach it. `end_turn` in the stream is not enough on its own: the CLI keeps printing afterwards and a late tool_result puts the strip back on `requesting`, and a run can end on another stop_reason or die outright. The run's exit therefore emits an idle phase too — but only when nothing else speaks for that ending, because `error` and `login` free the strip themselves and also release the messages queued mid-turn.

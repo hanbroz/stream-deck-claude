@@ -463,20 +463,39 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
         emit(abandonedAgents);
         return;
       }
-      emit([...parser.flush(), ...abandonedAgents]);
+      const tail = [...parser.flush(), ...abandonedAgents];
+      emit(tail);
       session.activeRun = undefined;
+      // Ended before delivering a reply (e.g. resume of a deleted transcript);
+      // surface it so the renderer can start a fresh conversation. An expired
+      // login already explained itself and is being handled as a re-login.
+      const failed = !sawEndTurn && exitCode !== 0 && !sawLogin;
       if (!sawEndTurn) {
         session.busy = false;
-        // Ended before delivering a reply (e.g. resume of a deleted transcript);
-        // surface it so the renderer can start a fresh conversation. An expired
-        // login already explained itself and is being handled as a re-login.
-        if (exitCode !== 0 && !sawLogin) {
-          emit([{
-            kind: "error",
-            message: "Claude 세션이 응답 없이 종료되었습니다",
-            missingConversation: false
-          }]);
-        }
+      }
+      if (failed) {
+        emit([{
+          kind: "error",
+          message: "Claude 세션이 응답 없이 종료되었습니다",
+          missingConversation: false
+        }]);
+        return;
+      }
+      // The status strip leaves a busy phase only on `end_turn` in the stream,
+      // which made every other ending permanent: the CLI keeps printing after
+      // the reply and a late tool_result puts it back on `requesting`, and a run
+      // that ends on another stop_reason never emits one at all. Both left
+      // "요청 중…" on screen for good while the process was long gone.
+      //
+      // Only when nothing else speaks for this ending, though. `error` and
+      // `login` already free the strip themselves AND release the queue the user
+      // stacked up mid-turn; an idle phase in front of them would flush one of
+      // those messages into the run that just failed, and paint over the very
+      // error that explains why. A stderr error from earlier in a run that then
+      // ended normally still gets one: the strip reports whether the session
+      // takes input, the process is gone, and the error keeps its console turn.
+      if (!tail.some((event) => event.kind === "error")) {
+        emit([{ kind: "phase", phase: "waiting" }]);
       }
     });
 
