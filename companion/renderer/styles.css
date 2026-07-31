@@ -679,10 +679,14 @@ body.is-split-resizing.is-resizing-rows * {
   color: var(--accent, #d97757);
 }
 
+/* The question is what a reader scrolls back to find, so it is the one thing in
+   the console drawn as a closed box. A left bar alone lost that race: the agent
+   board carried the same accent edge, and a wall of reply text between two of
+   them left nothing marking where the asking stopped and the answering began. */
 .turn--user .turn__body {
   padding: 8px 12px;
-  border-left: 2px solid var(--accent, #d97757);
-  border-radius: 0 6px 6px 0;
+  border: 1px solid var(--accent, #d97757);
+  border-radius: 6px;
   background: #242424;
   color: #d8d8d8;
   white-space: pre-wrap;
@@ -691,7 +695,7 @@ body.is-split-resizing.is-resizing-rows * {
 /* Typed while Claude was still generating: on screen, waiting its turn. The
    badge is CSS-only because a user turn deliberately carries no header. */
 .turn--user.is-queued .turn__body {
-  border-left-style: dashed;
+  border-style: dashed;
   color: #a9a9a9;
 }
 
@@ -836,14 +840,23 @@ body.is-split-resizing.is-resizing-rows * {
   margin: 0;
 }
 
+/* Quiet by default. A settled board is a record sitting in the transcript, and
+   in accent it outshouted the questions around it — the one thing a reader
+   actually scrolls back for. The live panel below re-claims the accent, where
+   it competes with nothing. */
 .agent-board {
   margin: 10px 0;
   padding: 8px 12px;
-  border-left: 3px solid var(--accent, #d97757);
+  border-left: 3px solid #3a3a3a;
   border-radius: 4px;
-  background: rgba(217, 119, 87, 0.06);
+  background: rgba(255, 255, 255, 0.025);
   font-size: 12px;
   line-height: 1.7;
+}
+
+.agent-live .agent-board {
+  border-left-color: var(--accent, #d97757);
+  background: rgba(217, 119, 87, 0.06);
 }
 
 .agent-board__title {
