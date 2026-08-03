@@ -188,10 +188,26 @@ Append to `companion/tests/paths.test.ts` inside the `describe("contained path o
       await writeFile(path.join(many, `f${index}.txt`), "x", "utf8");
     }
 
+    // The `many` directory itself consumes one of the ten capped entries.
     const measured = await measureCopySources([many], 10);
 
     expect(measured.truncated).toBe(true);
-    expect(measured.fileCount).toBe(10);
+    expect(measured.fileCount).toBe(9);
+  });
+
+  it("caps directory-heavy trees too, not just file-heavy ones", async () => {
+    // A tree of empty folders never raises fileCount, so a cap that counted
+    // only files would walk it to the end — the freeze the cap exists to stop.
+    let nested = path.join(root, "dirs");
+    for (let index = 0; index < 8; index += 1) {
+      nested = path.join(nested, `d${index}`);
+    }
+    await mkdir(nested, { recursive: true });
+
+    const measured = await measureCopySources([path.join(root, "dirs")], 5);
+
+    expect(measured.truncated).toBe(true);
+    expect(measured.fileCount).toBe(0);
   });
 
   it("skips an unreadable source instead of failing the whole measurement", async () => {
@@ -241,10 +257,15 @@ export const MEASURE_FILE_CAP = 10_000;
  * its target is neither counted nor walked — which also makes a link cycle
  * impossible to hang on.
  *
- * The walk gives up at `cap`. Reaching it already means both confirm thresholds
- * are crossed, so an exact total would not change the answer, and measuring a
- * huge tree exactly is the very case where the user would sit in front of a
- * frozen window waiting for the dialog that was supposed to protect them.
+ * The walk gives up at `cap`. Reaching it forces confirmation on its own
+ * (via `truncated`), which is why an exact total would not change the answer,
+ * and measuring a huge tree exactly is the very case where the user would sit
+ * in front of a frozen window waiting for the dialog that was supposed to
+ * protect them.
+ *
+ * The cap bounds visited entries (both files and directories), not file count
+ * alone, so a directory-heavy tree (thousands of near-empty nested folders)
+ * cannot bypass the cap and freeze the walk.
  *
  * Unreadable entries are skipped rather than thrown: this measurement only
  * decides whether to ask, and the copy itself reports per-source failures.
@@ -255,10 +276,11 @@ export async function measureCopySources(
 ): Promise<CopyMeasurement> {
   let fileCount = 0;
   let totalBytes = 0;
+  let entryCount = 0;
   let truncated = false;
 
   async function visit(target: string): Promise<void> {
-    if (fileCount >= cap) {
+    if (entryCount >= cap) {
       truncated = true;
       return;
     }
@@ -268,10 +290,12 @@ export async function measureCopySources(
       return;
     }
 
+    entryCount += 1;
+
     if (info.isDirectory()) {
       const entries = await readdir(target, { withFileTypes: true }).catch(() => []);
       for (const entry of entries) {
-        if (fileCount >= cap) {
+        if (entryCount >= cap) {
           truncated = true;
           return;
         }
