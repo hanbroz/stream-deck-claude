@@ -475,9 +475,11 @@ body.is-split-resizing.is-resizing-rows * {
   background: #2a2d2e;
 }
 
-/* The row a drop would land in. An outline rather than a fill, so it reads as
-   a target and not as the selection the tree already paints with #2a2d2e. */
-.tree-row.is-drop-target {
+/* The row (or, for the project root, the whole tree) a drop would land in. An
+   outline rather than a fill, so it reads as a target and not as the
+   selection the tree already paints with #2a2d2e. */
+.tree-row.is-drop-target,
+.tree.is-drop-target {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
   background: #2f2a28;

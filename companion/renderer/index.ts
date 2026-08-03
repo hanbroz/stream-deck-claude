@@ -929,6 +929,7 @@ treeElement.addEventListener("contextmenu", (event) => {
 // pointer. Only external drags carry "Files"; an internal drag of a row does
 // not, so the tree ignores it and internal move stays out of scope.
 let dropTargetRow: HTMLElement | undefined;
+let dropTargetIsRoot = false;
 
 function carriesFiles(event: DragEvent): boolean {
   return Array.from(event.dataTransfer?.types ?? []).includes("Files");
@@ -938,13 +939,29 @@ function rowUnder(target: EventTarget | null): HTMLElement | undefined {
   return (target as HTMLElement | null)?.closest<HTMLElement>(".tree-row") ?? undefined;
 }
 
-function highlightDropTarget(row: HTMLElement | undefined): void {
-  if (dropTargetRow === row) {
-    return;
+function rowForPath(path: string): HTMLElement | undefined {
+  return treeElement.querySelector<HTMLElement>(`.tree-row[data-path="${cssEscape(path)}"]`) ?? undefined;
+}
+
+/**
+ * Outlines the row for the *resolved destination*, not the row under the
+ * pointer — hovering a file row targets its parent folder, so the parent is
+ * what has to light up. The project root has no row of its own, so it
+ * outlines the tree element instead.
+ */
+function highlightDropTarget(destination: string | undefined): void {
+  const isRoot = destination !== undefined && destination === projectRoot;
+  const row = destination !== undefined && !isRoot ? rowForPath(destination) : undefined;
+
+  if (dropTargetRow !== row) {
+    dropTargetRow?.classList.remove("is-drop-target");
+    row?.classList.add("is-drop-target");
+    dropTargetRow = row;
   }
-  dropTargetRow?.classList.remove("is-drop-target");
-  row?.classList.add("is-drop-target");
-  dropTargetRow = row;
+  if (dropTargetIsRoot !== isRoot) {
+    treeElement.classList.toggle("is-drop-target", isRoot);
+    dropTargetIsRoot = isRoot;
+  }
 }
 
 /**
@@ -970,7 +987,7 @@ treeElement.addEventListener("dragover", (event) => {
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = "copy";
   }
-  highlightDropTarget(rowUnder(event.target));
+  highlightDropTarget(dropDestination(event.target));
 });
 
 treeElement.addEventListener("dragleave", (event) => {
@@ -992,11 +1009,25 @@ treeElement.addEventListener("drop", (event) => {
   void copyDroppedFiles(destination, files);
 });
 
-// A file dropped anywhere else would make Chromium navigate the renderer to it.
-// The window's will-navigate guard also blocks that; this removes the default
-// before it can fire.
-document.addEventListener("dragover", (event) => event.preventDefault());
-document.addEventListener("drop", (event) => event.preventDefault());
+// Without this a file dropped outside the tree makes Chromium navigate the
+// renderer to it. Scoped to file drags so ordinary text dragging — into the
+// composer, or within it — keeps working.
+document.addEventListener("dragover", (event) => {
+  if (!carriesFiles(event)) {
+    return;
+  }
+  event.preventDefault();
+  // Outside the tree there is no destination, so say so rather than showing a
+  // copy cursor over the console and composer.
+  if (event.dataTransfer && !treeElement.contains(event.target as Node)) {
+    event.dataTransfer.dropEffect = "none";
+  }
+});
+document.addEventListener("drop", (event) => {
+  if (carriesFiles(event)) {
+    event.preventDefault();
+  }
+});
 
 contextMenu.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-action]");
@@ -1054,12 +1085,27 @@ async function deleteNode(node: TreeNode): Promise<void> {
 }
 
 async function copyDroppedFiles(destination: string, files: File[]): Promise<void> {
-  if (!api || files.length === 0) {
+  if (!api) {
+    return;
+  }
+  // A silent no-op here reads as a drop that landed nowhere; every other
+  // outcome of a drop gets a toast, so this one should too.
+  if (files.length === 0) {
+    showToast("드롭한 항목의 경로를 읽지 못했습니다.");
     return;
   }
 
   const sourcePaths = files
-    .map((file) => api.paths.filePath(file))
+    .map((file) => {
+      try {
+        // webUtils.getPathForFile throws for a File with no filesystem path
+        // (a virtual or cloud-provider item). Treat it like an unreadable
+        // entry rather than letting the drop die as an unhandled rejection.
+        return api.paths.filePath(file);
+      } catch {
+        return "";
+      }
+    })
     .filter((entry) => entry.length > 0);
   if (sourcePaths.length === 0) {
     showToast("드롭한 항목의 경로를 읽지 못했습니다.");
@@ -1444,6 +1490,10 @@ function renderTree(): void {
     icon.src = explorerIconPath(row.node.name, row.node.kind);
     icon.alt = "";
     icon.setAttribute("aria-hidden", "true");
+    // Images are draggable by default in Chromium; without this, dragging a
+    // row by its icon starts a ghost drag carrying the icon URL instead of
+    // nothing (there is no internal row drag — see the drop handlers above).
+    icon.draggable = false;
 
     const name = document.createElement("span");
     name.className = "tree-row__name";
@@ -1819,6 +1869,15 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
       imageCount: intent.images.length
     });
 
+    // The message has left the queue no matter which branch below claims it,
+    // so shed the queued badge here rather than only on the send path — an
+    // early return used to leave a live cancel button on a message that was
+    // never going to be sent.
+    if (queuedTurn) {
+      queuedTurn.element.classList.remove("is-queued");
+      removeQueuedBadge(queuedTurn);
+    }
+
     // /clear is the Companion's own command: start a fresh conversation
     // instead of sending the text to Claude.
     if (intent.text.trim() === "/clear" && intent.images.length === 0) {
@@ -1833,7 +1892,11 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
       const command = slashCommands.find((entry) => `/${entry.name}` === firstToken);
       if (command?.description?.includes("터미널 전용")) {
         finishAssistantTurn();
-        appendTurn("user", intent.text);
+        // A queued message is already on screen; appending again would
+        // duplicate it.
+        if (!queuedTurn) {
+          appendTurn("user", intent.text);
+        }
         const hint = command.description.replace(/\s*·\s*터미널 전용\s*$/u, "");
         appendTurn(
           "assistant",
@@ -1858,12 +1921,10 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
 
     // Show the question immediately so the transcript reads as a conversation
     // rather than a stream of answers with no prompts. A queued message is
-    // already on screen: it only sheds its pending marker.
+    // already on screen (its pending marker was cleared above), so only a
+    // fresh message needs a new turn appended here.
     finishAssistantTurn();
-    if (queuedTurn) {
-      queuedTurn.element.classList.remove("is-queued");
-      removeQueuedBadge(queuedTurn);
-    } else {
+    if (!queuedTurn) {
       appendTurn("user", composerTurnLabel(intent));
     }
     // Respond before the process spawns so Enter feels immediate.
@@ -2047,8 +2108,16 @@ function cancelQueuedSend(turn: Turn): void {
     return; // already flushed — the click lost the race with the send
   }
   removeTurn(turn);
+  const restored = restoreComposer(entry.intent);
+  if (!restored) {
+    // restoreComposer only focuses the composer when it actually restores a
+    // draft. removeTurn just deleted the element that held the focused cancel
+    // button, so without this a keyboard user cancelling while holding their
+    // own draft loses their place to document.body.
+    promptInput.focus();
+  }
   showToast(
-    restoreComposer(entry.intent)
+    restored
       ? "예약을 취소하고 작성기로 되돌렸습니다."
       : "예약을 취소했습니다."
   );
