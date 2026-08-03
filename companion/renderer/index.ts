@@ -65,6 +65,11 @@ import {
 import { companionBuildVersion } from "../shared/build-version";
 import { explorerIconPath } from "./explorer-icons";
 import { adjustSplitForKey, clampSplit, type SplitterOrientation } from "./splitter";
+import {
+  formatCopySize,
+  needsCopyConfirm,
+  type CopyMeasurement
+} from "../shared/copy-guard";
 
 type SessionStatus = {
   state: "idle" | "running" | "waiting" | "ended";
@@ -918,6 +923,79 @@ treeElement.addEventListener("contextmenu", (event) => {
   showContextMenu(event.clientX, event.clientY);
 });
 
+// Dropping files from Windows Explorer copies them into the folder under the
+// pointer. Only external drags carry "Files"; an internal drag of a row does
+// not, so the tree ignores it and internal move stays out of scope.
+let dropTargetRow: HTMLElement | undefined;
+
+function carriesFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
+}
+
+function rowUnder(target: EventTarget | null): HTMLElement | undefined {
+  return (target as HTMLElement | null)?.closest<HTMLElement>(".tree-row") ?? undefined;
+}
+
+function highlightDropTarget(row: HTMLElement | undefined): void {
+  if (dropTargetRow === row) {
+    return;
+  }
+  dropTargetRow?.classList.remove("is-drop-target");
+  row?.classList.add("is-drop-target");
+  dropTargetRow = row;
+}
+
+/**
+ * A folder row takes the drop itself, a file row hands it to its parent, and
+ * the empty area below the rows is the project folder — the same rule the
+ * context menu already uses, so every spot in the tree is a valid destination.
+ */
+function dropDestination(target: EventTarget | null): string {
+  const row = rowUnder(target);
+  const node = row?.dataset.path ? nodeAt(row.dataset.path) : undefined;
+  if (!node) {
+    return projectRoot;
+  }
+  return node.kind === "directory" ? node.path : parentPathOf(node.path);
+}
+
+treeElement.addEventListener("dragover", (event) => {
+  if (!carriesFiles(event)) {
+    return;
+  }
+  // Without preventDefault the element is not a drop target at all.
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "copy";
+  }
+  highlightDropTarget(rowUnder(event.target));
+});
+
+treeElement.addEventListener("dragleave", (event) => {
+  // Moving between two rows fires dragleave on the one being left; only clear
+  // the highlight when the pointer has actually left the tree.
+  if (!treeElement.contains(event.relatedTarget as Node | null)) {
+    highlightDropTarget(undefined);
+  }
+});
+
+treeElement.addEventListener("drop", (event) => {
+  if (!carriesFiles(event)) {
+    return;
+  }
+  event.preventDefault();
+  const destination = dropDestination(event.target);
+  const files = Array.from(event.dataTransfer?.files ?? []);
+  highlightDropTarget(undefined);
+  void copyDroppedFiles(destination, files);
+});
+
+// A file dropped anywhere else would make Chromium navigate the renderer to it.
+// The window's will-navigate guard also blocks that; this removes the default
+// before it can fire.
+document.addEventListener("dragover", (event) => event.preventDefault());
+document.addEventListener("drop", (event) => event.preventDefault());
+
 contextMenu.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-action]");
   if (!button || !contextPath) {
@@ -971,6 +1049,65 @@ async function deleteNode(node: TreeNode): Promise<void> {
     showToast("Refresh failed.");
   }
   showToast(`'${node.name}'을(를) 휴지통으로 이동했습니다.`);
+}
+
+/** The transcript-free summary a finished drop reports. */
+function copyResultMessage(result: { copied: string[]; failed: string[] }): string {
+  const head =
+    result.copied.length > 0
+      ? `'${result.copied[0]}'${
+          result.copied.length > 1 ? ` 외 ${result.copied.length - 1}개` : ""
+        }를 복사했습니다.`
+      : "복사한 항목이 없습니다.";
+  return result.failed.length > 0
+    ? `${head} ${result.failed.length}개는 실패했습니다.`
+    : head;
+}
+
+function copyConfirmMessage(measurement: CopyMeasurement, destination: string): string {
+  const count = `${measurement.fileCount.toLocaleString()}개${
+    measurement.truncated ? " 이상" : ""
+  }`;
+  const size = `${formatCopySize(measurement.totalBytes)}${
+    measurement.truncated ? " 이상" : ""
+  }`;
+  // Naming the destination folder means a drop onto the wrong row is caught by
+  // the same dialog that catches a drop that is too big.
+  return `파일 ${count}(${size})를 '${projectNameFromPath(destination)}' 폴더로 복사합니다. 계속할까요?`;
+}
+
+async function copyDroppedFiles(destination: string, files: File[]): Promise<void> {
+  if (!api || files.length === 0) {
+    return;
+  }
+
+  const sourcePaths = files
+    .map((file) => api.paths.filePath(file))
+    .filter((entry) => entry.length > 0);
+  if (sourcePaths.length === 0) {
+    showToast("드롭한 항목의 경로를 읽지 못했습니다.");
+    return;
+  }
+
+  let measurement: CopyMeasurement;
+  try {
+    measurement = await api.paths.measureCopy(sourcePaths);
+  } catch {
+    showToast("복사할 항목을 확인하지 못했습니다.");
+    return;
+  }
+
+  if (needsCopyConfirm(measurement) && !window.confirm(copyConfirmMessage(measurement, destination))) {
+    return;
+  }
+
+  try {
+    const result = await api.paths.copyInto(destination, sourcePaths);
+    await refreshPath(destination);
+    showToast(copyResultMessage(result));
+  } catch {
+    showToast("복사하지 못했습니다.");
+  }
 }
 
 void initialize();

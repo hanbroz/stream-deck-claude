@@ -475,6 +475,14 @@ body.is-split-resizing.is-resizing-rows * {
   background: #2a2d2e;
 }
 
+/* The row a drop would land in. An outline rather than a fill, so it reads as
+   a target and not as the selection the tree already paints with #2a2d2e. */
+.tree-row.is-drop-target {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  background: #2f2a28;
+}
+
 .tree-row__chevron {
   display: grid;
   place-items: center;
