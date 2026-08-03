@@ -66,7 +66,8 @@ import { companionBuildVersion } from "../shared/build-version";
 import { explorerIconPath } from "./explorer-icons";
 import { adjustSplitForKey, clampSplit, type SplitterOrientation } from "./splitter";
 import {
-  formatCopySize,
+  copyConfirmMessage,
+  copyResultMessage,
   needsCopyConfirm,
   type CopyMeasurement
 } from "../shared/copy-guard";
@@ -1051,31 +1052,6 @@ async function deleteNode(node: TreeNode): Promise<void> {
   showToast(`'${node.name}'을(를) 휴지통으로 이동했습니다.`);
 }
 
-/** The transcript-free summary a finished drop reports. */
-function copyResultMessage(result: { copied: string[]; failed: string[] }): string {
-  const head =
-    result.copied.length > 0
-      ? `'${result.copied[0]}'${
-          result.copied.length > 1 ? ` 외 ${result.copied.length - 1}개` : ""
-        }를 복사했습니다.`
-      : "복사한 항목이 없습니다.";
-  return result.failed.length > 0
-    ? `${head} ${result.failed.length}개는 실패했습니다.`
-    : head;
-}
-
-function copyConfirmMessage(measurement: CopyMeasurement, destination: string): string {
-  const count = `${measurement.fileCount.toLocaleString()}개${
-    measurement.truncated ? " 이상" : ""
-  }`;
-  const size = `${formatCopySize(measurement.totalBytes)}${
-    measurement.truncated ? " 이상" : ""
-  }`;
-  // Naming the destination folder means a drop onto the wrong row is caught by
-  // the same dialog that catches a drop that is too big.
-  return `파일 ${count}(${size})를 '${projectNameFromPath(destination)}' 폴더로 복사합니다. 계속할까요?`;
-}
-
 async function copyDroppedFiles(destination: string, files: File[]): Promise<void> {
   if (!api || files.length === 0) {
     return;
@@ -1097,17 +1073,31 @@ async function copyDroppedFiles(destination: string, files: File[]): Promise<voi
     return;
   }
 
-  if (needsCopyConfirm(measurement) && !window.confirm(copyConfirmMessage(measurement, destination))) {
+  if (
+    needsCopyConfirm(measurement) &&
+    !window.confirm(copyConfirmMessage(measurement, projectNameFromPath(destination)))
+  ) {
+    return;
+  }
+
+  let result;
+  try {
+    result = await api.paths.copyInto(destination, sourcePaths);
+  } catch {
+    showToast("복사하지 못했습니다.");
     return;
   }
 
   try {
-    const result = await api.paths.copyInto(destination, sourcePaths);
     await refreshPath(destination);
-    showToast(copyResultMessage(result));
   } catch {
-    showToast("복사하지 못했습니다.");
+    // The copy already landed; only the tree is stale. Saying "복사하지 못했습니다"
+    // here would send the user back to drag again and make a (1) duplicate.
+    showToast("복사했지만 탐색기를 새로고침하지 못했습니다.");
+    return;
   }
+
+  showToast(copyResultMessage(result));
 }
 
 void initialize();
