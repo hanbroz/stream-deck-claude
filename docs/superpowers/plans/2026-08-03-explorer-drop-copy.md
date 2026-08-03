@@ -704,11 +704,15 @@ In `companion/renderer/index.ts`, add near the other `../shared/*` imports:
 
 ```ts
 import {
-  formatCopySize,
+  copyConfirmMessage,
+  copyResultMessage,
   needsCopyConfirm,
   type CopyMeasurement
 } from "../shared/copy-guard";
 ```
+
+`formatCopySize` is not imported here — it is used only inside
+`copyConfirmMessage`, which now lives in the shared module.
 
 - [ ] **Step 2: Add the drag handlers**
 
@@ -794,8 +798,20 @@ document.addEventListener("drop", (event) => event.preventDefault());
 Insert directly after the `deleteNode` function (around line 974):
 
 ```ts
+The two message builders are pure string assembly with real branching, so they
+live in `companion/shared/copy-guard.ts` beside `formatCopySize` and are unit
+tested there — the renderer cannot be imported by vitest. `copyConfirmMessage`
+takes the destination's already-resolved folder *name*, keeping path handling
+(`projectNameFromPath`) on the renderer side:
+
+```ts
+export type CopySummary = {
+  copied: string[];
+  failed: string[];
+};
+
 /** The transcript-free summary a finished drop reports. */
-function copyResultMessage(result: { copied: string[]; failed: string[] }): string {
+export function copyResultMessage(result: CopySummary): string {
   const head =
     result.copied.length > 0
       ? `'${result.copied[0]}'${
@@ -807,7 +823,10 @@ function copyResultMessage(result: { copied: string[]; failed: string[] }): stri
     : head;
 }
 
-function copyConfirmMessage(measurement: CopyMeasurement, destination: string): string {
+export function copyConfirmMessage(
+  measurement: CopyMeasurement,
+  destinationName: string
+): string {
   const count = `${measurement.fileCount.toLocaleString()}개${
     measurement.truncated ? " 이상" : ""
   }`;
@@ -816,9 +835,17 @@ function copyConfirmMessage(measurement: CopyMeasurement, destination: string): 
   }`;
   // Naming the destination folder means a drop onto the wrong row is caught by
   // the same dialog that catches a drop that is too big.
-  return `파일 ${count}(${size})를 '${projectNameFromPath(destination)}' 폴더로 복사합니다. 계속할까요?`;
+  return `파일 ${count}(${size})를 '${destinationName}' 폴더로 복사합니다. 계속할까요?`;
 }
+```
 
+The renderer keeps only the orchestration. Each failure gets its own try/catch,
+its own message, and its own exit: `showToast` replaces whatever toast is up, so
+two in sequence would leave only the last one visible — and folding the refresh
+in with the copy would report a landed copy as failed, sending the user back to
+drag again and produce a ` (1)` duplicate.
+
+```ts
 async function copyDroppedFiles(destination: string, files: File[]): Promise<void> {
   if (!api || files.length === 0) {
     return;
@@ -840,17 +867,31 @@ async function copyDroppedFiles(destination: string, files: File[]): Promise<voi
     return;
   }
 
-  if (needsCopyConfirm(measurement) && !window.confirm(copyConfirmMessage(measurement, destination))) {
+  if (
+    needsCopyConfirm(measurement) &&
+    !window.confirm(copyConfirmMessage(measurement, projectNameFromPath(destination)))
+  ) {
+    return;
+  }
+
+  let result;
+  try {
+    result = await api.paths.copyInto(destination, sourcePaths);
+  } catch {
+    showToast("복사하지 못했습니다.");
     return;
   }
 
   try {
-    const result = await api.paths.copyInto(destination, sourcePaths);
     await refreshPath(destination);
-    showToast(copyResultMessage(result));
   } catch {
-    showToast("복사하지 못했습니다.");
+    // The copy already landed; only the tree is stale. Saying "복사하지 못했습니다"
+    // here would send the user back to drag again and make a (1) duplicate.
+    showToast("복사했지만 탐색기를 새로고침하지 못했습니다.");
+    return;
   }
+
+  showToast(copyResultMessage(result));
 }
 ```
 
