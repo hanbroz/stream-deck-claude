@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  copyIntoContainedDirectory,
   createContainedDirectory,
   createContainedFile,
   COMPANION_CLAUDE_PATH_ENV,
@@ -338,5 +339,80 @@ describe("contained path operations", () => {
     // Cap is 5 entries: the root + 4 nested dirs before hitting the cap
     expect(measured.truncated).toBe(true);
     expect(measured.fileCount).toBe(0);
+  });
+
+  it("copies an external file into a project subfolder", async () => {
+    const outside = await mkdtemp(path.join(os.tmpdir(), "companion-drop-"));
+    try {
+      await writeFile(path.join(outside, "note.txt"), "hello", "utf8");
+      await mkdir(path.join(root, "docs"), { recursive: true });
+
+      const result = await copyIntoContainedDirectory(root, "docs", [
+        path.join(outside, "note.txt")
+      ]);
+
+      expect(result).toEqual({ copied: ["note.txt"], failed: [] });
+      expect(await readFile(path.join(root, "docs", "note.txt"), "utf8")).toBe("hello");
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("copies a folder with its nested contents", async () => {
+    const outside = await mkdtemp(path.join(os.tmpdir(), "companion-drop-"));
+    try {
+      await mkdir(path.join(outside, "bundle", "inner"), { recursive: true });
+      await writeFile(path.join(outside, "bundle", "inner", "deep.txt"), "d", "utf8");
+
+      const result = await copyIntoContainedDirectory(root, ".", [
+        path.join(outside, "bundle")
+      ]);
+
+      expect(result.copied).toEqual(["bundle"]);
+      expect(await readFile(path.join(root, "bundle", "inner", "deep.txt"), "utf8")).toBe("d");
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("renames instead of overwriting a name already in the destination", async () => {
+    const outside = await mkdtemp(path.join(os.tmpdir(), "companion-drop-"));
+    try {
+      await writeFile(path.join(outside, "note.txt"), "new", "utf8");
+      await writeFile(path.join(root, "note.txt"), "original", "utf8");
+
+      const result = await copyIntoContainedDirectory(root, ".", [
+        path.join(outside, "note.txt")
+      ]);
+
+      expect(result.copied).toEqual(["note (1).txt"]);
+      expect(await readFile(path.join(root, "note.txt"), "utf8")).toBe("original");
+      expect(await readFile(path.join(root, "note (1).txt"), "utf8")).toBe("new");
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a destination outside the root", async () => {
+    await expect(copyIntoContainedDirectory(root, "..", [])).rejects.toThrow(
+      "Path is outside the allowed root"
+    );
+  });
+
+  it("keeps copying after one source fails", async () => {
+    const outside = await mkdtemp(path.join(os.tmpdir(), "companion-drop-"));
+    try {
+      await writeFile(path.join(outside, "ok.txt"), "ok", "utf8");
+
+      const result = await copyIntoContainedDirectory(root, ".", [
+        path.join(outside, "missing.txt"),
+        path.join(outside, "ok.txt")
+      ]);
+
+      expect(result.copied).toEqual(["ok.txt"]);
+      expect(result.failed).toEqual(["missing.txt"]);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });

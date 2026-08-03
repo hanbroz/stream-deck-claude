@@ -474,3 +474,78 @@ export async function measureCopySources(
 
   return { fileCount, totalBytes, truncated };
 }
+
+export type CopyResult = {
+  copied: string[];
+  failed: string[];
+};
+
+/**
+ * A free name in `directory` for `name`, suffixing " (n)" before the extension
+ * the way Windows Explorer does. There is no overwrite path at all, so a
+ * mis-drop can never destroy work that is already in the project.
+ */
+export async function uniqueDestinationName(
+  directory: string,
+  name: string
+): Promise<string> {
+  const extension = path.extname(name);
+  const stem = extension ? name.slice(0, -extension.length) : name;
+
+  for (let index = 0; index <= 1000; index += 1) {
+    const candidate = index === 0 ? name : `${stem} (${index})${extension}`;
+    const taken = await lstat(path.join(directory, candidate)).then(
+      () => true,
+      () => false
+    );
+    if (!taken) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`No free name for ${name}`);
+}
+
+/**
+ * Copy dropped sources into a folder inside the project.
+ *
+ * The containment rule inverts here. Every other helper in this file requires
+ * both ends inside the root; a drop's source is by definition outside it, so
+ * only the destination is sealed. `fs.cp` refuses to copy a directory into its
+ * own subtree, which covers a source dragged from within the project itself.
+ *
+ * One bad source must not cost the user the rest of the drop, so failures are
+ * collected per source and the loop continues.
+ */
+export async function copyIntoContainedDirectory(
+  root: string,
+  destinationPath: string,
+  sourcePaths: string[]
+): Promise<CopyResult> {
+  const destination = await resolveContainedDirectory(root, destinationPath);
+  const copied: string[] = [];
+  const failed: string[] = [];
+
+  for (const source of sourcePaths) {
+    const sourceName = path.basename(source);
+    // A drive root ("D:\") has no basename and so no name to copy it under.
+    if (sourceName.length === 0) {
+      failed.push(source);
+      continue;
+    }
+    try {
+      const name = await uniqueDestinationName(destination, sourceName);
+      // errorOnExist guards the gap between picking the name and writing it.
+      await cp(source, path.join(destination, name), {
+        recursive: true,
+        errorOnExist: true,
+        force: false
+      });
+      copied.push(name);
+    } catch {
+      failed.push(sourceName);
+    }
+  }
+
+  return { copied, failed };
+}
