@@ -6,7 +6,7 @@ import path from "node:path";
 import type { DirectoryEntry } from "../shared/claude-command";
 import type { RuntimeProjectMetadata } from "../shared/claude-command";
 import { readModelPrefs } from "./model-prefs";
-import type { CopyMeasurement } from "../shared/copy-guard";
+import type { CopyMeasurement, CopySummary } from "../shared/copy-guard";
 
 export type PathShell = {
   openPath(path: string): Promise<string>;
@@ -407,7 +407,7 @@ export async function revealContainedPath(
   shell.showItemInFolder(target);
 }
 
-export const MEASURE_FILE_CAP = 10_000;
+export const MEASURE_ENTRY_CAP = 10_000;
 
 /**
  * Count the files and bytes a drop would copy.
@@ -432,7 +432,7 @@ export const MEASURE_FILE_CAP = 10_000;
  */
 export async function measureCopySources(
   sourcePaths: string[],
-  cap = MEASURE_FILE_CAP
+  cap = MEASURE_ENTRY_CAP
 ): Promise<CopyMeasurement> {
   let fileCount = 0;
   let totalBytes = 0;
@@ -475,10 +475,10 @@ export async function measureCopySources(
   return { fileCount, totalBytes, truncated };
 }
 
-export type CopyResult = {
-  copied: string[];
-  failed: string[];
-};
+// Structurally identical to shared/copy-guard's CopySummary; aliased rather
+// than redeclared so the two never drift apart. main/ may import from
+// shared/ (the reverse is forbidden), so the alias lives here.
+export type CopyResult = CopySummary;
 
 /**
  * A free name in `directory` for `name`, suffixing " (n)" before the extension
@@ -528,12 +528,20 @@ export async function copyIntoContainedDirectory(
 
   for (const source of sourcePaths) {
     const sourceName = path.basename(source);
-    // A drive root ("D:\") has no basename and so no name to copy it under.
+    // Every failure for this source reports the same label: the basename,
+    // falling back to the full path only when there is no basename (a drive
+    // root such as "D:\").
+    const failureLabel = sourceName.length > 0 ? sourceName : source;
     if (sourceName.length === 0) {
-      failed.push(source);
+      failed.push(failureLabel);
       continue;
     }
     try {
+      // The IPC boundary accepts arbitrary strings, unlike a real drop, so a
+      // source ending in ".." (or another unsafe name) has to be rejected
+      // here the same way every other write helper in this file rejects it —
+      // otherwise uniqueDestinationName would probe path.join(destination, "..").
+      assertSafeName(sourceName, "Source name");
       const name = await uniqueDestinationName(destination, sourceName);
       // errorOnExist guards the gap between picking the name and writing it.
       await cp(source, path.join(destination, name), {
@@ -543,7 +551,7 @@ export async function copyIntoContainedDirectory(
       });
       copied.push(name);
     } catch {
-      failed.push(sourceName);
+      failed.push(failureLabel);
     }
   }
 
