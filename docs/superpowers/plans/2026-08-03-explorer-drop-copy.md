@@ -604,12 +604,20 @@ Add the handlers immediately after the `COMPANION_IPC.pathReveal` handler:
 ```ts
   // Sources come from a drag out of Windows Explorer, so they are outside the
   // root by design and are not contained-checked. Only the destination is.
-  deps.ipcMain.handle(COMPANION_IPC.pathCopyMeasure, (_event: SenderEvent, sourcePaths: unknown) =>
-    measureCopySources(requireStringArray(sourcePaths, "sourcePaths"))
+  //
+  // `async` matters: Electron's own ipcMain.handle awaits the handler inside a
+  // try/catch, so a synchronous validation throw is caught either way in
+  // production — but the test fake calls the handler directly, where only an
+  // async handler turns that throw into an observable rejection. Every other
+  // validating handler in this file is async for the same reason.
+  deps.ipcMain.handle(
+    COMPANION_IPC.pathCopyMeasure,
+    async (_event: SenderEvent, sourcePaths: unknown) =>
+      measureCopySources(requireStringArray(sourcePaths, "sourcePaths"))
   );
   deps.ipcMain.handle(
     COMPANION_IPC.pathCopyInto,
-    (_event: SenderEvent, destinationPath: unknown, sourcePaths: unknown) =>
+    async (_event: SenderEvent, destinationPath: unknown, sourcePaths: unknown) =>
       copyIntoContainedDirectory(
         deps.rootPath,
         requireString(destinationPath, "destinationPath"),
