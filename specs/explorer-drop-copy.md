@@ -32,8 +32,10 @@ as non-goals. Copy-in is now in scope. Move and rename remain non-goals.
    confirms in a dialog naming the file count, the total size, and the
    destination folder. Cancelling copies nothing.
 6. Drops below both thresholds copy immediately with no dialog.
-7. Measurement stops after 10,000 files and reports the totals as lower bounds
-   ("10,000개 이상"). A drop that reaches the cap always requires confirmation.
+7. Measurement stops after 10,000 entries — files and directories together, since
+   a tree of near-empty folders would otherwise never reach a file-count cap —
+   and reports the totals as lower bounds ("10,000개 이상"). A drop that reaches
+   the cap always requires confirmation.
 8. The destination must resolve inside the project root, including after symlink
    resolution. Sources may be anywhere on disk — that is the point of the
    feature — but a source that would be copied into itself is rejected.
@@ -88,7 +90,9 @@ copyIntoContainedDirectory(root, destPath, sourcePaths): Promise<CopyResult>
 
 - `measureCopySources` walks each source with `lstat`, matching `fs.cp`'s default
   `dereference: false`. Symlinks count as themselves and are not followed, so a
-  cyclic link cannot hang the walk. The walk stops at 10,000 files and sets
+  cyclic link cannot hang the walk. The walk stops at 10,000 entries — files and
+  directories together, since counting files alone would let a directory-heavy
+  tree of near-empty folders bypass the cap and freeze the walk — and sets
   `truncated`.
 - `copyIntoContainedDirectory` resolves the destination through the existing
   `resolveContainedDirectory`, which already rejects paths outside the root after
@@ -130,7 +134,7 @@ copyIntoContainedDirectory(root, destPath, sourcePaths): Promise<CopyResult>
 ```
 CONFIRM_FILE_COUNT = 5          // confirm at 5 or more files
 CONFIRM_TOTAL_BYTES = 500 MiB   // confirm above this
-MEASURE_FILE_CAP = 10_000       // stop measuring here
+MEASURE_ENTRY_CAP = 10_000      // stop measuring here (files and directories)
 ```
 
 The confirmation text names the destination folder as well as the size, so a
@@ -144,8 +148,9 @@ drop onto the wrong folder is caught by the same dialog.
 | `companion/main/paths.ts` | `measureCopySources`, `copyIntoContainedDirectory`, `uniqueDestinationName` |
 | `companion/main/ipc.ts` | `pathCopyMeasure`, `pathCopyInto` handlers |
 | `companion/preload/index.ts` | `paths.filePath`, `paths.measureCopy`, `paths.copyInto` |
-| `companion/renderer/index.ts` | drag handlers, destination resolution, `needsCopyConfirm`, confirm + toast |
-| `companion/renderer/styles.css` | `.tree-row.is-drop-target` |
+| `companion/shared/copy-guard.ts` | new — `CopyMeasurement`, `CopySummary`, `needsCopyConfirm`, `copyConfirmMessage`, `copyResultMessage`, `formatCopySize`, thresholds |
+| `companion/renderer/index.ts` | drag handlers, destination resolution, confirm + toast |
+| `companion/renderer/styles.css` | `.tree-row.is-drop-target`, `.tree.is-drop-target` |
 
 ## Tests
 
