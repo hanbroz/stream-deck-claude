@@ -16,11 +16,14 @@ as non-goals. Copy-in is now in scope. Move and rename remain non-goals.
 ## Acceptance criteria
 
 1. Dragging files or folders from outside the app (Windows Explorer, the
-   desktop) over the explorer tree shows a copy cursor and highlights the
-   destination row.
+   desktop) over the explorer tree shows a copy cursor and outlines the
+   destination — the destination row, or the tree itself when the destination is
+   the project root, which has no row of its own. Over the rest of the window the
+   cursor shows no-drop, since a drop there does nothing.
 2. The destination is the hovered folder row; a hovered file row targets that
    file's parent folder; the empty area below the rows targets the project root.
-   Every position in the tree is a valid destination.
+   Every position in the tree is a valid destination. The outline follows the
+   destination, not the pointer: hovering a file row outlines its parent folder.
 3. Dropping copies each source into the destination folder. Folders are copied
    with their full contents.
 4. A name already taken in the destination is never overwritten. The copy is
@@ -34,8 +37,9 @@ as non-goals. Copy-in is now in scope. Move and rename remain non-goals.
 6. Drops below both thresholds copy immediately with no dialog.
 7. Measurement stops after 10,000 entries — files and directories together, since
    a tree of near-empty folders would otherwise never reach a file-count cap —
-   and reports the totals as lower bounds ("10,000개 이상"). A drop that reaches
-   the cap always requires confirmation.
+   and reports the totals as lower bounds, suffixed "이상". The reported file
+   count at truncation is generally below the cap, since directories consume
+   entries too. A drop that reaches the cap always requires confirmation.
 8. The destination must resolve inside the project root, including after symlink
    resolution. Sources may be anywhere on disk — that is the point of the
    feature — but a source that would be copied into itself is rejected.
@@ -122,12 +126,18 @@ copyIntoContainedDirectory(root, destPath, sourcePaths): Promise<CopyResult>
   confirmation uses. No new UI component.
 - `document` gets `dragover`/`drop` handlers that call `preventDefault()`, so a
   file dropped outside the tree cannot make Chromium navigate to it. The
-  existing `will-navigate` guard stays as the second layer.
+  existing `will-navigate` guard stays as the second layer. Both are scoped to
+  file drags: an unscoped guard also cancels Chromium's editing default, which
+  silently breaks dragging text into or within the composer. Outside the tree
+  the document handler sets `dropEffect = "none"` so the cursor does not
+  advertise a copy that will not happen; inside the tree the guard does not fire,
+  leaving the tree's own `"copy"` effect in place.
 
 ### `renderer/styles.css`
 
-`.tree-row.is-drop-target` — an accent outline reusing the existing
-`var(--accent)`.
+`.tree-row.is-drop-target, .tree.is-drop-target` — an accent outline reusing the
+existing `var(--accent)`. The second selector carries the project-root
+destination, which has no row to outline.
 
 ### Thresholds
 
