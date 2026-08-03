@@ -417,10 +417,15 @@ export const MEASURE_FILE_CAP = 10_000;
  * its target is neither counted nor walked — which also makes a link cycle
  * impossible to hang on.
  *
- * The walk gives up at `cap`. Reaching it already means both confirm thresholds
- * are crossed, so an exact total would not change the answer, and measuring a
- * huge tree exactly is the very case where the user would sit in front of a
- * frozen window waiting for the dialog that was supposed to protect them.
+ * The walk gives up at `cap`. Reaching it forces confirmation on its own
+ * (via `truncated`), which is why an exact total would not change the answer,
+ * and measuring a huge tree exactly is the very case where the user would sit
+ * in front of a frozen window waiting for the dialog that was supposed to
+ * protect them.
+ *
+ * The cap bounds visited entries (both files and directories), not file count
+ * alone, so a directory-heavy tree (thousands of near-empty nested folders)
+ * cannot bypass the cap and freeze the walk.
  *
  * Unreadable entries are skipped rather than thrown: this measurement only
  * decides whether to ask, and the copy itself reports per-source failures.
@@ -431,10 +436,11 @@ export async function measureCopySources(
 ): Promise<CopyMeasurement> {
   let fileCount = 0;
   let totalBytes = 0;
+  let entryCount = 0;
   let truncated = false;
 
   async function visit(target: string): Promise<void> {
-    if (fileCount >= cap) {
+    if (entryCount >= cap) {
       truncated = true;
       return;
     }
@@ -444,10 +450,12 @@ export async function measureCopySources(
       return;
     }
 
+    entryCount += 1;
+
     if (info.isDirectory()) {
       const entries = await readdir(target, { withFileTypes: true }).catch(() => []);
       for (const entry of entries) {
-        if (fileCount >= cap) {
+        if (entryCount >= cap) {
           truncated = true;
           return;
         }

@@ -307,7 +307,8 @@ describe("contained path operations", () => {
     const measured = await measureCopySources([many], 10);
 
     expect(measured.truncated).toBe(true);
-    expect(measured.fileCount).toBe(10);
+    // Cap of 10 entries: 1 (the "many" dir) + 9 files before stopping
+    expect(measured.fileCount).toBe(9);
   });
 
   it("skips an unreadable source instead of failing the whole measurement", async () => {
@@ -320,5 +321,22 @@ describe("contained path operations", () => {
 
     expect(measured.fileCount).toBe(1);
     expect(measured.totalBytes).toBe(3);
+  });
+
+  it("caps at total entry visits (files + directories) to bound directory-heavy trees", async () => {
+    const dirs = path.join(root, "dirs");
+    await mkdir(dirs, { recursive: true });
+    // Create 8 nested directories with no files: d1/d2/d3/d4/d5/d6/d7/d8
+    let current = dirs;
+    for (let i = 0; i < 8; i += 1) {
+      current = path.join(current, `d${i}`);
+      await mkdir(current, { recursive: true });
+    }
+
+    const measured = await measureCopySources([dirs], 5);
+
+    // Cap is 5 entries: the root + 4 nested dirs before hitting the cap
+    expect(measured.truncated).toBe(true);
+    expect(measured.fileCount).toBe(0);
   });
 });
