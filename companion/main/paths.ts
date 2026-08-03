@@ -1,4 +1,4 @@
-import { mkdir, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { Dirent } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +6,7 @@ import path from "node:path";
 import type { DirectoryEntry } from "../shared/claude-command";
 import type { RuntimeProjectMetadata } from "../shared/claude-command";
 import { readModelPrefs } from "./model-prefs";
+import type { CopyMeasurement } from "../shared/copy-guard";
 
 export type PathShell = {
   openPath(path: string): Promise<string>;
@@ -404,4 +405,64 @@ export async function revealContainedPath(
     return;
   }
   shell.showItemInFolder(target);
+}
+
+export const MEASURE_FILE_CAP = 10_000;
+
+/**
+ * Count the files and bytes a drop would copy.
+ *
+ * `lstat`, not `stat`, because this has to describe what `fs.cp` will actually
+ * do and cp defaults to `dereference: false`: a symlink is copied as a link, so
+ * its target is neither counted nor walked — which also makes a link cycle
+ * impossible to hang on.
+ *
+ * The walk gives up at `cap`. Reaching it already means both confirm thresholds
+ * are crossed, so an exact total would not change the answer, and measuring a
+ * huge tree exactly is the very case where the user would sit in front of a
+ * frozen window waiting for the dialog that was supposed to protect them.
+ *
+ * Unreadable entries are skipped rather than thrown: this measurement only
+ * decides whether to ask, and the copy itself reports per-source failures.
+ */
+export async function measureCopySources(
+  sourcePaths: string[],
+  cap = MEASURE_FILE_CAP
+): Promise<CopyMeasurement> {
+  let fileCount = 0;
+  let totalBytes = 0;
+  let truncated = false;
+
+  async function visit(target: string): Promise<void> {
+    if (fileCount >= cap) {
+      truncated = true;
+      return;
+    }
+
+    const info = await lstat(target).catch(() => undefined);
+    if (!info) {
+      return;
+    }
+
+    if (info.isDirectory()) {
+      const entries = await readdir(target, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (fileCount >= cap) {
+          truncated = true;
+          return;
+        }
+        await visit(path.join(target, entry.name));
+      }
+      return;
+    }
+
+    fileCount += 1;
+    totalBytes += info.size;
+  }
+
+  for (const source of sourcePaths) {
+    await visit(source);
+  }
+
+  return { fileCount, totalBytes, truncated };
 }

@@ -18,6 +18,7 @@ import {
   deleteContainedPath,
   listContainedDirectory,
   listProjectFilesRecursive,
+  measureCopySources,
   openContainedPath,
   resolveCompanionRuntimeEnv,
   resolveCompanionRoot,
@@ -282,5 +283,42 @@ describe("contained path operations", () => {
       "Path is outside the allowed root"
     );
     expect(shell.trashItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("sums files and bytes across nested folders", async () => {
+    await mkdir(path.join(root, "nested", "deep"), { recursive: true });
+    await writeFile(path.join(root, "nested", "a.txt"), "12345", "utf8");
+    await writeFile(path.join(root, "nested", "deep", "b.txt"), "678", "utf8");
+
+    const measured = await measureCopySources([path.join(root, "nested")]);
+
+    expect(measured.fileCount).toBe(2);
+    expect(measured.totalBytes).toBe(8);
+    expect(measured.truncated).toBe(false);
+  });
+
+  it("stops at the cap and reports the totals as lower bounds", async () => {
+    const many = path.join(root, "many");
+    await mkdir(many, { recursive: true });
+    for (let index = 0; index < 12; index += 1) {
+      await writeFile(path.join(many, `f${index}.txt`), "x", "utf8");
+    }
+
+    const measured = await measureCopySources([many], 10);
+
+    expect(measured.truncated).toBe(true);
+    expect(measured.fileCount).toBe(10);
+  });
+
+  it("skips an unreadable source instead of failing the whole measurement", async () => {
+    await writeFile(path.join(root, "real.txt"), "abc", "utf8");
+
+    const measured = await measureCopySources([
+      path.join(root, "missing.txt"),
+      path.join(root, "real.txt")
+    ]);
+
+    expect(measured.fileCount).toBe(1);
+    expect(measured.totalBytes).toBe(3);
   });
 });
