@@ -82,6 +82,8 @@ export const COMPANION_IPC = {
   pathCreateFile: "companion:path:create-file",
   pathOpen: "companion:path:open",
   pathReveal: "companion:path:reveal",
+  pathCopyMeasure: "companion:path:copy-measure",
+  pathCopyInto: "companion:path:copy-into",
   terminalOpenFolder: "companion:terminal:open-folder",
   diag: "companion:diag",
   claudeHistory: "companion:claude:history",

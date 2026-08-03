@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -260,5 +260,30 @@ describe("registerCompanionIpc", () => {
 
     ipcMain.handlers.get(COMPANION_IPC.claudeClear)?.({}, "s");
     expect(clear).toHaveBeenCalledWith("s");
+  });
+
+  it("copies dropped sources into a contained destination and rejects a bad payload", async () => {
+    const ipcMain = registerFor();
+    const outside = await mkdtemp(path.join(os.tmpdir(), "companion-ipc-drop-"));
+    try {
+      await writeFile(path.join(outside, "dropped.txt"), "hi", "utf8");
+
+      const measured = await ipcMain.handlers.get(COMPANION_IPC.pathCopyMeasure)?.({}, [
+        path.join(outside, "dropped.txt")
+      ]);
+      expect(measured).toEqual({ fileCount: 1, totalBytes: 2, truncated: false });
+
+      const result = await ipcMain.handlers.get(COMPANION_IPC.pathCopyInto)?.({}, ".", [
+        path.join(outside, "dropped.txt")
+      ]);
+      expect(result).toEqual({ copied: ["dropped.txt"], failed: [] });
+      expect(await readFile(path.join(root, "dropped.txt"), "utf8")).toBe("hi");
+
+      await expect(
+        ipcMain.handlers.get(COMPANION_IPC.pathCopyInto)?.({}, ".", "not-an-array")
+      ).rejects.toThrow(/sourcePaths must be an array of strings/u);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });

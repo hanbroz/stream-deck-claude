@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import {
   COMPANION_IPC,
@@ -17,6 +17,9 @@ import type { HistoryPage } from "../main/transcript-history";
 import type { ClaudeEvent } from "../shared/claude-stream";
 import type { SlashCommand } from "../shared/slash-commands";
 import { diag, setDiagSink } from "../shared/diag";
+
+import type { CopyMeasurement } from "../shared/copy-guard";
+import type { CopyResult } from "../main/paths";
 
 export type ClaudeCompanionApi = {
   runtime: {
@@ -56,6 +59,9 @@ export type ClaudeCompanionApi = {
     files(): Promise<string[]>;
     open(path: string): Promise<void>;
     reveal(path: string): Promise<void>;
+    filePath(file: File): string;
+    measureCopy(sourcePaths: string[]): Promise<CopyMeasurement>;
+    copyInto(destinationPath: string, sourcePaths: string[]): Promise<CopyResult>;
   };
   terminal: {
     start(request?: TerminalSessionStartRequest): Promise<TerminalSessionStarted>;
@@ -157,7 +163,16 @@ const api: ClaudeCompanionApi = {
     delete: (path) => ipcRenderer.invoke(COMPANION_IPC.pathDelete, path),
     files: () => ipcRenderer.invoke(COMPANION_IPC.pathFiles),
     open: (path) => ipcRenderer.invoke(COMPANION_IPC.pathOpen, path),
-    reveal: (path) => ipcRenderer.invoke(COMPANION_IPC.pathReveal, path)
+    reveal: (path) => ipcRenderer.invoke(COMPANION_IPC.pathReveal, path),
+    // A File is a DOM object and does not survive contextBridge, so the renderer
+    // calls this per dropped file and sends only the resulting path strings.
+    // File.path was removed in Electron 32; webUtils is the replacement and is
+    // one of the few modules a sandboxed preload still gets.
+    filePath: (file) => webUtils.getPathForFile(file),
+    measureCopy: (sourcePaths) =>
+      ipcRenderer.invoke(COMPANION_IPC.pathCopyMeasure, sourcePaths),
+    copyInto: (destinationPath, sourcePaths) =>
+      ipcRenderer.invoke(COMPANION_IPC.pathCopyInto, destinationPath, sourcePaths)
   },
   terminal: {
     start: (request = {}) => ipcRenderer.invoke(COMPANION_IPC.terminalStart, request),

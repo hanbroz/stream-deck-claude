@@ -14,9 +14,11 @@ import { diag, emitDiagLine } from "../shared/diag";
 import {
   createContainedDirectory,
   createContainedFile,
+  copyIntoContainedDirectory,
   deleteContainedPath,
   listContainedDirectory,
   listProjectFilesRecursive,
+  measureCopySources,
   openContainedPath,
   revealContainedPath,
   resolveContainedDirectory,
@@ -87,6 +89,13 @@ function optionalString(value: unknown, label: string): string | undefined {
     return undefined;
   }
   return requireString(value, label);
+}
+
+function requireStringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw new Error(`${label} must be an array of strings`);
+  }
+  return value as string[];
 }
 
 function optionalImageDataUrl(value: unknown): string | undefined {
@@ -261,6 +270,20 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   deps.ipcMain.handle(COMPANION_IPC.pathReveal, async (_event: SenderEvent, path: unknown) => {
     await revealContainedPath(deps.rootPath, requireString(path, "path"), deps.shell);
   });
+  // Sources come from a drag out of Windows Explorer, so they are outside the
+  // root by design and are not contained-checked. Only the destination is.
+  deps.ipcMain.handle(COMPANION_IPC.pathCopyMeasure, async (_event: SenderEvent, sourcePaths: unknown) =>
+    measureCopySources(requireStringArray(sourcePaths, "sourcePaths"))
+  );
+  deps.ipcMain.handle(
+    COMPANION_IPC.pathCopyInto,
+    async (_event: SenderEvent, destinationPath: unknown, sourcePaths: unknown) =>
+      copyIntoContainedDirectory(
+        deps.rootPath,
+        requireString(destinationPath, "destinationPath"),
+        requireStringArray(sourcePaths, "sourcePaths")
+      )
+  );
   deps.ipcMain.handle(COMPANION_IPC.terminalOpenFolder, async (_event: SenderEvent, path: unknown) => {
     openTerminal(await resolveContainedDirectory(deps.rootPath, requireString(path, "path")));
   });
