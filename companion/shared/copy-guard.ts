@@ -72,5 +72,10 @@ export function copyConfirmMessage(measurement: CopyMeasurement, destinationName
   }`;
   // Naming the destination folder means a drop onto the wrong row is caught by
   // the same dialog that catches a drop that is too big.
-  return `파일 ${count}(${size})를 '${destinationName}' 폴더로 복사합니다. 계속할까요?`;
+  //
+  // The object particle changes with `truncated`: "...(1.5KB)를" ends in the
+  // English unit "KB", which takes 를, but "...(1.5KB 이상)을" ends in "이상",
+  // which has a batchim and takes 을.
+  const particle = measurement.truncated ? "을" : "를";
+  return `파일 ${count}(${size})${particle} '${destinationName}' 폴더로 복사합니다. 계속할까요?`;
 }

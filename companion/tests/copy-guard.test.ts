@@ -68,15 +68,15 @@ describe("copyResultMessage", () => {
 });
 
 describe("copyConfirmMessage", () => {
-  it("states the exact count and size for an untruncated measurement", () => {
+  it("states the exact count and size for an untruncated measurement, with the 를 particle", () => {
     expect(
       copyConfirmMessage({ fileCount: 5, totalBytes: 1536, truncated: false }, "project")
     ).toBe("파일 5개(1.5KB)를 'project' 폴더로 복사합니다. 계속할까요?");
   });
 
-  it("adds the 이상 suffix to both count and size when truncated", () => {
+  it("adds the 이상 suffix to both count and size when truncated, with the 을 particle", () => {
     expect(
       copyConfirmMessage({ fileCount: 5, totalBytes: 1536, truncated: true }, "project")
-    ).toBe("파일 5개 이상(1.5KB 이상)를 'project' 폴더로 복사합니다. 계속할까요?");
+    ).toBe("파일 5개 이상(1.5KB 이상)을 'project' 폴더로 복사합니다. 계속할까요?");
   });
 });
