@@ -71,6 +71,7 @@ import {
   needsCopyConfirm,
   type CopyMeasurement
 } from "../shared/copy-guard";
+import { canRestoreToComposer, takeQueuedEntry } from "../shared/send-queue";
 
 type SessionStatus = {
   state: "idle" | "running" | "waiting" | "ended";
@@ -1849,6 +1850,7 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
     if (!queuedTurn && claudeStatus.dataset.busy === "true") {
       const turn = appendTurn("user", composerTurnLabel(intent));
       turn.element.classList.add("is-queued");
+      attachQueuedBadge(turn);
       pendingSendQueue.push({ intent, turn });
       showToast("응답 생성 중 — 다음 작업으로 예약했습니다.");
       return;
@@ -1860,6 +1862,7 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
     finishAssistantTurn();
     if (queuedTurn) {
       queuedTurn.element.classList.remove("is-queued");
+      removeQueuedBadge(queuedTurn);
     } else {
       appendTurn("user", composerTurnLabel(intent));
     }
@@ -1963,10 +1966,91 @@ function releasePendingSends(reason: string): void {
   const released = pendingSendQueue.splice(0, pendingSendQueue.length);
   for (const { turn } of released) {
     turn.element.classList.add("is-unsent");
+    markQueuedBadgeUnsent(turn);
   }
   appendTurn(
     "notice",
     `${reason} 예약해 둔 메시지 ${released.length}건은 전송되지 않았습니다. 다시 보내주세요.`
+  );
+}
+
+/**
+ * The queued badge, as a real element.
+ *
+ * It used to be `.turn__body::before` with a CSS `content:` string, which is
+ * why there was no way to cancel: a pseudo-element is not in the DOM and
+ * receives no clicks. A user turn is painted exactly once — only assistant
+ * turns stream — so nothing repaints over this later.
+ */
+function attachQueuedBadge(turn: Turn): void {
+  const badge = document.createElement("div");
+  badge.className = "turn__queued-badge";
+
+  const label = document.createElement("span");
+  label.className = "turn__queued-label";
+  label.textContent = "다음 작업 예약";
+
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "turn__queued-cancel";
+  cancel.setAttribute("aria-label", "예약 취소");
+  cancel.textContent = "✕";
+  cancel.addEventListener("click", () => cancelQueuedSend(turn));
+
+  badge.append(label, cancel);
+  turn.body.prepend(badge);
+}
+
+/** The message left the queue toward Claude: the badge has nothing left to say. */
+function removeQueuedBadge(turn: Turn): void {
+  turn.body.querySelector(".turn__queued-badge")?.remove();
+}
+
+/**
+ * The turn failed, so the queue was released without sending. Keep the badge as
+ * the record that this never went out, but drop the button — there is no longer
+ * a queue entry to cancel.
+ */
+function markQueuedBadgeUnsent(turn: Turn): void {
+  turn.body.querySelector(".turn__queued-cancel")?.remove();
+  const label = turn.body.querySelector(".turn__queued-label");
+  if (label) {
+    label.textContent = "전송되지 않음";
+  }
+}
+
+/** Drop a turn from the transcript entirely, model and DOM together. */
+function removeTurn(turn: Turn): void {
+  const index = turns.indexOf(turn);
+  if (index >= 0) {
+    turns.splice(index, 1);
+  }
+  turn.element.remove();
+}
+
+/** Hand a cancelled message back to the composer, unless that would clobber a draft. */
+function restoreComposer(intent: SubmitIntent): boolean {
+  if (!canRestoreToComposer(promptInput.value, composer.images.length)) {
+    return false;
+  }
+  promptInput.value = intent.text;
+  composer = addComposerImages(setComposerText(composer, intent.text), intent.images);
+  renderImagePreview();
+  promptInput.focus();
+  promptInput.setSelectionRange(intent.text.length, intent.text.length);
+  return true;
+}
+
+function cancelQueuedSend(turn: Turn): void {
+  const entry = takeQueuedEntry(pendingSendQueue, turn);
+  if (!entry) {
+    return; // already flushed — the click lost the race with the send
+  }
+  removeTurn(turn);
+  showToast(
+    restoreComposer(entry.intent)
+      ? "예약을 취소하고 작성기로 되돌렸습니다."
+      : "예약을 취소했습니다."
   );
 }
 

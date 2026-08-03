@@ -700,27 +700,41 @@ body.is-split-resizing.is-resizing-rows * {
   white-space: pre-wrap;
 }
 
-/* Typed while Claude was still generating: on screen, waiting its turn. The
-   badge is CSS-only because a user turn deliberately carries no header. */
+/* Typed while Claude was still generating: on screen, waiting its turn. */
 .turn--user.is-queued .turn__body {
   border-style: dashed;
   color: #a9a9a9;
 }
 
-.turn--user.is-queued .turn__body::before {
-  content: "다음 작업 예약";
-  display: block;
+/* The badge is a real element, not a ::before, because it carries the cancel
+   button and a pseudo-element receives no clicks. */
+.turn__queued-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 6px;
   color: var(--accent, #d97757);
   font-size: 11px;
   letter-spacing: 0.04em;
 }
 
-/* The queue never flushed because the turn failed. Keeps the dashed body of
-   is-queued and only relabels it, so the message is not mistaken for sent.
-   Must stay after the is-queued rule: same specificity, later wins. */
-.turn--user.is-unsent .turn__body::before {
-  content: "전송되지 않음";
+.turn__queued-cancel {
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.turn__queued-cancel:hover {
+  color: var(--accent-strong, #c15f3c);
+}
+
+/* The queue never flushed because the turn failed. Keeps the dashed body and
+   only recolours the badge, so the message is not mistaken for sent. */
+.turn--user.is-unsent .turn__queued-badge {
   color: #c8553d;
 }
 
