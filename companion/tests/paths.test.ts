@@ -35,6 +35,14 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+function fakeShell() {
+  return {
+    openPath: vi.fn().mockResolvedValue(""),
+    showItemInFolder: vi.fn(),
+    trashItem: vi.fn().mockResolvedValue(undefined)
+  };
+}
+
 describe("resolveContainedPath", () => {
   it("allows paths inside the configured root", () => {
     expect(resolveContainedPath(root, "project")).toBe(path.join(root, "project"));
@@ -201,20 +209,40 @@ describe("contained path operations", () => {
   });
 
   it("opens and reveals only contained targets", async () => {
-    const shell = {
-      openPath: vi.fn().mockResolvedValue(""),
-      showItemInFolder: vi.fn(),
-      trashItem: vi.fn().mockResolvedValue(undefined)
-    };
+    const shell = fakeShell();
 
     await openContainedPath(root, ".", shell);
-    await revealContainedPath(root, ".", shell);
 
     expect(shell.openPath).toHaveBeenCalledWith(root);
-    expect(shell.showItemInFolder).toHaveBeenCalledWith(root);
     await expect(openContainedPath(root, "..", shell)).rejects.toThrow(
       "Path is outside the allowed root"
     );
+    await expect(revealContainedPath(root, "..", shell)).rejects.toThrow(
+      "Path is outside the allowed root"
+    );
+  });
+
+  // Reveal means "show me this". For a file that is the parent folder with the
+  // file selected, but showItemInFolder always opens the target's CONTAINER, so
+  // on a folder it opened the folder's parent instead of the folder itself.
+  it("reveals a directory by opening it, not by selecting it in its parent", async () => {
+    const shell = fakeShell();
+
+    await revealContainedPath(root, ".", shell);
+
+    expect(shell.openPath).toHaveBeenCalledWith(root);
+    expect(shell.showItemInFolder).not.toHaveBeenCalled();
+  });
+
+  it("reveals a file by selecting it in its parent folder", async () => {
+    const shell = fakeShell();
+    const file = path.join(root, "note.txt");
+    await writeFile(file, "n", "utf8");
+
+    await revealContainedPath(root, "note.txt", shell);
+
+    expect(shell.showItemInFolder).toHaveBeenCalledWith(file);
+    expect(shell.openPath).not.toHaveBeenCalled();
   });
 
   it("lists project files recursively with ignored directories and a cap", async () => {

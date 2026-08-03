@@ -382,12 +382,26 @@ export async function openContainedPath(
   }
 }
 
-export function revealContainedPath(
+/**
+ * Show a tree entry in Windows Explorer.
+ *
+ * `showItemInFolder` opens the target's CONTAINER and selects the target, which
+ * is what reveal means for a file. On a folder it opened the folder's parent —
+ * revealing the project root landed the user in its grandparent with the project
+ * merely highlighted. A folder reveals by being opened.
+ */
+export async function revealContainedPath(
   root: string,
   requestedPath: string,
   shell: PathShell
 ): Promise<void> {
-  return resolveExistingContainedPath(root, requestedPath).then((target) => {
-    shell.showItemInFolder(target);
-  });
+  const target = await resolveExistingContainedPath(root, requestedPath);
+  if ((await stat(target)).isDirectory()) {
+    const error = await shell.openPath(target);
+    if (error) {
+      throw new Error(error);
+    }
+    return;
+  }
+  shell.showItemInFolder(target);
 }
