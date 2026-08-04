@@ -202,7 +202,15 @@
                   disabled
                 >Apply</button>
               </div>
-              <button id="clear-session" type="button" class="composer__clear" title="새 대화 시작 (/clear)">Clear</button>
+              <div id="git-branch" class="git-branch" aria-live="polite">
+                <svg class="git-branch__icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="6" cy="6" r="2.4" />
+                  <circle cx="6" cy="18" r="2.4" />
+                  <circle cx="17" cy="7" r="2.4" />
+                  <path d="M6 8.4v7.2M17 9.4a5 5 0 0 1-5 5H8.4" />
+                </svg>
+                <span id="git-branch-name" class="git-branch__name">확인 중</span>
+              </div>
             </div>
           </footer>
         </section>

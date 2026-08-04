@@ -4,7 +4,13 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { applySlashCommand, filterSlashCommands, type SlashCommand } from "../shared/slash-commands";
+import {
+  applySlashCommand,
+  filterSlashCommands,
+  isTerminalHandoffCommand,
+  TERMINAL_HANDOFF_COMMANDS,
+  type SlashCommand
+} from "../shared/slash-commands";
 import { listSlashCommands } from "../main/slash-commands";
 
 const COMMANDS: SlashCommand[] = [
@@ -78,16 +84,39 @@ describe("listSlashCommands", () => {
     const commands = await listSlashCommands({ configDir, projectRoot });
     const byName = new Map(commands.map((command) => [command.name, command]));
 
-    // Print-mode-capable builtins carry plain descriptions…
-    for (const name of ["clear", "usage", "cost", "context", "reload-skills", "model"]) {
+    // Print-mode-capable builtins carry plain descriptions. /compact runs in
+    // print mode (verified against the CLI); /plugin and /mcp are served by
+    // `claude plugin|mcp` through the Companion's CLI bridge.
+    // /reload-skills and /reload-plugins are served by the Companion itself:
+    // a fresh --print process per message already re-reads both from disk.
+    for (const name of [
+      "clear", "usage", "cost", "context", "model", "compact", "plugin", "mcp",
+      "reload-skills", "reload-plugins"
+    ]) {
       expect(byName.get(name)?.description).not.toContain("터미널 전용");
     }
     // …terminal-only ones are tagged but still listed (terminal parity).
-    for (const name of ["help", "config", "compact", "resume", "vim", "status"]) {
+    for (const name of ["help", "config", "resume", "vim", "status"]) {
       expect(byName.get(name)?.description).toContain("터미널 전용");
     }
     expect(commands.length).toBeGreaterThanOrEqual(35);
     expect(commands.every((command) => command.source === "builtin")).toBe(true);
+  });
+
+  it("hands off only terminal-only commands whose result is conversation-independent", async () => {
+    const commands = await listSlashCommands({ configDir, projectRoot });
+    const byName = new Map(commands.map((command) => [command.name, command]));
+
+    // Every handoff target must still exist and still be terminal-only: if one
+    // ever becomes print-capable, it should be sent to Claude, not the shell.
+    for (const name of TERMINAL_HANDOFF_COMMANDS) {
+      expect(byName.get(name)?.description, name).toContain("터미널 전용");
+    }
+    // Conversation-scoped commands must never be handed off — a terminal
+    // session is a different conversation, so they would act on the wrong one.
+    for (const name of ["export", "rewind", "copy", "todos", "add-dir", "ide", "resume", "vim"]) {
+      expect(isTerminalHandoffCommand(name), name).toBe(false);
+    }
   });
 
   it("lists skills and installed plugin commands/skills with namespaced names", async () => {

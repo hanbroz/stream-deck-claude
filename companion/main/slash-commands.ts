@@ -24,7 +24,6 @@ const TERMINAL_ONLY_BUILTINS: Array<[string, string]> = [
   ["add-dir", "작업 디렉터리 추가"],
   ["agents", "에이전트 관리"],
   ["bug", "버그 리포트 전송"],
-  ["compact", "대화 컨텍스트 압축"],
   ["config", "설정 열기"],
   ["copy", "마지막 응답 클립보드 복사"],
   ["doctor", "설치 상태 진단"],
@@ -35,15 +34,12 @@ const TERMINAL_ONLY_BUILTINS: Array<[string, string]> = [
   ["install-github-app", "GitHub 앱 설치"],
   ["login", "계정 로그인"],
   ["logout", "로그아웃"],
-  ["mcp", "MCP 서버 관리"],
   ["memory", "메모리(CLAUDE.md) 편집"],
   ["output-style", "출력 스타일 변경"],
   ["permissions", "권한 관리"],
-  ["plugin", "플러그인 관리"],
   ["pr-comments", "PR 코멘트 조회"],
   ["privacy-settings", "개인정보 설정"],
   ["release-notes", "릴리스 노트"],
-  ["reload-plugins", "플러그인 다시 로드 (Companion은 매 메시지 자동 재로드)"],
   ["resume", "이전 대화 재개 (Companion은 Code Start가 자동 재개)"],
   ["rewind", "체크포인트 되감기"],
   ["statusline", "상태줄 설정"],
@@ -56,11 +52,25 @@ const TERMINAL_ONLY_BUILTINS: Array<[string, string]> = [
 
 const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "clear", description: "새 대화 시작", source: "builtin" },
+  // TUI-only as slash commands, but Claude Code also ships them as real
+  // non-interactive subcommands, so the Companion runs `claude <name> …` and
+  // prints the result. Kept in sync with BRIDGED_CLI_COMMANDS.
+  { name: "plugin", description: "플러그인·마켓플레이스 관리 (CLI 실행)", source: "builtin" },
+  { name: "mcp", description: "MCP 서버 관리 (CLI 실행)", source: "builtin" },
   // Probed working in print mode:
+  // /compact declares supportsNonInteractive in the CLI and was verified end to
+  // end: it summarizes, fires the SessionStart:compact hooks, and returns an
+  // EMPTY result — the renderer posts its own notice so the turn is not blank.
+  { name: "compact", description: "대화 컨텍스트 압축 (요약에 1분 내외)", source: "builtin" },
   { name: "usage", description: "구독 사용량 한도 확인", source: "builtin" },
   { name: "cost", description: "현재 세션 비용·사용량", source: "builtin" },
   { name: "context", description: "컨텍스트 사용량 분석", source: "builtin" },
-  { name: "reload-skills", description: "스킬 목록 다시 로드", source: "builtin" },
+  // Handled by the Companion itself. Each message spawns a fresh `claude
+  // --print`, so Claude re-reads skills and plugins from disk every time and
+  // has nothing to reload; what can go stale is this app's own "/" inventory,
+  // which normally only rescans every 30s. These force that rescan now.
+  { name: "reload-skills", description: "스킬·명령 목록 즉시 다시 읽기", source: "builtin" },
+  { name: "reload-plugins", description: "플러그인·명령 목록 즉시 다시 읽기", source: "builtin" },
   // Read-only in this architecture: per-message runs take the model from the
   // composer dropdown, so /model <name> would not stick past one reply.
   { name: "model", description: "현재 모델 확인 (변경은 하단 Model 선택)", source: "builtin" },

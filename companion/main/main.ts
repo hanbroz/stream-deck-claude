@@ -265,6 +265,7 @@ async function start(): Promise<void> {
         ipcMain,
         window: createdWindow,
         rootPath: runtimeEnv.rootPath,
+        claudePath: runtimeEnv.claudePath,
         ptyManager,
         sessionStatus: () => readCompanionSessionStatus({
           dataDir: runtimeEnv.usageDataDir,

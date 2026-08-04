@@ -9,6 +9,7 @@ import {
 } from "./labels";
 import { parseModelId, REPRESENTATIVE_MODEL_ID } from "../shared/model-name";
 import type { ClaudeCompanionApi } from "../preload";
+import type { GitBranchInfo } from "../main/git-branch";
 import {
   CLAUDE_EFFORTS,
   CLAUDE_MODELS,
@@ -49,6 +50,8 @@ import type { ClaudeEvent, ClaudePhase } from "../shared/claude-stream";
 import {
   applySlashCommand,
   filterSlashCommands,
+  isBridgedCliCommand,
+  isTerminalHandoffCommand,
   type SlashCommand
 } from "../shared/slash-commands";
 import { applyMention, filterMentionFiles, mentionQueryAt } from "../shared/mention";
@@ -135,7 +138,8 @@ const applyModelButton = mustElement<HTMLButtonElement>("apply-model");
 const commandMenu = mustElement<HTMLElement>("command-menu");
 const mentionMenu = mustElement<HTMLElement>("mention-menu");
 const promptHighlight = mustElement<HTMLElement>("prompt-highlight");
-const clearSessionButton = mustElement<HTMLButtonElement>("clear-session");
+const gitBranchElement = mustElement<HTMLElement>("git-branch");
+const gitBranchName = mustElement<HTMLElement>("git-branch-name");
 const windowMinimize = mustElement<HTMLButtonElement>("window-minimize");
 const windowMaximize = mustElement<HTMLButtonElement>("window-maximize");
 const windowClose = mustElement<HTMLButtonElement>("window-close");
@@ -150,7 +154,8 @@ const agentLive = mustElement<HTMLElement>("agent-live");
 
 const buildVersion = companionBuildVersion();
 titleBuildVersion.textContent = buildVersion;
-document.title = `Code Deck Companion ${buildVersion}`;
+// The window title is set from the project name in updateProjectName, so that
+// several Companions open at once stay apart in the taskbar and Alt+Tab.
 
 // Renderer diagnostics are invisible when Code Start launches with stdio
 // "ignore", so mirror them into the main process log alongside the console.
@@ -179,6 +184,11 @@ let resumeRecoveryPromise: Promise<void> | undefined;
 let terminalSessionId: string | undefined;
 let terminalStarting = false;
 let sessionStatusTimer: ReturnType<typeof setInterval> | undefined;
+// /compact runs silently for a long time — SessionStart hooks alone can take
+// minutes before the summary even starts — and then answers with an EMPTY
+// result. Without a live placeholder the turn shows nothing at all and reads
+// as if the command was ignored. Holds that placeholder while the run is out.
+let compactingTurn: Turn | undefined;
 let lastSessionState: SessionStatus["state"] = "idle";
 // Derived from the stream's own usage, because --print never writes a status line.
 let lastContextPercentage: number | undefined;
@@ -428,6 +438,9 @@ api?.claude.onData((message) => {
 
 api?.claude.onExit((message) => {
   abandonedClaudeSessions.delete(message.sessionId);
+  // A killed session emits no phase boundary, so a /compact in flight would
+  // leave its "compacting…" note on screen for good.
+  discardCompactingPlaceholder();
   if (activeClaudeSession?.sessionId === message.sessionId) {
     renderStatus({ state: "ended", cwd: activeClaudeSession.cwd });
     activeClaudeSession = undefined;
@@ -860,7 +873,9 @@ consoleElement.addEventListener("click", (event) => {
     (option as HTMLButtonElement).disabled = true;
   });
   button.classList.add("is-chosen");
-  void sendIntent({ text: answer, images: [] });
+  // The label is whatever the model wrote, so it is sent as an answer only —
+  // never as a local command. See SubmitIntent.origin.
+  void sendIntent({ text: answer, images: [], origin: "model" });
 });
 
 // The dropdowns only stage a selection; nothing takes effect until Apply, which
@@ -896,10 +911,6 @@ modelSelect.addEventListener("change", refreshApplyPending);
 effortSelect.addEventListener("change", refreshApplyPending);
 applyModelButton.addEventListener("click", () => {
   void applyModelSelection();
-});
-
-clearSessionButton.addEventListener("click", () => {
-  void clearSession();
 });
 
 promptInput.addEventListener("paste", (event) => {
@@ -1165,6 +1176,13 @@ async function initialize(): Promise<void> {
   sessionStatusTimer = setInterval(() => {
     void refreshSessionStatus();
   }, 1_000);
+  // Branches change from the embedded terminal, so the indicator has to poll.
+  // .git/HEAD is one small read, but it is far less volatile than the session
+  // status above — 5s keeps it current without a read every tick.
+  void refreshGitBranch();
+  setInterval(() => {
+    void refreshGitBranch();
+  }, 5_000);
   // VS Code-style explorer: the header names the project FOLDER and the tree
   // lists its contents directly — no synthetic root row duplicating the name.
   const rootChildren = entriesToNodes((await api?.paths.list(projectRoot)) ?? []);
@@ -1737,6 +1755,8 @@ async function interruptClaude(): Promise<void> {
   }
   const interrupted = await api.claude.interrupt(activeClaudeSession.sessionId);
   if (interrupted) {
+    // The process was killed mid-run — nothing was compacted.
+    discardCompactingPlaceholder();
     finishAssistantTurn();
     renderClaudeStatus("waiting");
     showToast("응답을 중단했습니다.");
@@ -1854,6 +1874,114 @@ function composerTurnLabel(intent: SubmitIntent): string {
 }
 
 /**
+ * Re-read the "/" inventory now rather than waiting out the 30s rescan window,
+ * so a plugin or skill installed seconds ago is selectable immediately.
+ */
+async function reloadCommandInventory(): Promise<void> {
+  let commands: SlashCommand[] | undefined;
+  try {
+    commands = await api?.claude.commands();
+  } catch (error) {
+    // Left unhandled this surfaced as "Message was not sent", which is the
+    // wrong story: nothing was being sent.
+    appendTurn(
+      "error",
+      `명령 목록을 다시 읽지 못했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`
+    );
+    return;
+  }
+  // An empty result is far more likely a failed scan than a project with no
+  // commands at all — keep what we have rather than blanking the menu and
+  // then sitting on that blank for the 30s rescan window.
+  if (!commands || commands.length === 0) {
+    appendTurn("error", "명령 목록을 다시 읽지 못했습니다 (결과가 비어 있음). 기존 목록을 유지합니다.");
+    return;
+  }
+  slashCommands = commands;
+  commandsScannedAtMs = Date.now();
+  const count = (source: SlashCommand["source"]): number =>
+    commands.filter((command) => command.source === source).length;
+  appendTurn(
+    "notice",
+    `명령 목록을 다시 읽었습니다 — 총 ${commands.length}개 (플러그인 ${count("plugin")}, ` +
+      `프로젝트 ${count("project")}, 사용자 ${count("user")}, 기본 ${count("builtin")}). ` +
+      `Claude 쪽은 메시지마다 새 프로세스가 디스크에서 다시 읽으므로 별도 재로드가 필요 없습니다.`
+  );
+}
+
+/**
+ * Open the TERMINAL tab and start an interactive Claude there with the slash
+ * command already applied. `claude /config` resolves the command before any
+ * model call, so the panel opens immediately and costs nothing.
+ *
+ * Only the allowlisted command NAME is written — no text the user typed
+ * reaches the shell, so there is nothing to escape.
+ */
+async function handOffToTerminal(name: string): Promise<void> {
+  const reusedTerminal = terminalSessionId !== undefined;
+  await setTerminalSplit(true, projectRoot);
+  if (!api || !terminalSessionId) {
+    appendTurn("error", "TERMINAL 탭을 열지 못했습니다.");
+    return;
+  }
+  const line = `claude /${name}`;
+  // A shell this handoff just started is certainly sitting at its prompt. An
+  // existing terminal may already be running something — including a Claude
+  // TUI, where a stray Enter would send this line to the model as a message —
+  // so there the line is only staged and the user presses Enter.
+  api.terminal.write(terminalSessionId, reusedTerminal ? line : `${line}\r`);
+  // terminal.write is fire-and-forget (ipcRenderer.send), so nothing here can
+  // confirm the shell accepted the line — the wording must not claim it did.
+  appendTurn(
+    "notice",
+    reusedTerminal
+      ? `TERMINAL 탭에 \`${line}\` 을 입력해 뒀습니다. 터미널이 비어 있는지 확인하고 Enter를 누르세요.`
+      : `TERMINAL 탭으로 \`${line}\` 을 보냈습니다. 이 대화와는 별개의 새 세션이며, ` +
+        `프롬프트가 아직 준비 중이었다면 입력이 표시되지 않을 수 있으니 탭을 확인하세요.`
+  );
+}
+
+/**
+ * Run `claude <name> <args>` and show its output in place of a model reply.
+ * The turn is appended first and repainted on completion, so a slow command
+ * (a marketplace fetch) does not look like the app swallowed the input.
+ */
+// Why the output cannot be trusted as the whole answer. Without these a
+// timeout's partial listing reads exactly like a complete one.
+const CLI_FAILURE_NOTES: Record<string, string> = {
+  timeout:
+    "60초 안에 끝나지 않아 중단했습니다. 위 출력은 중단 시점까지의 일부이며 작업이 끝나지 않았을 수 있습니다. " +
+    "오래 걸리거나 입력을 요구하는 명령은 TERMINAL 탭에서 직접 실행하세요.",
+  truncated: "출력이 너무 길어 1MB에서 잘렸습니다. 전체를 보려면 TERMINAL 탭에서 실행하세요.",
+  spawn: "claude 실행 파일을 찾지 못했거나 실행할 수 없습니다. PATH 설정을 확인하세요."
+};
+
+async function runBridgedCommand(name: string, argumentText: string): Promise<void> {
+  const turn = appendTurn("assistant", `\`claude ${name}\` 실행 중…`);
+  try {
+    const result = await api?.cli?.run?.(name, argumentText);
+    if (!result) {
+      turn.text = "CLI를 실행할 수 없습니다.";
+      return;
+    }
+    // Fenced so the CLI's own alignment survives the Markdown renderer.
+    const body = result.output || (result.ok ? "(출력 없음)" : "실행에 실패했습니다.");
+    const heading = result.ok ? "" : `\`claude ${name}\` 실행 실패\n\n`;
+    const note = result.failure ? CLI_FAILURE_NOTES[result.failure] : undefined;
+    turn.text = `${heading}\`\`\`\n${body}\n\`\`\`${note ? `\n\n> ${note}` : ""}`;
+  } catch (error) {
+    // The IPC call itself can reject (no handler registered, main gone).
+    // Without this the "실행 중…" note would sit on screen for good.
+    turn.text = `\`claude ${name}\` 을(를) 실행할 수 없습니다: ${
+      error instanceof Error ? error.message : "알 수 없는 오류"
+    }`;
+  } finally {
+    paintTurn(turn);
+    scrollConsoleToBottom();
+  }
+}
+
+/**
  * Send a message, or queue it when Claude is still generating.
  *
  * `queuedTurn` is the turn a queued message is already displayed in: it is
@@ -1878,17 +2006,55 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
       removeQueuedBadge(queuedTurn);
     }
 
+    // Local commands are privileged — they run CLI subcommands, write into a
+    // live shell, or reset the conversation — so only text the USER typed may
+    // reach them. A question-card option is written by the model.
+    const localCommandsAllowed = intent.origin !== "model";
+
     // /clear is the Companion's own command: start a fresh conversation
-    // instead of sending the text to Claude.
-    if (intent.text.trim() === "/clear" && intent.images.length === 0) {
+    // instead of sending the text to Claude. It drops the queue itself.
+    if (localCommandsAllowed && intent.text.trim() === "/clear" && intent.images.length === 0) {
       await clearSession();
+      return;
+    }
+
+    // /reload-skills and /reload-plugins are the Companion's own too. Claude
+    // needs no reload here: every message spawns a fresh `claude --print` that
+    // reads skills and plugins off disk, so the only thing that can lag behind
+    // an install is this app's "/" inventory.
+    const reloadCommand = intent.text.trim();
+    if (
+      localCommandsAllowed &&
+      (reloadCommand === "/reload-skills" || reloadCommand === "/reload-plugins") &&
+      intent.images.length === 0
+    ) {
+      finishAssistantTurn();
+      if (!queuedTurn) {
+        appendTurn("user", intent.text);
+      }
+      await reloadCommandInventory();
+      // No run starts here, so no phase event will come to release the queue.
+      flushNextPendingSend();
       return;
     }
 
     // Terminal-only builtins never reach print mode; answer locally and
     // instantly instead of paying a CLI round-trip for a polite refusal.
     const firstToken = intent.text.trim().split(/\s+/u)[0] ?? "";
-    if (firstToken.startsWith("/") && intent.images.length === 0) {
+    if (localCommandsAllowed && firstToken.startsWith("/") && intent.images.length === 0) {
+      // /plugin and /mcp only look terminal-only: the CLI serves them as real
+      // non-interactive subcommands, so run those and print what they said.
+      const bridged = firstToken.slice(1);
+      if (isBridgedCliCommand(bridged)) {
+        finishAssistantTurn();
+        if (!queuedTurn) {
+          appendTurn("user", intent.text);
+        }
+        await runBridgedCommand(bridged, intent.text.trim().slice(firstToken.length).trim());
+        flushNextPendingSend();
+        return;
+      }
+
       const command = slashCommands.find((entry) => `/${entry.name}` === firstToken);
       if (command?.description?.includes("터미널 전용")) {
         finishAssistantTurn();
@@ -1898,10 +2064,16 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
           appendTurn("user", intent.text);
         }
         const hint = command.description.replace(/\s*·\s*터미널 전용\s*$/u, "");
-        appendTurn(
-          "assistant",
-          `${firstToken} 명령은 Claude Code 터미널 전용이라 Companion에서는 실행되지 않습니다. (${hint})`
-        );
+        if (isTerminalHandoffCommand(command.name)) {
+          await handOffToTerminal(command.name);
+        } else {
+          appendTurn(
+            "assistant",
+            `${firstToken} 명령은 Claude Code 터미널 전용입니다. (${hint}) 터미널에서 열어도 ` +
+              `이 대화가 아닌 새 대화에 적용되므로 넘기지 않았습니다.`
+          );
+        }
+        flushNextPendingSend();
         return;
       }
     }
@@ -1924,13 +2096,28 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
     // already on screen (its pending marker was cleared above), so only a
     // fresh message needs a new turn appended here.
     finishAssistantTurn();
+    // Respond before the process spawns so Enter feels immediate.
+    renderClaudeStatus("requesting");
+    // Starting a session can wipe the console (a resume of a deleted
+    // transcript clears it), so draw nothing until it is up. When a session
+    // already exists this does not await, so nothing is delayed.
+    if (!activeClaudeSession) {
+      await startClaudeSession();
+    }
     if (!queuedTurn) {
       appendTurn("user", composerTurnLabel(intent));
     }
-    // Respond before the process spawns so Enter feels immediate.
-    renderClaudeStatus("requesting");
-    if (!activeClaudeSession) {
-      await startClaudeSession();
+    // A placeholder from a /compact whose turn never resolved would be
+    // orphaned in the DOM by the assignment below — drop it first.
+    if (compactingTurn) {
+      removeTurn(compactingTurn);
+      compactingTurn = undefined;
+    }
+    if (firstToken === "/compact") {
+      compactingTurn = appendTurn(
+        "notice",
+        "대화 컨텍스트를 압축하는 중입니다… 시작 훅과 요약을 합쳐 수 분 걸릴 수 있습니다."
+      );
     }
 
     if (!api || !activeClaudeSession) {
@@ -1970,6 +2157,9 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
       }
     }
   } catch (error) {
+    // The send never got started, so a /compact placeholder raised just above
+    // would otherwise outlive this turn and be resolved as success later.
+    discardCompactingPlaceholder();
     const reason = error instanceof Error ? error.message : "unknown error";
     appendConsoleOutput(`[Claude Code error] Message was not sent: ${reason}\n`);
     showToast("Claude message was not sent.");
@@ -2087,6 +2277,32 @@ function removeTurn(turn: Turn): void {
     turns.splice(index, 1);
   }
   turn.element.remove();
+}
+
+/**
+ * Drop the /compact placeholder without claiming anything happened. Every path
+ * that ends the turn WITHOUT a real compaction goes through here — a stream
+ * error, an auth wall, an interrupt, or the session being killed — because a
+ * placeholder left behind is later resolved as success by the next `waiting`.
+ */
+function discardCompactingPlaceholder(): void {
+  if (!compactingTurn) {
+    return;
+  }
+  removeTurn(compactingTurn);
+  compactingTurn = undefined;
+}
+
+/**
+ * Release the next queued message, if any. A turn boundary releases one — and
+ * so must every local-command branch that returns without starting a run, or
+ * the queue stalls with no further phase event ever coming to wake it.
+ */
+function flushNextPendingSend(): void {
+  const queued = pendingSendQueue.shift();
+  if (queued) {
+    setTimeout(() => { void sendIntent(queued.intent, queued.turn); }, 0);
+  }
 }
 
 /** Hand a cancelled message back to the composer, unless that would clobber a draft. */
@@ -2362,6 +2578,25 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       // after the reply ends, and the main process closes their rows when the
       // run actually dies.
       if (event.phase === "waiting" || event.phase === "ready") {
+        // Only a real run ending emits `waiting`; `ready` is synthesised by
+        // clear() and interrupt(), where nothing was compacted. Resolving on
+        // `ready` declared success for a compaction the user had just aborted.
+        //
+        // Checked before finishAssistantTurn clears the handle, so the empty
+        // reply that a real compaction gives can be told apart from a spoken
+        // one like "Not enough messages to compact."
+        if (compactingTurn && event.phase === "waiting") {
+          const placeholder = compactingTurn;
+          compactingTurn = undefined;
+          if (activeAssistantTurn) {
+            // The CLI answered in words; its own message says it better.
+            removeTurn(placeholder);
+          } else {
+            placeholder.text =
+              "대화 컨텍스트를 압축했습니다. 다음 메시지부터 CTX 사용량이 줄어듭니다.";
+            paintTurn(placeholder);
+          }
+        }
         finishAssistantTurn();
         // A turn boundary is the safe moment to hand a finished batch over to
         // the console; nothing is mid-render here.
@@ -2369,11 +2604,8 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       }
       renderClaudeStatus(event.phase, event.detail);
       // The turn is over: flush the message the user queued mid-generation.
-      if ((event.phase === "waiting" || event.phase === "ready") && pendingSendQueue.length > 0) {
-        const queued = pendingSendQueue.shift();
-        if (queued) {
-          setTimeout(() => { void sendIntent(queued.intent, queued.turn); }, 0);
-        }
+      if (event.phase === "waiting" || event.phase === "ready") {
+        flushNextPendingSend();
       }
     } else if (event.kind === "context") {
       diag("renderer.context", { usedTokens: event.usedTokens, windowTokens: event.windowTokens });
@@ -2385,6 +2617,9 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
     } else if (event.kind === "agent") {
       handleAgentEvent(event);
     } else if (event.kind === "login") {
+      // Nothing was compacted; the run stopped at the auth wall. A `waiting`
+      // still follows this, and it would have declared the compaction done.
+      discardCompactingPlaceholder();
       finishAssistantTurn();
       // The conversation is intact and the session is free again — the account
       // just has to sign in, so the strip goes back to inviting input.
@@ -2392,6 +2627,9 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       releasePendingSends("로그인이 만료되어");
       void offerRelogin();
     } else {
+      // A failed turn never reaches the phase boundary that resolves this, and
+      // the error turn below explains the outcome better than the placeholder.
+      discardCompactingPlaceholder();
       finishAssistantTurn();
       renderClaudeStatus("error", event.message);
       appendTurn("error", event.message);
@@ -2410,6 +2648,10 @@ function updateProjectName(sourcePath: string): void {
   // The explorer header names the project FOLDER (like a VS Code workspace),
   // not the Stream Deck project label — the folder is the tree's top level.
   explorerProjectName.textContent = projectNameFromPath(projectRoot);
+  // The frameless window still reports document.title to the taskbar, Alt+Tab
+  // and window previews, where several Companions are otherwise identical.
+  // Project name leads because those surfaces truncate from the right.
+  document.title = `${sourcePath} - Code Deck Companion ${buildVersion}`;
 }
 
 function showToast(message: string): void {
@@ -2434,6 +2676,39 @@ function showTerminalCopyToast(): void {
     terminalCopyToast.classList.remove("is-visible");
     terminalCopyToast.hidden = true;
   }, 1400);
+}
+
+function renderGitBranch(info: GitBranchInfo | undefined): void {
+  // No answer at all is NOT the same as "not a repository". Claiming the
+  // latter sends the user hunting for a .git that is actually there.
+  if (!info) {
+    gitBranchElement.classList.add("is-untracked");
+    gitBranchElement.classList.remove("is-detached");
+    gitBranchElement.title = "Git 상태를 읽지 못했습니다";
+    gitBranchName.textContent = "확인 중";
+    return;
+  }
+  const detached = info.tracked && info.detached === true;
+  // tracked with no branch: it IS a work tree, HEAD just would not read.
+  const name = info.branch;
+  gitBranchElement.classList.toggle("is-untracked", !info.tracked);
+  gitBranchElement.classList.toggle("is-detached", detached);
+  gitBranchElement.title = !info.tracked
+    ? "이 폴더는 Git 저장소가 아닙니다"
+    : !name
+      ? "Git 저장소이지만 현재 브랜치를 읽지 못했습니다"
+      : detached
+        ? `분리된 HEAD: ${name}`
+        : `현재 Git 브랜치: ${name}`;
+  gitBranchName.textContent = info.tracked ? name ?? "브랜치 불명" : "Git 아님";
+}
+
+async function refreshGitBranch(): Promise<void> {
+  try {
+    renderGitBranch(await api?.git?.branch?.());
+  } catch {
+    // Display only: a failed read leaves the last known branch on screen.
+  }
 }
 
 async function refreshSessionStatus(): Promise<void> {
@@ -2461,6 +2736,7 @@ function clearConsoleOutput(): void {
     repaintHandle = 0;
   }
   activeAssistantTurn = undefined;
+  compactingTurn = undefined;
   turns.length = 0;
   consoleElement.replaceChildren();
   resetAgentBoard();

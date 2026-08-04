@@ -77,6 +77,8 @@ export const COMPANION_IPC = {
   terminalData: "companion:terminal:data",
   terminalExit: "companion:terminal:exit",
   sessionStatus: "companion:session:status",
+  gitBranch: "companion:git:branch",
+  cliRun: "companion:cli:run",
   pathList: "companion:path:list",
   pathCreateDirectory: "companion:path:create-directory",
   pathCreateFile: "companion:path:create-file",

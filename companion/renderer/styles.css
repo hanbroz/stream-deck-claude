@@ -1468,20 +1468,57 @@ body.is-split-resizing.is-resizing-rows * {
   outline: none;
 }
 
-.composer__clear {
-  padding: 5px 14px;
+/* Read-only git indicator: which branch the project folder is on. */
+.git-branch {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
   border: 1px solid #3a3a3a;
   border-radius: 6px;
-  background: transparent;
-  color: #c0c0c0;
-  cursor: pointer;
-  font: inherit;
+  color: var(--muted);
   font-size: 12px;
 }
 
-.composer__clear:hover {
-  border-color: var(--accent);
-  color: #f0f0f0;
+.git-branch__icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+/* The branch name is the point of the whole control, so it carries the accent
+   while the frame around it stays muted. */
+.git-branch__name {
+  overflow: hidden;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Detached HEAD shows a commit id, not a branch — do not dress it up as one. */
+.git-branch.is-detached .git-branch__name {
+  color: var(--text-soft);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-weight: 600;
+}
+
+/* Not a work tree: keep the row in place but drop the emphasis entirely. */
+.git-branch.is-untracked {
+  border-color: transparent;
+}
+
+.git-branch.is-untracked .git-branch__icon,
+.git-branch.is-untracked .git-branch__name {
+  color: #6a6a6a;
+  font-weight: 400;
 }
 
 .composer__apply {

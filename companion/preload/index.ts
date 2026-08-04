@@ -13,6 +13,8 @@ import {
   type TerminalSessionStartRequest
 } from "../shared/claude-command";
 import type { CompanionSessionStatus } from "../main/session-status";
+import type { GitBranchInfo } from "../main/git-branch";
+import type { CliCommandResult } from "../main/cli-command";
 import type { HistoryPage } from "../main/transcript-history";
 import type { ClaudeEvent } from "../shared/claude-stream";
 import type { SlashCommand } from "../shared/slash-commands";
@@ -80,6 +82,12 @@ export type ClaudeCompanionApi = {
   };
   session: {
     status(): Promise<CompanionSessionStatus>;
+  };
+  git: {
+    branch(): Promise<GitBranchInfo>;
+  };
+  cli: {
+    run(name: string, args: string): Promise<CliCommandResult>;
   };
   clipboardWriteText(text: string): Promise<void>;
   clipboardReadText(): Promise<string>;
@@ -187,6 +195,12 @@ const api: ClaudeCompanionApi = {
   },
   session: {
     status: () => ipcRenderer.invoke(COMPANION_IPC.sessionStatus)
+  },
+  git: {
+    branch: () => ipcRenderer.invoke(COMPANION_IPC.gitBranch)
+  },
+  cli: {
+    run: (name, args) => ipcRenderer.invoke(COMPANION_IPC.cliRun, name, args)
   },
   clipboardWriteText: (text) => ipcRenderer.invoke(COMPANION_IPC.clipboardWriteText, text),
   clipboardReadText: () => ipcRenderer.invoke(COMPANION_IPC.clipboardReadText),

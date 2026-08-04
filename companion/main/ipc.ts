@@ -11,6 +11,8 @@ import {
 } from "../shared/claude-command";
 import { ClaudePtyManager, type ClipboardImageReader } from "./claude-session";
 import { diag, emitDiagLine } from "../shared/diag";
+import { readGitBranch } from "./git-branch";
+import { runBridgedCliCommand, type CliCommandResult } from "./cli-command";
 import {
   createContainedDirectory,
   createContainedFile,
@@ -52,6 +54,9 @@ export type CompanionIpcDependencies = {
     close?(): void;
   };
   rootPath: string;
+  // The claude executable, for the slash commands the CLI serves outside print
+  // mode (/plugin, /mcp). Defaults to whatever is on PATH.
+  claudePath?: string;
   ptyManager?: ClaudePtyManager;
   terminalManager?: ProjectTerminalManager;
   clipboard: ClipboardImageReader & {
@@ -297,6 +302,19 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
     }
   );
   deps.ipcMain.handle(COMPANION_IPC.sessionStatus, () => deps.sessionStatus?.() ?? {});
+  // Display only: the composer shows which branch the project folder is on.
+  deps.ipcMain.handle(COMPANION_IPC.gitBranch, () => readGitBranch(deps.rootPath));
+  deps.ipcMain.handle(
+    COMPANION_IPC.cliRun,
+    (_event: SenderEvent, name: unknown, args: unknown): Promise<CliCommandResult> =>
+      // runBridgedCliCommand rejects any name outside its allowlist, so the
+      // renderer cannot turn this into a general "run anything" channel.
+      runBridgedCliCommand(
+        { claudePath: deps.claudePath ?? "claude", cwd: deps.rootPath },
+        requireString(name, "name"),
+        optionalString(args, "args") ?? ""
+      )
+  );
   deps.ipcMain.handle(COMPANION_IPC.windowMinimize, () => {
     deps.window.minimize?.();
   });

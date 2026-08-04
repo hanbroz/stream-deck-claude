@@ -14,6 +14,14 @@ export type ComposerState = {
 export type SubmitIntent = {
   text: string;
   images: ComposerImage[];
+  /**
+   * Where the text came from. "model" marks text the assistant wrote — a
+   * question-card option label. That text must never be treated as a local
+   * command: the local branches run CLI subcommands and write into a live
+   * shell, so one click on a model-authored `/mcp add …` would execute it.
+   * Absent means the user typed it.
+   */
+  origin?: "model";
 };
 
 export function createComposerState(): ComposerState {
