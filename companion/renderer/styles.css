@@ -1576,9 +1576,11 @@ textarea {
   margin-bottom: 8px;
 }
 
+/* The picture is the label: pasted attachments share one meaningless name, so
+   the chip carries the thumbnail and the remove button only. */
 .image-chip {
   display: grid;
-  grid-template-columns: 34px minmax(0, 120px) 24px;
+  grid-template-columns: 68px 24px;
   align-items: center;
   gap: 8px;
   padding: 4px;
@@ -1588,18 +1590,10 @@ textarea {
 }
 
 .image-chip img {
-  width: 34px;
-  height: 34px;
+  width: 68px;
+  height: 68px;
   object-fit: cover;
   border-radius: 4px;
-}
-
-.image-chip span {
-  overflow: hidden;
-  color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
 }
 
 .image-chip button {

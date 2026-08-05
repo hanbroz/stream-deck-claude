@@ -1702,9 +1702,11 @@ function renderImagePreview(): void {
     chip.className = "image-chip";
     const thumbnail = document.createElement("img");
     thumbnail.src = image.dataUrl;
+    // Pasted images are all called image.png, so showing the name says nothing
+    // and crowds out the one thing that identifies the attachment — the picture
+    // itself. The name stays as alt text, where it is still the only
+    // description a screen reader has.
     thumbnail.alt = image.name;
-    const label = document.createElement("span");
-    label.textContent = image.name;
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "x";
@@ -1713,7 +1715,7 @@ function renderImagePreview(): void {
       composer = removeComposerImage(composer, image.id);
       renderImagePreview();
     });
-    chip.append(thumbnail, label, remove);
+    chip.append(thumbnail, remove);
     imagePreview.append(chip);
   }
 }
