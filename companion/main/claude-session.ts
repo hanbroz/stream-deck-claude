@@ -449,11 +449,15 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
       // The process is gone, so any agent still open died with it. Closing those
       // rows here — rather than when the reply ended — is what lets background
       // agents keep running and reporting after end_turn.
+      // "unknown", not "failed": the process is gone, so the agent's result is
+      // unknowable — it may well have been doing its job. A background agent
+      // that stays deliberately quiet (a server, a wait for human input) is the
+      // usual arrival here, and calling that a failure was simply wrong.
       const abandonedAgents = [...liveAgents].map((toolUseId) => ({
         kind: "agent" as const,
         op: "end" as const,
         toolUseId,
-        ok: false
+        outcome: "unknown" as const
       }));
       liveAgents.clear();
       // A later message already started its own run, or clear()/kill() replaced

@@ -46,7 +46,7 @@ import {
   type TreeNode,
   type TreeNodeKind
 } from "../shared/tree-state";
-import type { ClaudeEvent, ClaudePhase } from "../shared/claude-stream";
+import type { AgentOutcome, ClaudeEvent, ClaudePhase } from "../shared/claude-stream";
 import {
   applySlashCommand,
   filterSlashCommands,
@@ -2453,6 +2453,21 @@ let agentTimer: number | undefined;
 let lastStatusPhase: ClaudePhase | "error" = "ready";
 let lastStatusDetail: string | undefined;
 
+/**
+ * How a settled agent row reads. "unknown" is deliberately NOT the failure
+ * mark: the app could not see the result, and a grey "?" says that, where a red
+ * "✗" claimed something it did not know.
+ */
+const AGENT_OUTCOME: Record<AgentOutcome, { icon: string; className: string; title: string }> = {
+  ok: { icon: "✓", className: "is-done", title: "완료" },
+  failed: { icon: "✗", className: "is-failed", title: "실패로 끝났습니다" },
+  unknown: {
+    icon: "?",
+    className: "is-stopped",
+    title: "실행하던 프로세스가 정리되어 결과를 확인하지 못했습니다. 실패한 것은 아닙니다."
+  }
+};
+
 function agentCounts(): { done: number; total: number } {
   let done = 0;
   for (const row of agentRows.values()) {
@@ -2521,8 +2536,9 @@ function handleAgentEvent(event: Extract<ClaudeEvent, { kind: "agent" }>): void 
     if (row && !row.done) {
       row.done = true;
       row.refs.root.classList.remove("is-running");
-      row.refs.root.classList.add(event.ok ? "is-done" : "is-failed");
-      row.refs.icon.textContent = event.ok ? "✓" : "✗";
+      row.refs.root.classList.add(AGENT_OUTCOME[event.outcome].className);
+      row.refs.icon.textContent = AGENT_OUTCOME[event.outcome].icon;
+      row.refs.root.title = AGENT_OUTCOME[event.outcome].title;
       row.refs.time.textContent = formatAgentElapsed(Date.now() - row.startedAt);
     }
   }

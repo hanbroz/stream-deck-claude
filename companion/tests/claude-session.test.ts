@@ -437,7 +437,7 @@ describe("ClaudePtyManager (per-message runs)", () => {
 
     runs[0].exit.emit("exit", { exitCode: 1 });
     const afterExit = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
-    expect(afterExit).toContainEqual({ kind: "agent", op: "end", toolUseId: "t1", ok: false });
+    expect(afterExit).toContainEqual({ kind: "agent", op: "end", toolUseId: "t1", outcome: "unknown" });
   });
 
   it("frees the status strip when the run dies after a late tool_result", () => {
@@ -527,7 +527,7 @@ describe("ClaudePtyManager (per-message runs)", () => {
     runs[0].exit.emit("exit", { exitCode: 1 });
 
     const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
-    expect(events).toContainEqual({ kind: "agent", op: "end", toolUseId: "t1", ok: false });
+    expect(events).toContainEqual({ kind: "agent", op: "end", toolUseId: "t1", outcome: "unknown" });
     expect(events.filter((e) => e.kind === "phase").at(-1))
       .toEqual({ kind: "phase", phase: "waiting" });
     // The reply was delivered, so reclaiming the held process is not a failure.
@@ -566,7 +566,7 @@ describe("ClaudePtyManager (per-message runs)", () => {
     runs[0].exit.emit("exit", { exitCode: 1 });
     const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
     expect(events.filter((e) => e.kind === "phase")).toEqual([]);
-    expect(events).toContainEqual({ kind: "agent", op: "end", toolUseId: "t1", ok: false });
+    expect(events).toContainEqual({ kind: "agent", op: "end", toolUseId: "t1", outcome: "unknown" });
   });
 
   it("still reports background agent progress after the next message takes over", async () => {
@@ -591,7 +591,7 @@ describe("ClaudePtyManager (per-message runs)", () => {
     }));
 
     const events = data.mock.calls.flatMap(([, e]) => e as ClaudeEvent[]);
-    expect(events).toEqual([{ kind: "agent", op: "end", toolUseId: "t1", ok: true }]);
+    expect(events).toEqual([{ kind: "agent", op: "end", toolUseId: "t1", outcome: "ok" }]);
   });
 
   it("ends held background runs when the conversation is cleared", async () => {

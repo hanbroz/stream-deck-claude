@@ -430,7 +430,7 @@ describe("agent tracking", () => {
     }));
     expect(agents(ack)).toEqual([]);
     const done = parser.push(line({ type: "system", subtype: "task_notification", tool_use_id: "toolu_1", status: "completed" }));
-    expect(agents(done)).toEqual([{ kind: "agent", op: "end", toolUseId: "toolu_1", ok: true }]);
+    expect(agents(done)).toEqual([{ kind: "agent", op: "end", toolUseId: "toolu_1", outcome: "ok" }]);
     // A repeated notification for a finished agent is silent.
     expect(agents(parser.push(line({ type: "system", subtype: "task_notification", tool_use_id: "toolu_1", status: "completed" })))).toEqual([]);
   });
@@ -445,7 +445,9 @@ describe("agent tracking", () => {
       type: "user",
       message: { content: [{ type: "tool_result", tool_use_id: "toolu_9", is_error: true, content: "boom" }] }
     }));
-    expect(agents(done)).toEqual([{ kind: "agent", op: "end", toolUseId: "toolu_9", ok: false }]);
+    // A tool_result that IS an error is a real failure — distinct from a run
+    // torn down with the agent still open, which reports "unknown".
+    expect(agents(done)).toEqual([{ kind: "agent", op: "end", toolUseId: "toolu_9", outcome: "failed" }]);
   });
 
   it("turns subagent tool calls into activity and keeps their text out of the console", () => {

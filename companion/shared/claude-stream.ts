@@ -16,13 +16,24 @@ export type ClaudePhase =
   | "tool"
   | "waiting";
 
+/**
+ * How an agent's row closes.
+ *
+ * "unknown" is NOT a failure. The run that owned the agent was torn down before
+ * it reported — a killed session, or the idle backstop reclaiming a process
+ * held open for background agents — so its result cannot be known. Folding that
+ * into "failed" made an agent that was doing exactly what it should (a server
+ * staying up, a wait for human input) read as broken.
+ */
+export type AgentOutcome = "ok" | "failed" | "unknown";
+
 export type ClaudeEvent =
   | { kind: "text"; text: string }
   | { kind: "phase"; phase: ClaudePhase; detail?: string }
   | { kind: "context"; usedTokens: number; windowTokens: number; model: string }
   | { kind: "agent"; op: "start"; toolUseId: string; agentType: string; description: string }
   | { kind: "agent"; op: "activity"; toolUseId: string; detail: string }
-  | { kind: "agent"; op: "end"; toolUseId: string; ok: boolean }
+  | { kind: "agent"; op: "end"; toolUseId: string; outcome: AgentOutcome }
   | { kind: "error"; message: string; missingConversation: boolean }
   // Not a failure of the conversation: the account simply has to log in again.
   | { kind: "login"; message: string };
@@ -382,7 +393,12 @@ export class ClaudeStreamParser {
         }
         this.knownAgents.delete(id);
         this.asyncAgents.delete(id);
-        return [{ kind: "agent", op: "end", toolUseId: id, ok: message.status === "completed" }];
+        return [{
+          kind: "agent",
+          op: "end",
+          toolUseId: id,
+          outcome: message.status === "completed" ? "ok" : "failed"
+        }];
       }
       default:
         return [];
@@ -531,7 +547,12 @@ export class ClaudeStreamParser {
         continue;
       }
       this.knownAgents.delete(id);
-      agentEvents.push({ kind: "agent", op: "end", toolUseId: id, ok: block.is_error !== true });
+      agentEvents.push({
+        kind: "agent",
+        op: "end",
+        toolUseId: id,
+        outcome: block.is_error === true ? "failed" : "ok"
+      });
     }
     // The tool finished; Claude goes back to the model with its output.
     return [...agentEvents, ...this.phase("requesting")];
