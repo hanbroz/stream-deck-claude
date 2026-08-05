@@ -14,15 +14,26 @@ import type {
   launchClaudeCompanion
 } from "../services/companion-launcher";
 import type {
+  launchClaudeTerminal,
   validateLaunchFolder
 } from "../services/terminal-launcher";
 import type { renderCodeStartKeyImage } from "../ui/code-start-renderer";
 import type { CodeStartLaunchGuard } from "./code-start-launch-guard";
 
+/**
+ * Where a press opens Claude Code. "companion" is the assumed value when the
+ * setting is absent, so keys configured before this choice existed keep the
+ * behaviour they were set up with.
+ */
+export type CodeStartLaunchMode = "companion" | "terminal";
+
+export const DEFAULT_LAUNCH_MODE: CodeStartLaunchMode = "companion";
+
 export type CodeStartLaunchSettings = {
   bindingId?: string;
   folder?: string;
   projectName?: string;
+  launchMode?: string;
 };
 
 type CodeStartLaunchAction = {
@@ -41,6 +52,7 @@ export type CodeStartLaunchDependencies = {
   defaultUsageDataDir: typeof defaultUsageDataDir;
   ensureBridgeInstalled: typeof ensureBridgeInstalled;
   launchClaudeCompanion: typeof launchClaudeCompanion;
+  launchClaudeTerminal: typeof launchClaudeTerminal;
   findRunningCompanionLaunch: typeof findRunningCompanionLaunch;
   focusCompanionWindow: typeof focusCompanionWindow;
   claudeConversationExists: typeof claudeConversationExists;
@@ -74,6 +86,16 @@ export function configuredProjectName(settings: CodeStartLaunchSettings): string
     : "PROJECT";
 }
 
+/**
+ * Only an explicit "terminal" switches away from the app. Anything else — the
+ * setting missing on a key from before this option, or a value a hand-edited
+ * profile got wrong — stays on the Companion, which is the mode with the fuller
+ * feature set.
+ */
+export function configuredLaunchMode(settings: CodeStartLaunchSettings): CodeStartLaunchMode {
+  return settings.launchMode === "terminal" ? "terminal" : DEFAULT_LAUNCH_MODE;
+}
+
 export function configuredBindingId(settings: CodeStartLaunchSettings): string | undefined {
   return typeof settings.bindingId === "string" && settings.bindingId.trim().length > 0
     ? settings.bindingId.trim()
@@ -83,7 +105,8 @@ export function configuredBindingId(settings: CodeStartLaunchSettings): string |
 export function defaultCodeStartLaunchDependencies(
   overrides: Pick<
     CodeStartLaunchDependencies,
-    "ensureBridgeInstalled" | "launchClaudeCompanion" | "findRunningCompanionLaunch" |
+    "ensureBridgeInstalled" | "launchClaudeCompanion" | "launchClaudeTerminal" |
+      "findRunningCompanionLaunch" |
       "focusCompanionWindow" | "claudeConversationExists" |
       "clearContextSessionResumePointer" | "readContextSessionResumePointer" |
       "renderCodeStartKeyImage" | "validateLaunchFolder" | "writeActiveLaunch" | "logger"
@@ -109,6 +132,7 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
   const bindingId = configuredBindingId(settings);
   const folder = configuredFolder(settings);
   const projectName = configuredProjectName(settings);
+  const launchMode = configuredLaunchMode(settings);
   if (!bindingId) {
     await action.showAlert();
     return;
@@ -129,30 +153,35 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
   }
 
   try {
-    // A second press for the same folder focuses the app that is already
-    // open instead of spawning a twin, which would also rotate the launch id
-    // and orphan the key's snapshot stream.
-    const running = await dependencies.findRunningCompanionLaunch(
-      dependencies.defaultUsageDataDir(),
-      bindingId,
-      folder
-    );
-    if (running) {
-      const focused = await dependencies.focusCompanionWindow(running.processId);
-      if (focused) {
-        dependencies.logger.info(
-          `Code Start already running for this folder (pid=${running.processId}); focused existing window.`
-        );
-        await action.showOk();
-        return;
-      }
-      // The recorded pid exists but is not a focusable Companion (Windows
-      // reused the pid, or the window is gone). Treat the record as stale
-      // and fall through to a normal launch — this also rewrites
-      // active.json with the real new pid, correcting the key state.
-      dependencies.logger.info(
-        `Stale active launch for this folder (pid=${running.processId} not a Companion window); launching fresh.`
+    // Companion only: focusing is a window operation on the app's own process.
+    // Skipped in terminal mode so a key switched to terminal cannot focus a
+    // Companion left over from the previous mode instead of opening a terminal.
+    if (launchMode === "companion") {
+      // A second press for the same folder focuses the app that is already
+      // open instead of spawning a twin, which would also rotate the launch id
+      // and orphan the key's snapshot stream.
+      const running = await dependencies.findRunningCompanionLaunch(
+        dependencies.defaultUsageDataDir(),
+        bindingId,
+        folder
       );
+      if (running) {
+        const focused = await dependencies.focusCompanionWindow(running.processId);
+        if (focused) {
+          dependencies.logger.info(
+            `Code Start already running for this folder (pid=${running.processId}); focused existing window.`
+          );
+          await action.showOk();
+          return;
+        }
+        // The recorded pid exists but is not a focusable Companion (Windows
+        // reused the pid, or the window is gone). Treat the record as stale
+        // and fall through to a normal launch — this also rewrites
+        // active.json with the real new pid, correcting the key state.
+        dependencies.logger.info(
+          `Stale active launch for this folder (pid=${running.processId} not a Companion window); launching fresh.`
+        );
+      }
     }
 
     await action.setImage(
@@ -186,13 +215,19 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
         );
       }
     }
-    const launch = await dependencies.launchClaudeCompanion(
-      folder,
-      bindingId,
-      launchId,
-      resumeSessionId,
-      projectName
-    );
+    // The terminal runs the CLI directly, so it has no way to be handed a
+    // conversation to continue — a press there always starts a new one. The
+    // resume pointer above is still read and pruned so switching back to the
+    // app does not resume a conversation that has since been deleted.
+    const launch = launchMode === "terminal"
+      ? await dependencies.launchClaudeTerminal(folder, bindingId, launchId)
+      : await dependencies.launchClaudeCompanion(
+        folder,
+        bindingId,
+        launchId,
+        resumeSessionId,
+        projectName
+      );
     await dependencies.writeActiveLaunch(dependencies.defaultUsageDataDir(), {
       schemaVersion: 2,
       actionId: bindingId,

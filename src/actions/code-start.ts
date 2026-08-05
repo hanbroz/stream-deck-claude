@@ -28,7 +28,7 @@ import {
 } from "../io/context-session-cache";
 import { showFolderPicker } from "../services/folder-picker";
 import { focusCompanionWindow, launchClaudeCompanion } from "../services/companion-launcher";
-import { validateLaunchFolder } from "../services/terminal-launcher";
+import { launchClaudeTerminal, validateLaunchFolder } from "../services/terminal-launcher";
 import { renderCodeStartKeyImage } from "../ui/code-start-renderer";
 import { CodeStartLaunchGuard } from "./code-start-launch-guard";
 import {
@@ -50,6 +50,8 @@ type CodeStartSettings = JsonObject & {
   bindingId?: string;
   folder?: string;
   projectName?: string;
+  /** "companion" | "terminal"; absent means the app, see configuredLaunchMode. */
+  launchMode?: string;
 };
 
 type PropertyInspectorMessage = JsonObject & {
@@ -107,6 +109,7 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
         findRunningCompanionLaunch,
         focusCompanionWindow,
         launchClaudeCompanion,
+        launchClaudeTerminal,
         logger: streamDeck.logger,
         readContextSessionResumePointer,
         renderCodeStartKeyImage,

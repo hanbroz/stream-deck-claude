@@ -47,6 +47,10 @@ function createDependencies() {
     terminal: "companion" as const,
     processId: 4321
   }));
+  const launchClaudeTerminal = vi.fn<CodeStartLaunchDependencies["launchClaudeTerminal"]>(async () => ({
+    terminal: "windows-terminal" as const,
+    processId: 8765
+  }));
   const readContextSessionResumePointer =
     vi.fn<CodeStartLaunchDependencies["readContextSessionResumePointer"]>(
       async () => undefined
@@ -70,6 +74,7 @@ function createDependencies() {
     defaultUsageDataDir: () => "D:\\Data\\ClaudeUsageDeck",
     ensureBridgeInstalled,
     launchClaudeCompanion,
+    launchClaudeTerminal,
     findRunningCompanionLaunch,
     focusCompanionWindow,
     claudeConversationExists,
@@ -88,6 +93,7 @@ function createDependencies() {
     ensureBridgeInstalled,
     validateLaunchFolder,
     launchClaudeCompanion,
+    launchClaudeTerminal,
     findRunningCompanionLaunch,
     focusCompanionWindow,
     claudeConversationExists,
@@ -170,6 +176,119 @@ describe("Code Start relaunch guard", () => {
     expect(harness.writeActiveLaunch).toHaveBeenCalled();
     expect(action.showOk).toHaveBeenCalled();
     expect(action.showAlert).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Keys configured before the launch mode existed carry no `launchMode`, and
+   * they were all set up against the Companion. Reading a missing value as the
+   * app is what stops this option from silently moving every existing key to a
+   * terminal that cannot resume their conversations.
+   */
+  it("opens the app when no launch mode is stored", async () => {
+    const harness = createDependencies();
+    const action = createAction();
+
+    await launchConfiguredCodeStart({
+      action,
+      settings: { bindingId: "binding-1", folder: "D:\\Projects\\Demo", projectName: "Demo" },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    });
+
+    expect(harness.launchClaudeCompanion).toHaveBeenCalled();
+    expect(harness.launchClaudeTerminal).not.toHaveBeenCalled();
+  });
+
+  it("opens a terminal, and records which one, when the launch mode says terminal", async () => {
+    const harness = createDependencies();
+    const action = createAction();
+
+    await launchConfiguredCodeStart({
+      action,
+      settings: {
+        bindingId: "binding-1",
+        folder: "D:\\Projects\\Demo",
+        projectName: "Demo",
+        launchMode: "terminal"
+      },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    });
+
+    expect(harness.launchClaudeTerminal).toHaveBeenCalledWith(
+      "D:\\Projects\\Demo",
+      "binding-1",
+      "launch-123"
+    );
+    expect(harness.launchClaudeCompanion).not.toHaveBeenCalled();
+    // The key reads liveness from this record, so the terminal it actually
+    // opened has to be what gets stored — not the Companion's own value.
+    expect(harness.writeActiveLaunch).toHaveBeenCalledWith(
+      "D:\\Data\\ClaudeUsageDeck",
+      expect.objectContaining({ terminal: "windows-terminal", processId: 8765 })
+    );
+    expect(action.showOk).toHaveBeenCalled();
+  });
+
+  /**
+   * The bridge is what feeds the key its state, and in terminal mode it is the
+   * ONLY source — the Companion's stream reader is not in play. Installing it
+   * must therefore still happen on this path.
+   */
+  it("still installs the bridge when launching a terminal", async () => {
+    const harness = createDependencies();
+
+    await launchConfiguredCodeStart({
+      action: createAction(),
+      settings: {
+        bindingId: "binding-1",
+        folder: "D:\\Projects\\Demo",
+        projectName: "Demo",
+        launchMode: "terminal"
+      },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    });
+
+    expect(harness.ensureBridgeInstalled).toHaveBeenCalled();
+  });
+
+  /**
+   * A key switched from app to terminal can still have a live Companion on
+   * record for its folder. Focusing that window would swallow the press and
+   * never open the terminal the key is now configured for.
+   */
+  it("ignores a running Companion when the key is set to terminal", async () => {
+    const harness = createDependencies();
+    harness.findRunningCompanionLaunch.mockResolvedValue({
+      schemaVersion: 2,
+      actionId: "binding-1",
+      launchId: "launch-old",
+      folder: "D:\\Projects\\Demo",
+      startedAt: 1,
+      terminal: "companion",
+      processId: 7777
+    });
+    const action = createAction();
+
+    await launchConfiguredCodeStart({
+      action,
+      settings: {
+        bindingId: "binding-1",
+        folder: "D:\\Projects\\Demo",
+        projectName: "Demo",
+        launchMode: "terminal"
+      },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    });
+
+    expect(harness.focusCompanionWindow).not.toHaveBeenCalled();
+    expect(harness.launchClaudeTerminal).toHaveBeenCalled();
   });
 
   it("writes the active launch and reports success when a configured action launches", async () => {

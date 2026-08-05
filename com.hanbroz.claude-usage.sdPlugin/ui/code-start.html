@@ -10,7 +10,8 @@
       label { display: block; margin-bottom: 7px; font-weight: 700; }
       .field { margin-bottom: 12px; }
       .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
-      input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #555; border-radius: 4px; padding: 8px; background: #1e1e1e; color: #fff; }
+      input, select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #555; border-radius: 4px; padding: 8px; background: #1e1e1e; color: #fff; }
+      .hint { margin: 6px 0 0; color: #9a9a9a; line-height: 1.4; font-size: 12px; }
       button { border: 1px solid #666; border-radius: 4px; padding: 7px 12px; background: #484848; color: #fff; cursor: pointer; }
       button.primary { width: 100%; margin-top: 9px; background: #D97757; border-color: #e28b6f; font-weight: 700; }
       button:disabled { opacity: .55; cursor: default; }
@@ -32,6 +33,14 @@
         <button id="browse" type="button">Browse…</button>
       </div>
     </div>
+    <div class="field">
+      <label for="launchMode">Open with</label>
+      <select id="launchMode">
+        <option value="companion">Companion app</option>
+        <option value="terminal">Terminal (Windows Terminal / PowerShell)</option>
+      </select>
+      <p class="hint" id="launchModeHint"></p>
+    </div>
     <button id="save" class="primary" type="button">Save settings</button>
     <p class="help">The button opens this folder and runs <code>claude --dangerously-skip-permissions</code>.</p>
     <div id="status" role="status" aria-live="polite"></div>
@@ -47,6 +56,18 @@
         const browse = document.getElementById("browse");
         const save = document.getElementById("save");
         const status = document.getElementById("status");
+        const launchMode = document.getElementById("launchMode");
+        const launchModeHint = document.getElementById("launchModeHint");
+
+        // Terminal mode reports its state through Claude Code's hooks, but the
+        // percentage can only come from the status line — which the bridge
+        // leaves alone when another tool already owns it. Say so here rather
+        // than let the key look broken.
+        const showLaunchModeHint = () => {
+          launchModeHint.textContent = launchMode.value === "terminal"
+            ? "Shows running / waiting state. Context % needs the status line, and resuming the last conversation is app-only."
+            : "Shows state, context %, and resumes the last conversation.";
+        };
 
         const setStatus = (message, isError = false) => {
           status.textContent = message;
@@ -59,11 +80,17 @@
           settings = next && typeof next === "object" ? next : {};
           projectName.value = typeof settings.projectName === "string" ? settings.projectName : "";
           folder.value = typeof settings.folder === "string" ? settings.folder : "";
+          // Anything but an explicit "terminal" is the app, matching
+          // configuredLaunchMode — so a key saved before this option existed
+          // shows the mode it actually launches with.
+          launchMode.value = settings.launchMode === "terminal" ? "terminal" : "companion";
+          showLaunchModeHint();
         };
         const collectSettings = () => ({
           ...settings,
           projectName: projectName.value.trim(),
-          folder: folder.value.trim()
+          folder: folder.value.trim(),
+          launchMode: launchMode.value
         });
 
         window.connectElgatoStreamDeckSocket = (port, uuid, registerEvent, info, actionInfo) => {
@@ -104,6 +131,10 @@
 
         browse.disabled = true;
         save.disabled = true;
+        showLaunchModeHint();
+        // Only the hint follows the select immediately; the value is persisted
+        // by Save, like every other field on this panel.
+        launchMode.addEventListener("change", showLaunchModeHint);
         browse.addEventListener("click", () => {
           settings = collectSettings();
           send({ event: "setSettings", context, payload: settings });
