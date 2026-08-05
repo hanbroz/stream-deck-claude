@@ -19,14 +19,23 @@ import {
   type DirectoryEntry
 } from "../shared/claude-command";
 import {
+  AUTO_COMPACT_AT_PERCENT,
   addComposerImages,
+  addComposerPaste,
+  composeOutgoingText,
+  countLines,
   createComposerState,
   imageId,
+  looksLikeCompletedMilestone,
   navigateHistory,
   pushHistory,
   removeComposerImage,
+  removeComposerPaste,
   setComposerText,
   setComposing,
+  shouldAttachPaste,
+  shouldAutoCompact,
+  shouldRecallHistory,
   shouldSubmitFromKeyboard,
   submitComposer,
   type ComposerImage,
@@ -189,6 +198,12 @@ let sessionStatusTimer: ReturnType<typeof setInterval> | undefined;
 // result. Without a live placeholder the turn shows nothing at all and reads
 // as if the command was ignored. Holds that placeholder while the run is out.
 let compactingTurn: Turn | undefined;
+// One-shot latch for automatic compaction. Cleared when one starts, set again
+// only once usage falls back under the mark — see shouldAutoCompact.
+let autoCompactArmed = true;
+// The fresh-conversation offer is made at most once per conversation; a new
+// conversation re-arms it in clearConsoleOutput.
+let clearSuggested = false;
 let lastSessionState: SessionStatus["state"] = "idle";
 // Derived from the stream's own usage, because --print never writes a status line.
 let lastContextPercentage: number | undefined;
@@ -827,8 +842,17 @@ promptInput.addEventListener("keydown", (event) => {
     return;
   }
   // Up/Down recall previous inputs, but only from the edge line so multi-line
-  // editing keeps normal cursor movement.
-  if (event.key === "ArrowUp" && caretOnFirstLine()) {
+  // editing keeps normal cursor movement — and Up only starts a recall from an
+  // empty box, so it never takes the key away from someone editing a draft.
+  if (
+    event.key === "ArrowUp" &&
+    caretOnFirstLine() &&
+    shouldRecallHistory({
+      draft: promptInput.value,
+      historyIndex,
+      historyLength: inputHistory.length
+    })
+  ) {
     if (historyIndex === inputHistory.length) {
       historyDraft = promptInput.value;
     }
@@ -875,7 +899,7 @@ consoleElement.addEventListener("click", (event) => {
   button.classList.add("is-chosen");
   // The label is whatever the model wrote, so it is sent as an answer only —
   // never as a local command. See SubmitIntent.origin.
-  void sendIntent({ text: answer, images: [], origin: "model" });
+  void sendIntent({ text: answer, images: [], pastes: [], origin: "model" });
 });
 
 // The dropdowns only stage a selection; nothing takes effect until Apply, which
@@ -920,6 +944,15 @@ promptInput.addEventListener("paste", (event) => {
   if (files.length > 0) {
     event.preventDefault();
     void addImages(files);
+    return;
+  }
+  // A long paste (a log, a stack trace) goes in as an attachment instead of
+  // flooding the input box. Short pastes keep the normal behaviour — they are
+  // still text the user is likely to edit before sending.
+  const pasted = event.clipboardData?.getData("text/plain") ?? "";
+  if (shouldAttachPaste(pasted)) {
+    event.preventDefault();
+    attachPastedText(pasted);
   }
 });
 
@@ -1237,7 +1270,20 @@ function updateSplitterAria(separator: HTMLElement, value: number, bounds: Split
 }
 
 function explorerBounds(): SplitBounds {
-  return { minimum: 210, maximum: 380 };
+  const minimum = 210;
+  // Doubled from 380 on request: deep trees with long names had nowhere to go.
+  const preferredMaximum = 760;
+  // …but the explorer must not squeeze the console and terminal out. On a
+  // narrow window the cap lands below 760 rather than letting the drag win,
+  // which is the same rule terminalBounds already follows.
+  const minimumWorkspaceWidth = 520;
+  const available = bodyShell.clientWidth;
+  return {
+    minimum,
+    maximum: available > 0
+      ? Math.max(minimum, Math.min(preferredMaximum, available - minimumWorkspaceWidth))
+      : preferredMaximum
+  };
 }
 
 function terminalBounds(): SplitBounds {
@@ -1694,8 +1740,42 @@ function fileToComposerImage(file: File): Promise<ComposerImage> {
   });
 }
 
+let pasteSequence = 0;
+
+/** Hold a long paste as an attachment instead of dropping it in the textarea. */
+function attachPastedText(text: string): void {
+  pasteSequence += 1;
+  const lineCount = countLines(text);
+  composer = addComposerPaste(composer, { id: `paste-${pasteSequence}`, text, lineCount });
+  renderImagePreview();
+  showToast(`${lineCount.toLocaleString()}줄을 첨부했습니다.`);
+  promptInput.focus();
+}
+
 function renderImagePreview(): void {
   imagePreview.replaceChildren();
+
+  for (const paste of composer.pastes) {
+    const chip = document.createElement("div");
+    chip.className = "image-chip image-chip--text";
+    chip.title = `${paste.lineCount.toLocaleString()}줄 · 전송할 때 본문에 그대로 포함됩니다`;
+    const glyph = document.createElement("span");
+    glyph.className = "image-chip__glyph";
+    glyph.textContent = "TXT";
+    const label = document.createElement("span");
+    label.className = "image-chip__label";
+    label.textContent = `붙여넣은 텍스트 · ${paste.lineCount.toLocaleString()}줄`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "x";
+    remove.title = "첨부 제거";
+    remove.addEventListener("click", () => {
+      composer = removeComposerPaste(composer, paste.id);
+      renderImagePreview();
+    });
+    chip.append(glyph, label, remove);
+    imagePreview.append(chip);
+  }
 
   for (const image of composer.images) {
     const chip = document.createElement("div");
@@ -1868,11 +1948,25 @@ async function resumeSession(): Promise<void> {
   await startClaudeSession(sessionId);
 }
 
-/** The transcript label for a submission, noting any attached images. */
+/**
+ * The transcript label for a submission, noting attachments.
+ *
+ * Pasted text is summarised, never inlined: it is attached precisely because it
+ * is too long to read in place, and the transcript is no better a home for a
+ * thousand lines than the input box was.
+ */
 function composerTurnLabel(intent: SubmitIntent): string {
-  return intent.images.length > 0
-    ? `${intent.text}${intent.text.length > 0 ? "\n" : ""}[이미지 ${intent.images.length}장 첨부]`
-    : intent.text;
+  const notes: string[] = [];
+  for (const paste of intent.pastes) {
+    notes.push(`[붙여넣은 텍스트 ${paste.lineCount.toLocaleString()}줄 첨부]`);
+  }
+  if (intent.images.length > 0) {
+    notes.push(`[이미지 ${intent.images.length}장 첨부]`);
+  }
+  if (notes.length === 0) {
+    return intent.text;
+  }
+  return [intent.text, ...notes].filter((part) => part.length > 0).join("\n");
 }
 
 /**
@@ -2011,11 +2105,14 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
     // Local commands are privileged — they run CLI subcommands, write into a
     // live shell, or reset the conversation — so only text the USER typed may
     // reach them. A question-card option is written by the model.
-    const localCommandsAllowed = intent.origin !== "model";
+    // An attachment means the user meant to SEND something, so a local command
+    // must not claim the message and quietly discard it.
+    const localCommandsAllowed =
+      intent.origin !== "model" && intent.images.length === 0 && intent.pastes.length === 0;
 
     // /clear is the Companion's own command: start a fresh conversation
     // instead of sending the text to Claude. It drops the queue itself.
-    if (localCommandsAllowed && intent.text.trim() === "/clear" && intent.images.length === 0) {
+    if (localCommandsAllowed && intent.text.trim() === "/clear") {
       await clearSession();
       return;
     }
@@ -2027,8 +2124,7 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
     const reloadCommand = intent.text.trim();
     if (
       localCommandsAllowed &&
-      (reloadCommand === "/reload-skills" || reloadCommand === "/reload-plugins") &&
-      intent.images.length === 0
+      (reloadCommand === "/reload-skills" || reloadCommand === "/reload-plugins")
     ) {
       finishAssistantTurn();
       if (!queuedTurn) {
@@ -2043,7 +2139,7 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
     // Terminal-only builtins never reach print mode; answer locally and
     // instantly instead of paying a CLI round-trip for a polite refusal.
     const firstToken = intent.text.trim().split(/\s+/u)[0] ?? "";
-    if (localCommandsAllowed && firstToken.startsWith("/") && intent.images.length === 0) {
+    if (localCommandsAllowed && firstToken.startsWith("/")) {
       // /plugin and /mcp only look terminal-only: the CLI serves them as real
       // non-interactive subcommands, so run those and print what they said.
       const bridged = firstToken.slice(1);
@@ -2138,11 +2234,13 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
       ]);
     }
 
-    if (intent.text.length > 0 || intent.images.length > 0) {
+    if (intent.text.length > 0 || intent.images.length > 0 || intent.pastes.length > 0) {
       try {
         await api.claude.write(
           session.sessionId,
-          intent.text,
+          // Attachments are folded in only here, on the way out — everything
+          // upstream works with what the user actually typed.
+          composeOutgoingText(intent),
           intent.images.map((image) => image.dataUrl)
         );
       } catch (error) {
@@ -2300,20 +2398,90 @@ function discardCompactingPlaceholder(): void {
  * so must every local-command branch that returns without starting a run, or
  * the queue stalls with no further phase event ever coming to wake it.
  */
-function flushNextPendingSend(): void {
+function flushNextPendingSend(): boolean {
   const queued = pendingSendQueue.shift();
-  if (queued) {
-    setTimeout(() => { void sendIntent(queued.intent, queued.turn); }, 0);
+  if (!queued) {
+    return false;
   }
+  setTimeout(() => { void sendIntent(queued.intent, queued.turn); }, 0);
+  return true;
+}
+
+/**
+ * Compact once the conversation is large enough that carrying it costs more
+ * than summarising it — but only while the session is genuinely idle.
+ *
+ * Called at a turn boundary where nothing was queued, which is the one moment
+ * the app knows it is waiting for the user rather than standing between a
+ * question and its answer.
+ */
+function maybeAutoCompact(): boolean {
+  if (
+    !shouldAutoCompact({
+      percentage: lastContextPercentage,
+      armed: autoCompactArmed,
+      busy: claudeStatus.dataset.busy === "true",
+      queuedCount: pendingSendQueue.length,
+      compacting: compactingTurn !== undefined,
+      hasSession: activeClaudeSession !== undefined
+    })
+  ) {
+    return false;
+  }
+  // Cleared here, not on completion: a compaction that frees too little must
+  // not immediately trigger another one.
+  autoCompactArmed = false;
+  appendTurn(
+    "notice",
+    `컨텍스트가 ${Math.round(lastContextPercentage ?? 0)}%에 이르러 자동으로 압축합니다. ` +
+      `(${AUTO_COMPACT_AT_PERCENT}% 기준 · 대화 중에는 실행하지 않습니다)`
+  );
+  void sendIntent({ text: "/compact", images: [], pastes: [] });
+  return true;
+}
+
+/**
+ * Offer — never impose — a fresh conversation once a unit of work looks done.
+ *
+ * Clearing is the cheapest thing a user can do for cost: every later message
+ * carries the whole conversation. But only they know whether the thread is
+ * finished, so this puts a button in front of them and stops there. Offered at
+ * most once per conversation so it cannot nag.
+ */
+function maybeSuggestClear(finishedReply: string): void {
+  if (clearSuggested || !looksLikeCompletedMilestone(finishedReply)) {
+    return;
+  }
+  clearSuggested = true;
+  const turn = appendTurn(
+    "notice",
+    "한 단위 작업이 끝난 것으로 보입니다. 새 대화로 시작하면 이후 메시지가 " +
+      "지금까지의 대화를 짊어지지 않아 토큰이 크게 줄어듭니다. 이어서 하실 일이 남았다면 그냥 두세요."
+  );
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "notice__action";
+  action.textContent = "새 대화 시작";
+  action.addEventListener("click", () => {
+    action.disabled = true;
+    void clearSession();
+  });
+  turn.body.append(action);
+  scrollConsoleToBottom();
 }
 
 /** Hand a cancelled message back to the composer, unless that would clobber a draft. */
 function restoreComposer(intent: SubmitIntent): boolean {
-  if (!canRestoreToComposer(promptInput.value, composer.images.length)) {
+  // Pasted text counts as work already in the box, exactly as an image does —
+  // restoring over it would mix two messages together.
+  if (!canRestoreToComposer(promptInput.value, composer.images.length + composer.pastes.length)) {
     return false;
   }
   promptInput.value = intent.text;
   composer = addComposerImages(setComposerText(composer, intent.text), intent.images);
+  for (const paste of intent.pastes) {
+    composer = addComposerPaste(composer, paste);
+  }
   renderImagePreview();
   promptInput.focus();
   promptInput.setSelectionRange(intent.text.length, intent.text.length);
@@ -2417,6 +2585,11 @@ function finishAssistantTurn(): void {
 function renderContextUsage(usedTokens: number, windowTokens: number): void {
   const percentage = Math.min(100, Math.max(0, (usedTokens / windowTokens) * 100));
   lastContextPercentage = percentage;
+  // Re-arm only once a compaction (or a fresh conversation) actually brought
+  // usage back down, so the latch cannot fire twice on one crossing.
+  if (percentage < AUTO_COMPACT_AT_PERCENT) {
+    autoCompactArmed = true;
+  }
   renderStatus({ state: lastSessionState, contextPercentage: percentage });
 }
 
@@ -2595,6 +2768,9 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       // Agent rows are deliberately left alone: background agents keep working
       // after the reply ends, and the main process closes their rows when the
       // run actually dies.
+      // Captured before finishAssistantTurn drops the handle — the reply that
+      // just ended is what the clear suggestion reads.
+      const finishedReply = activeAssistantTurn?.text ?? "";
       if (event.phase === "waiting" || event.phase === "ready") {
         // Only a real run ending emits `waiting`; `ready` is synthesised by
         // clear() and interrupt(), where nothing was compacted. Resolving on
@@ -2623,7 +2799,13 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       renderClaudeStatus(event.phase, event.detail);
       // The turn is over: flush the message the user queued mid-generation.
       if (event.phase === "waiting" || event.phase === "ready") {
-        flushNextPendingSend();
+        // Only when nothing was released: a flushed message means the session
+        // is about to work again, so it is not waiting for the user.
+        if (!flushNextPendingSend() && !maybeAutoCompact()) {
+          // Only when a compaction did not just start — two notices about what
+          // to do next, at the same moment, is noise.
+          maybeSuggestClear(finishedReply);
+        }
       }
     } else if (event.kind === "context") {
       diag("renderer.context", { usedTokens: event.usedTokens, windowTokens: event.windowTokens });
@@ -2755,6 +2937,7 @@ function clearConsoleOutput(): void {
   }
   activeAssistantTurn = undefined;
   compactingTurn = undefined;
+  clearSuggested = false;
   turns.length = 0;
   consoleElement.replaceChildren();
   resetAgentBoard();

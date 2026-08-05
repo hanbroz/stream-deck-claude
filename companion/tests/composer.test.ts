@@ -9,7 +9,16 @@ import {
   setComposerText,
   setComposing,
   shouldSubmitFromKeyboard,
-  submitComposer
+  submitComposer,
+  addComposerPaste,
+  composeOutgoingText,
+  countLines,
+  looksLikeCompletedMilestone,
+  removeComposerPaste,
+  shouldAttachPaste,
+  shouldAutoCompact,
+  shouldRecallHistory,
+  PASTE_ATTACH_MIN_LINES
 } from "../shared/composer";
 
 describe("composer", () => {
@@ -18,8 +27,115 @@ describe("composer", () => {
 
     const result = submitComposer(state);
 
-    expect(result.intent).toEqual({ text: "첫 줄\n둘째 줄", images: [] });
+    expect(result.intent).toEqual({ text: "첫 줄\n둘째 줄", images: [], pastes: [] });
     expect(result.state).toEqual(createComposerState());
+  });
+
+  it("compacts only while idle and waiting for the user", () => {
+    const idle = {
+      percentage: 72,
+      armed: true,
+      busy: false,
+      queuedCount: 0,
+      compacting: false,
+      hasSession: true
+    };
+
+    expect(shouldAutoCompact(idle)).toBe(true);
+    // Under the mark: nothing to do yet.
+    expect(shouldAutoCompact({ ...idle, percentage: 69 })).toBe(false);
+    expect(shouldAutoCompact({ ...idle, percentage: undefined })).toBe(false);
+    // Mid-conversation — the whole point is not to land between a question and
+    // its answer, or on top of a message the user already queued.
+    expect(shouldAutoCompact({ ...idle, busy: true })).toBe(false);
+    expect(shouldAutoCompact({ ...idle, queuedCount: 1 })).toBe(false);
+    expect(shouldAutoCompact({ ...idle, compacting: true })).toBe(false);
+    expect(shouldAutoCompact({ ...idle, hasSession: false })).toBe(false);
+    // The latch: a compaction that freed too little must not loop.
+    expect(shouldAutoCompact({ ...idle, armed: false })).toBe(false);
+  });
+
+  it("offers a fresh conversation only when a milestone actually finished", () => {
+    expect(looksLikeCompletedMilestone("커밋과 푸시를 완료했습니다.")).toBe(true);
+    expect(looksLikeCompletedMilestone("빌드가 성공적으로 끝났습니다.")).toBe(true);
+    expect(looksLikeCompletedMilestone("Committed and pushed. Done.")).toBe(true);
+
+    // A plan is not a milestone — this is the false positive worth avoiding.
+    expect(looksLikeCompletedMilestone("이제 커밋할까요?")).toBe(false);
+    expect(looksLikeCompletedMilestone("커밋 메시지를 어떻게 쓸지 정해주세요.")).toBe(false);
+    // Completion without a milestone is just an ordinary reply.
+    expect(looksLikeCompletedMilestone("확인 완료했습니다.")).toBe(false);
+
+    // Only the tail counts: an early mention must not label the whole reply.
+    const longReply = `커밋을 완료했습니다.\n${"본문 ".repeat(500)}\n무엇을 도와드릴까요?`;
+    expect(looksLikeCompletedMilestone(longReply)).toBe(false);
+  });
+
+  it("recalls history only from an empty box, but keeps walking once started", () => {
+    const history = ["첫 메시지", "둘째 메시지"];
+    const atDraft = { historyIndex: history.length, historyLength: history.length };
+
+    // Empty box: Up starts the recall.
+    expect(shouldRecallHistory({ draft: "", ...atDraft })).toBe(true);
+    // Mid-draft: Up belongs to the caret, not to history. This is the report —
+    // it used to fire whenever the caret sat on the first line.
+    expect(shouldRecallHistory({ draft: "쓰는 중", ...atDraft })).toBe(false);
+    // Already recalling: the box holds a past message, so an empty-only rule
+    // would make history exactly one step deep.
+    expect(shouldRecallHistory({ draft: history[1], historyIndex: 1, historyLength: 2 })).toBe(true);
+    // Editing a recalled entry resets historyIndex to the draft slot, which
+    // hands Up back to the caret.
+    expect(shouldRecallHistory({ draft: "둘째 메시지 수정", ...atDraft })).toBe(false);
+  });
+
+  it("attaches a paste only once it is long enough to bury the draft", () => {
+    const short = Array.from({ length: PASTE_ATTACH_MIN_LINES - 1 }, (_, i) => `line ${i}`).join("\n");
+    const long = Array.from({ length: PASTE_ATTACH_MIN_LINES }, (_, i) => `line ${i}`).join("\n");
+
+    expect(shouldAttachPaste(short)).toBe(false);
+    expect(shouldAttachPaste(long)).toBe(true);
+    // A short paste stays editable in the box; only the threshold decides.
+    expect(countLines("")).toBe(0);
+    expect(countLines("one")).toBe(1);
+    expect(countLines("a\r\nb\rc\nd")).toBe(4);
+  });
+
+  it("sends an attachment even with nothing typed, and keeps it out of intent.text", () => {
+    const paste = { id: "p1", text: "line 1\nline 2", lineCount: 2 };
+    const state = addComposerPaste(createComposerState(), paste);
+
+    const result = submitComposer(state);
+
+    // Slash detection and the input history read intent.text, so the pasted
+    // body must not be folded into it.
+    expect(result.intent?.text).toBe("");
+    expect(result.intent?.pastes).toEqual([paste]);
+    expect(result.state).toEqual(createComposerState());
+  });
+
+  it("folds attachments into the outgoing body, typed text first", () => {
+    const state = addComposerPaste(
+      addComposerPaste(setComposerText(createComposerState(), "이 로그 좀 봐줘"), {
+        id: "p1",
+        text: "first",
+        lineCount: 1
+      }),
+      { id: "p2", text: "second", lineCount: 2 }
+    );
+
+    const intent = submitComposer(state).intent;
+
+    expect(intent && composeOutgoingText(intent)).toBe(
+      "이 로그 좀 봐줘\n\n[붙여넣은 텍스트 #1 · 1줄]\nfirst\n\n[붙여넣은 텍스트 #2 · 2줄]\nsecond"
+    );
+  });
+
+  it("drops a removed attachment from the outgoing body", () => {
+    const state = addComposerPaste(createComposerState(), { id: "p1", text: "gone", lineCount: 1 });
+
+    const intent = submitComposer(removeComposerPaste(state, "p1")).intent;
+
+    expect(intent).toBeUndefined(); // nothing typed, nothing attached
   });
 
   it("does not submit while IME composition is active", () => {

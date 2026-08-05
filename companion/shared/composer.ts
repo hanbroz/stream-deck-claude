@@ -5,15 +5,47 @@ export type ComposerImage = {
   dataUrl: string;
 };
 
+/**
+ * A block of pasted text held outside the input box.
+ *
+ * Pasting a log of a few hundred lines into the textarea buried whatever the
+ * user was writing and left a box nobody could scroll. Past the threshold the
+ * paste becomes an attachment instead: out of the way on screen, sent verbatim.
+ */
+export type ComposerPaste = {
+  id: string;
+  text: string;
+  lineCount: number;
+};
+
 export type ComposerState = {
   text: string;
   images: ComposerImage[];
+  pastes: ComposerPaste[];
   isComposing: boolean;
 };
 
+/** Lines at or above which a paste is attached rather than inserted. */
+export const PASTE_ATTACH_MIN_LINES = 20;
+
+export function countLines(text: string): number {
+  return text.length === 0 ? 0 : text.split(/\r\n|\r|\n/u).length;
+}
+
+export function shouldAttachPaste(text: string): boolean {
+  return countLines(text) >= PASTE_ATTACH_MIN_LINES;
+}
+
 export type SubmitIntent = {
+  /**
+   * What the user TYPED — attachments are not folded in here. Slash-command
+   * detection and the input history both read this, and neither should have to
+   * step over a thousand pasted lines. `composeOutgoingText` builds the body
+   * that actually goes to Claude.
+   */
   text: string;
   images: ComposerImage[];
+  pastes: ComposerPaste[];
   /**
    * Where the text came from. "model" marks text the assistant wrote — a
    * question-card option label. That text must never be treated as a local
@@ -28,6 +60,7 @@ export function createComposerState(): ComposerState {
   return {
     text: "",
     images: [],
+    pastes: [],
     isComposing: false
   };
 }
@@ -68,13 +101,44 @@ export function removeComposerImage(state: ComposerState, imageId: string): Comp
   };
 }
 
+export function addComposerPaste(state: ComposerState, paste: ComposerPaste): ComposerState {
+  return {
+    ...state,
+    pastes: [...state.pastes, paste]
+  };
+}
+
+export function removeComposerPaste(state: ComposerState, pasteId: string): ComposerState {
+  return {
+    ...state,
+    pastes: state.pastes.filter((paste) => paste.id !== pasteId)
+  };
+}
+
+/**
+ * The message body Claude receives: what was typed, then each attachment in
+ * full. The header line tells Claude the block is pasted material rather than
+ * something the user wrote, and gives it a number to refer back to.
+ */
+export function composeOutgoingText(intent: SubmitIntent): string {
+  if (intent.pastes.length === 0) {
+    return intent.text;
+  }
+  const blocks = intent.pastes.map(
+    (paste, index) => `[붙여넣은 텍스트 #${index + 1} · ${paste.lineCount}줄]\n${paste.text}`
+  );
+  return [intent.text, ...blocks].filter((part) => part.length > 0).join("\n\n");
+}
+
 export function submitComposer(state: ComposerState): { state: ComposerState; intent?: SubmitIntent } {
   if (state.isComposing) {
     return { state };
   }
 
   const text = state.text.trim();
-  if (text.length === 0 && state.images.length === 0) {
+  // An attachment alone is a message: pasting a log and pressing Enter with
+  // nothing typed has to send.
+  if (text.length === 0 && state.images.length === 0 && state.pastes.length === 0) {
     return { state };
   }
 
@@ -82,7 +146,8 @@ export function submitComposer(state: ComposerState): { state: ComposerState; in
     state: createComposerState(),
     intent: {
       text,
-      images: state.images
+      images: state.images,
+      pastes: state.pastes
     }
   };
 }
@@ -109,6 +174,95 @@ export function pushHistory(history: string[], text: string): void {
     return;
   }
   history.push(trimmed);
+}
+
+/**
+ * Context share at which the conversation is compacted automatically.
+ *
+ * Deliberately far below the window limit. Cost is (requests × prefix size), so
+ * every turn taken at 90% pays for a ~900k-token prefix; measured sessions ran
+ * at a ~450k mean prefix for over a thousand requests. Compacting once costs a
+ * few thousand output tokens — far less than carrying the context to the end.
+ */
+export const AUTO_COMPACT_AT_PERCENT = 70;
+
+/**
+ * May the app compact right now?
+ *
+ * Only while WAITING FOR THE USER — never mid-conversation. Compaction takes
+ * minutes and replaces the transcript, so it must not land between a question
+ * and its answer, on top of a queued message, or over a compaction already in
+ * flight.
+ *
+ * `armed` is the one-shot latch: it is cleared when a compaction starts and set
+ * again only once usage falls back under the mark, so a compaction that frees
+ * too little cannot loop.
+ */
+export function shouldAutoCompact(input: {
+  percentage: number | undefined;
+  armed: boolean;
+  busy: boolean;
+  queuedCount: number;
+  compacting: boolean;
+  hasSession: boolean;
+}): boolean {
+  return (
+    input.armed &&
+    input.hasSession &&
+    !input.busy &&
+    !input.compacting &&
+    input.queuedCount === 0 &&
+    input.percentage !== undefined &&
+    input.percentage >= AUTO_COMPACT_AT_PERCENT
+  );
+}
+
+// A unit of work that usually ENDS a line of conversation, and a word saying it
+// actually finished. Both must appear: "커밋할까요?" is a plan, not a milestone.
+const MILESTONE_MARKERS = [
+  /커밋/u, /푸시/u, /배포/u, /릴리[즈스]/u, /빌드/u, /컴파일/u, /머지/u,
+  /\bcommit(?:ted)?\b/iu, /\bpush(?:ed)?\b/iu, /\bdeploy(?:ed)?\b/iu,
+  /\brelease[sd]?\b/iu, /\bbuild\b/iu, /\bmerged?\b/iu
+];
+const COMPLETION_MARKERS = [
+  /완료/u, /했습니다/u, /됐습니다/u, /되었습니다/u, /끝났습니다/u, /마쳤습니다/u,
+  /\bdone\b/iu, /\bsucce/iu, /\bcomplete/iu, /\bfinished\b/iu
+];
+
+/**
+ * Does this reply read like one unit of work just finished?
+ *
+ * A HEURISTIC, and used only to OFFER a fresh conversation — never to start one.
+ * A wrong guess costs an ignored button, so it is tuned to be quiet rather than
+ * clever: it needs both a milestone word and a completion word, and it reads
+ * only the tail, because that is where a reply says what it finished rather
+ * than what it is about to attempt.
+ */
+export function looksLikeCompletedMilestone(text: string): boolean {
+  const tail = text.slice(-1200);
+  return (
+    MILESTONE_MARKERS.some((marker) => marker.test(tail)) &&
+    COMPLETION_MARKERS.some((marker) => marker.test(tail))
+  );
+}
+
+/**
+ * Should Up recall history, or leave the key to the caret?
+ *
+ * Only an EMPTY box starts a recall — Up used to fire whenever the caret sat on
+ * the first line, so it hijacked the key from anyone editing the top line of a
+ * draft. Once a recall is under way the box is no longer empty, so navigation
+ * has to stay allowed or history would be exactly one step deep.
+ *
+ * Down needs no equivalent: navigateHistory already returns null when no recall
+ * is in progress, which leaves the key to the caret on its own.
+ */
+export function shouldRecallHistory(input: {
+  draft: string;
+  historyIndex: number;
+  historyLength: number;
+}): boolean {
+  return input.draft.length === 0 || input.historyIndex < input.historyLength;
 }
 
 export type HistoryNavigation = { index: number; text: string };

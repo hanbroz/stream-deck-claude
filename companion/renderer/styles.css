@@ -231,7 +231,9 @@ body.is-split-resizing.is-resizing-rows * {
   display: flex;
   width: var(--explorer-width, 260px);
   min-width: 210px;
-  max-width: 380px;
+  /* Keep in step with explorerBounds() in renderer/index.ts — the drag is
+     clamped there, and a lower cap here would silently override it. */
+  max-width: 760px;
   flex: 0 0 var(--explorer-width, 260px);
   flex-direction: column;
   border-right: 1px solid var(--line-strong);
@@ -1594,6 +1596,55 @@ textarea {
   height: 68px;
   object-fit: cover;
   border-radius: 4px;
+}
+
+/* The action a notice can offer (e.g. start a fresh conversation). Sits under
+   its text so the notice still reads as a sentence, not a dialog. */
+.notice__action {
+  margin-top: 8px;
+  padding: 5px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.notice__action:hover:not(:disabled) {
+  background: rgba(217, 119, 87, 0.14);
+}
+
+.notice__action:disabled {
+  border-color: #3a3a3a;
+  color: var(--muted);
+  cursor: default;
+}
+
+/* A pasted-text attachment has no picture to show, so it is a labelled chip
+   rather than a thumbnail one — same frame, its own column layout. */
+.image-chip--text {
+  grid-template-columns: auto minmax(0, 1fr) 24px;
+  max-width: 320px;
+}
+
+.image-chip__glyph {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #3a3a3a;
+  color: #cfcfcf;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.image-chip__label {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
 .image-chip button {
