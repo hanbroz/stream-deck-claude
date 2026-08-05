@@ -26,6 +26,7 @@ import {
   readContextSessionResumePointer,
   writeActiveLaunch
 } from "../io/context-session-cache";
+import { showErrorDialog } from "../services/error-dialog";
 import { showFolderPicker } from "../services/folder-picker";
 import { focusCompanionWindow, launchClaudeCompanion } from "../services/companion-launcher";
 import { launchClaudeTerminal, validateLaunchFolder } from "../services/terminal-launcher";
@@ -45,6 +46,7 @@ import {
 const REFRESH_INTERVAL_MS = 500;
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bridgeSourcePath = path.join(pluginRoot, "bridge", "statusline-bridge.js");
+const pluginLogDirectory = path.join(pluginRoot, "logs");
 
 type CodeStartSettings = JsonObject & {
   bindingId?: string;
@@ -111,8 +113,10 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
         launchClaudeCompanion,
         launchClaudeTerminal,
         logger: streamDeck.logger,
+        pluginLogDirectory,
         readContextSessionResumePointer,
         renderCodeStartKeyImage,
+        showErrorDialog,
         validateLaunchFolder,
         writeActiveLaunch
       })

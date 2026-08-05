@@ -62,6 +62,9 @@ function createDependencies() {
       async () => undefined
     );
   const writeActiveLaunch = vi.fn(async () => undefined);
+  const showErrorDialog = vi.fn<CodeStartLaunchDependencies["showErrorDialog"]>(
+    async () => undefined
+  );
   const findRunningCompanionLaunch =
     vi.fn<CodeStartLaunchDependencies["findRunningCompanionLaunch"]>(async () => undefined);
   const focusCompanionWindow =
@@ -81,8 +84,10 @@ function createDependencies() {
     clearContextSessionResumePointer,
     readContextSessionResumePointer,
     renderCodeStartKeyImage,
+    showErrorDialog,
     validateLaunchFolder,
     writeActiveLaunch,
+    pluginLogDirectory: "D:\\Plugin\\logs",
     createLaunchId: () => "launch-123",
     now: () => 1_700_000_000_000,
     logger
@@ -101,6 +106,7 @@ function createDependencies() {
     readContextSessionResumePointer,
     writeActiveLaunch,
     renderCodeStartKeyImage,
+    showErrorDialog,
     logger
   };
 }
@@ -407,6 +413,71 @@ describe("Code Start relaunch guard", () => {
       })
     );
     expect(action.showOk).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The failure a disconnected Google Drive produces: the configured folder is
+   * simply gone. Before this dialog the key showed only an alert icon and the
+   * reason lived in the plugin log.
+   */
+  it("names the missing folder in a dialog when the configured path is gone", async () => {
+    const harness = createDependencies();
+    const missing: NodeJS.ErrnoException = new Error(
+      "ENOENT: no such file or directory, stat 'G:\\\\Drive\\\\2ndBrain'"
+    );
+    missing.code = "ENOENT";
+    harness.validateLaunchFolder.mockRejectedValueOnce(missing);
+    const action = createAction();
+
+    await launchConfiguredCodeStart({
+      action,
+      settings: { bindingId: "binding-1", folder: "G:\\Drive\\2ndBrain", projectName: "2ndBrain" },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    });
+
+    expect(harness.showErrorDialog).toHaveBeenCalledWith(
+      '프로젝트에 지정된 경로 "G:\\Drive\\2ndBrain"를 찾을 수 없습니다.'
+    );
+    expect(action.setImage).toHaveBeenCalledWith("2ndBrain:error:idle");
+    expect(action.showAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds the launch guard while the dialog is open so presses cannot stack copies", async () => {
+    const harness = createDependencies();
+    const missing: NodeJS.ErrnoException = new Error("ENOENT: no such file or directory");
+    missing.code = "ENOENT";
+    harness.validateLaunchFolder.mockRejectedValue(missing);
+    // Signalled from inside the mock so the second press happens once the dialog
+    // is genuinely open, rather than after a guessed number of microtasks.
+    const opened = deferred<void>();
+    const dismissal = deferred<void>();
+    harness.showErrorDialog.mockImplementation(() => {
+      opened.resolve();
+      return dismissal.promise;
+    });
+    const options = {
+      action: createAction(),
+      settings: { bindingId: "binding-1", folder: "G:\\Drive\\2ndBrain", projectName: "2ndBrain" },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    };
+
+    const firstPress = launchConfiguredCodeStart(options);
+    await opened.promise;
+    await launchConfiguredCodeStart(options);
+
+    // The second press was turned away by the guard, so no second dialog.
+    expect(harness.showErrorDialog).toHaveBeenCalledTimes(1);
+
+    dismissal.resolve();
+    await firstPress;
+
+    // Once dismissed the key is pressable again.
+    await launchConfiguredCodeStart(options);
+    expect(harness.showErrorDialog).toHaveBeenCalledTimes(2);
   });
 
   it("passes an exact resume session ID from the matching pointer into Companion", async () => {

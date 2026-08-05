@@ -13,12 +13,14 @@ import type {
   focusCompanionWindow,
   launchClaudeCompanion
 } from "../services/companion-launcher";
+import type { showErrorDialog } from "../services/error-dialog";
 import type {
   launchClaudeTerminal,
   validateLaunchFolder
 } from "../services/terminal-launcher";
 import type { renderCodeStartKeyImage } from "../ui/code-start-renderer";
 import type { CodeStartLaunchGuard } from "./code-start-launch-guard";
+import { describeLaunchFailure } from "./launch-failure-message";
 
 /**
  * Where a press opens Claude Code. "companion" is the assumed value when the
@@ -59,8 +61,11 @@ export type CodeStartLaunchDependencies = {
   clearContextSessionResumePointer: typeof clearContextSessionResumePointer;
   readContextSessionResumePointer: typeof readContextSessionResumePointer;
   renderCodeStartKeyImage: typeof renderCodeStartKeyImage;
+  showErrorDialog: typeof showErrorDialog;
   validateLaunchFolder: typeof validateLaunchFolder;
   writeActiveLaunch: typeof writeActiveLaunch;
+  /** Where the failure dialog points the user for the full stack trace. */
+  pluginLogDirectory: string;
   createLaunchId: () => string;
   now: () => number;
   logger: CodeStartLaunchLogger;
@@ -109,7 +114,8 @@ export function defaultCodeStartLaunchDependencies(
       "findRunningCompanionLaunch" |
       "focusCompanionWindow" | "claudeConversationExists" |
       "clearContextSessionResumePointer" | "readContextSessionResumePointer" |
-      "renderCodeStartKeyImage" | "validateLaunchFolder" | "writeActiveLaunch" | "logger"
+      "renderCodeStartKeyImage" | "showErrorDialog" | "validateLaunchFolder" |
+      "writeActiveLaunch" | "pluginLogDirectory" | "logger"
   >
 ): CodeStartLaunchDependencies {
   return {
@@ -250,6 +256,11 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
       dependencies.renderCodeStartKeyImage(projectName, { kind: "error", activity: "idle" })
     );
     await action.showAlert();
+    // Awaited here, before `finally` releases the guard, so pressing the key
+    // again while the dialog is open cannot stack a second copy of it.
+    await dependencies.showErrorDialog(
+      describeLaunchFailure(error, folder, dependencies.pluginLogDirectory)
+    );
   } finally {
     launchGuard.end(bindingId);
   }
