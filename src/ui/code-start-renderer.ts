@@ -105,11 +105,17 @@ export function renderCodeStartKey(
   frame = 0
 ): string {
   if (state.kind === "closed") {
+    // A closed key carries the project name ALONE: no status word, no model, no
+    // track. On a full page of keys the difference has to register without
+    // reading — live keys are the ones with colour and a bar under the name.
+    //
+    // y=81 centres a 25px cap height in the 144px key (72 + 25 * 0.716 / 2).
+    // The name is grey and the border is pulled toward the background so the
+    // whole key recedes rather than just losing a line of text.
     return `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
   <rect width="144" height="144" rx="22" fill="#17130f"/>
-  <rect x="1.5" y="1.5" width="141" height="141" rx="20.5" fill="none" stroke="#40342b" stroke-width="3"/>
-  <text x="72" y="53" text-anchor="middle" fill="#fffaf5" font-family="Arial, sans-serif" font-size="25" font-weight="800"${projectFitAttributes(projectName)}>${projectLabel(projectName)}</text>
-  <text x="72" y="91" text-anchor="middle" fill="#ff6b74" font-family="Arial, sans-serif" font-size="20" font-weight="800">Closed</text>
+  <rect x="1.5" y="1.5" width="141" height="141" rx="20.5" fill="none" stroke="#2a231d" stroke-width="3"/>
+  <text x="72" y="81" text-anchor="middle" fill="#6f6a66" font-family="Arial, sans-serif" font-size="25" font-weight="800"${projectFitAttributes(projectName)}>${projectLabel(projectName)}</text>
 </svg>`;
   }
 

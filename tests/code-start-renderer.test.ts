@@ -113,15 +113,20 @@ describe("renderCodeStartKey", () => {
     expect(svg).toContain('data-role="context-fill" x="18" y="101" width="45"');
   });
 
-  it("replaces all context content with Closed after the launched session ends", () => {
+  it("leaves a closed key showing only the project name, greyed and centred", () => {
     const svg = renderCodeStartKey("Project A", {
       kind: "closed",
       activity: "ended"
     });
 
     expect(svg).toContain(">Project A</text>");
-    expect(svg).toContain(">Closed</text>");
-    expect(svg.match(/<text\b/g)).toHaveLength(2);
+    // The status word is gone: a page of keys is scanned, not read, and the
+    // live ones are the ones carrying colour.
+    expect(svg).not.toContain("Closed");
+    expect(svg.match(/<text\b/g)).toHaveLength(1);
+    // Grey, and vertically centred now that it is the only line.
+    expect(svg).toContain('x="72" y="81" text-anchor="middle" fill="#6f6a66"');
+    expect(svg).not.toContain("#fffaf5");
     expect(svg).not.toContain('data-role="model-text"');
     expect(svg).not.toContain('data-role="context-track"');
     expect(svg).not.toContain('data-role="context-fill"');
