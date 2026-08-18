@@ -134,3 +134,60 @@ describe("searchProjectText", () => {
     expect(result.scanned).toBe(1);
   });
 });
+
+describe("searchProjectText cancellation", () => {
+  it("returns an empty result without scanning when already aborted", async () => {
+    await write("src/app.ts", "const needle = 2;\n");
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await searchProjectText(root, "needle", controller.signal);
+
+    expect(result.files).toEqual([]);
+    expect(result.scanned).toBe(0);
+    expect(result.cancelled).toBe(true);
+  });
+
+  it("leaves a genuine empty result unmarked, so the two stay distinguishable", async () => {
+    await write("src/app.ts", "nothing here");
+
+    const result = await searchProjectText(root, "needle");
+
+    expect(result.files).toEqual([]);
+    expect(result.cancelled).toBeUndefined();
+  });
+
+  it("stops inside the scan loop, after the directory walk has finished", async () => {
+    // Flat on purpose: with no subdirectory the walk calls visit() exactly once,
+    // so the reads of `aborted` before the scan loop are a fixed three — the
+    // entry guard, that one visit, and the post-walk guard. The fourth read is
+    // the loop's own, which is what this test is here to exercise. If a guard is
+    // ever added or moved, this count changes and the test says so.
+    for (let index = 0; index < 200; index += 1) {
+      await write(`file-${index}.ts`, "const needle = 1;\n");
+    }
+    const READS_BEFORE_LOOP = 3;
+    let reads = 0;
+    const signal = {
+      get aborted(): boolean {
+        reads += 1;
+        return reads > READS_BEFORE_LOOP;
+      }
+    };
+
+    const result = await searchProjectText(root, "needle", signal);
+
+    expect(reads).toBe(READS_BEFORE_LOOP + 1);
+    expect(result.scanned).toBe(200); // the walk ran to completion
+    expect(result.files).toEqual([]); // and not one file was read
+    expect(result.cancelled).toBe(true);
+  });
+
+  it("still searches normally when no signal is given", async () => {
+    await write("src/app.ts", "const needle = 2;\n");
+
+    const result = await searchProjectText(root, "needle");
+
+    expect(result.files).toHaveLength(1);
+  });
+});

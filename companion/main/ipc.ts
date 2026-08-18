@@ -284,11 +284,30 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   );
   // The root is always deps.rootPath, never a caller-supplied path, so this
   // channel cannot be aimed outside the project.
+  // Only the newest search matters. Each debounced keystroke starts one, and
+  // before this the superseded ones kept scanning the whole project to the end,
+  // stacking on the thread that also forwards PTY output to the renderer.
+  let searchAbort: AbortController | undefined;
   deps.ipcMain.handle(
     COMPANION_IPC.pathSearch,
-    async (_event: SenderEvent, query: unknown): Promise<ProjectSearchResult> =>
-      searchProjectText(deps.rootPath, requireString(query, "query"))
+    async (_event: SenderEvent, query: unknown): Promise<ProjectSearchResult> => {
+      // Validate first: a malformed payload must not kill a legitimate scan, nor
+      // leave searchAbort holding a controller no search ever received (which
+      // would make the next cancel a no-op).
+      const needle = requireString(query, "query");
+      searchAbort?.abort();
+      const controller = new AbortController();
+      searchAbort = controller;
+      return searchProjectText(deps.rootPath, needle, controller.signal);
+    }
   );
+  // Closing the overlay has to stop the scan too. Otherwise pressing Escape
+  // left the last search running to the end on the PTY-forwarding thread —
+  // the very case cancellation exists for, since no newer search follows it.
+  deps.ipcMain.handle(COMPANION_IPC.pathSearchCancel, async () => {
+    searchAbort?.abort();
+    searchAbort = undefined;
+  });
   deps.ipcMain.handle(COMPANION_IPC.pathDelete, async (_event: SenderEvent, path: unknown) => {
     await deleteContainedPath(deps.rootPath, requireString(path, "path"), deps.shell);
   });

@@ -89,6 +89,7 @@ export const COMPANION_IPC = {
   pathCopyMeasure: "companion:path:copy-measure",
   pathCopyInto: "companion:path:copy-into",
   pathSearch: "companion:path:search",
+  pathSearchCancel: "companion:path:search-cancel",
   terminalOpenFolder: "companion:terminal:open-folder",
   terminalRelogin: "companion:terminal:relogin",
   diag: "companion:diag",

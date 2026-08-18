@@ -970,6 +970,9 @@ function closeSearch(): void {
   }
   clearTimeout(searchTimer);
   searchSeq += 1;
+  // Bumping searchSeq only stops the reply from rendering; the scan itself runs
+  // in the main process and has to be told.
+  void api?.paths.searchCancel();
   searchOverlay.hidden = true;
   // Focus goes back where it was — otherwise it lands on <body> and the
   // terminal stops taking keystrokes until it is clicked.
@@ -989,6 +992,9 @@ async function runSearch(): Promise<void> {
 
   const verdict = queryLengthVerdict(query);
   if (verdict !== "ok" || !api) {
+    // Backspacing below two characters is the commonest way to abandon a
+    // search, and the scan it started is still running in the main process.
+    void api?.paths.searchCancel();
     searchRows = [];
     searchIndex = 0;
     // A too-long query is dropped by the search itself, so saying nothing here
@@ -1121,16 +1127,45 @@ function renderSearchResults(): void {
 
     item.addEventListener("mousedown", (event) => {
       event.preventDefault(); // keep the search field focused
-      searchIndex = index;
+      // Through the helper, so searchIndex and the painted selection never
+      // disagree; a later hover onto this same row would otherwise early-return
+      // and leave the highlight behind on the old one.
+      setSearchIndex(index);
       void activateSearchRow(event.ctrlKey);
     });
     item.addEventListener("mouseenter", () => {
-      searchIndex = index;
-      renderSearchResults();
+      setSearchIndex(index);
     });
 
     searchResults.append(item);
   });
+}
+
+/**
+ * Move the selection by repainting two rows, not by rebuilding the list.
+ *
+ * Selection changes on every row the pointer crosses, and a full re-render
+ * there rebuilt every button in a result set that reaches thousands of rows.
+ * Only two rows actually change, so the work stays constant per move rather
+ * than growing with the result count. Child order matches searchRows exactly
+ * whenever there is at least one row.
+ */
+function setSearchIndex(index: number): void {
+  if (index === searchIndex) {
+    return;
+  }
+  const rows = searchResults.children;
+  const previous = rows[searchIndex];
+  const next = rows[index];
+  searchIndex = index;
+  if (previous instanceof HTMLElement) {
+    previous.classList.remove("is-active");
+    previous.setAttribute("aria-selected", "false");
+  }
+  if (next instanceof HTMLElement) {
+    next.classList.add("is-active");
+    next.setAttribute("aria-selected", "true");
+  }
 }
 
 function scrollActiveSearchRowIntoView(): void {
@@ -1263,8 +1298,7 @@ document.addEventListener(
       event.preventDefault();
       event.stopPropagation();
       const step = event.key === "ArrowDown" ? 1 : -1;
-      searchIndex = (searchIndex + step + searchRows.length) % searchRows.length;
-      renderSearchResults();
+      setSearchIndex((searchIndex + step + searchRows.length) % searchRows.length);
       scrollActiveSearchRowIntoView();
       return;
     }
@@ -2036,11 +2070,32 @@ async function toggleDirectory(node: TreeNode): Promise<void> {
  * stayed open: files that appear while it is idle (a git checkout or merge, a
  * build) are rarely in the folder the user happens to right-click, and no
  * amount of refreshing elsewhere brought them in.
+ *
+ * The walk is one `paths.list` per opened folder, so it spans many awaits. It
+ * starts from a snapshot of `treeRoots` and returns a whole replacement tree, so
+ * a folder expanded while it ran was silently collapsed again by the result.
+ * Every tree update replaces the array rather than mutating it, which makes
+ * reference identity a reliable "did anything change" test: when it changed, the
+ * walk is stale and is redone against the newer tree.
  */
 async function refreshTree(): Promise<void> {
-  treeRoots = await refreshLoadedTree(projectRoot, treeRoots, async (directoryPath) =>
-    entriesToNodes((await api?.paths.list(directoryPath)) ?? [])
-  );
+  // Retries are bounded so a user working the chevrons cannot spin this
+  // forever, and the last attempt commits unconditionally: callers here report
+  // success ("Explorer refreshed.", a completed copy, a created file), so a
+  // silently dropped refresh would leave them lying about what is on screen.
+  // Each attempt re-reads treeRoots, so the committing walk starts from the
+  // freshest tree and can lose at most a toggle made during that last walk.
+  const attempts = 3;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const snapshot = treeRoots;
+    const refreshed = await refreshLoadedTree(projectRoot, snapshot, async (directoryPath) =>
+      entriesToNodes((await api?.paths.list(directoryPath)) ?? [])
+    );
+    if (treeRoots === snapshot || attempt === attempts - 1) {
+      treeRoots = refreshed;
+      break;
+    }
+  }
   renderTree();
 }
 
@@ -3489,6 +3544,10 @@ function clearConsoleOutput(): void {
   clearSuggested = false;
   turns.length = 0;
   consoleElement.replaceChildren();
+  // Emptying the console fires no scroll event, so a transcript parked away from
+  // the bottom kept auto-follow off and left the jump button over a blank pane.
+  stickToBottom = true;
+  jumpToBottom.hidden = true;
   resetAgentBoard();
   historySessionId = undefined;
   historyOffset = 0;

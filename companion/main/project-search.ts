@@ -30,7 +30,22 @@ export type ProjectSearchResult = {
   /** Some part of the answer was cut by a cap — the result is a lower bound. */
   truncated: boolean;
   scanned: number;
+  /**
+   * The search was superseded and stopped early, so an empty `files` means
+   * "never finished looking", not "nothing matches". Without this the two are
+   * indistinguishable to anyone reading the result on its own.
+   */
+  cancelled?: boolean;
 };
+
+/**
+ * Just the part of `AbortSignal` a scan reads.
+ *
+ * Structural rather than `AbortSignal` so a test can drive the per-batch guard
+ * deterministically — timing an abort to land inside the scan loop and not
+ * during the directory walk is otherwise a race.
+ */
+export type CancelSignal = { readonly aborted: boolean };
 
 export const MAX_FILE_BYTES = 1024 * 1024;
 
@@ -151,12 +166,26 @@ async function scanFile(
  *
  * Every cap folds into a single `truncated` flag, so the UI can say the answer
  * is partial without the caller having to know which limit was hit.
+ *
+ * `signal` drops a superseded search. Typing runs one of these per debounced
+ * keystroke, and without it every one ran to completion: the scans stacked up on
+ * the same thread that forwards PTY output. An aborted search resolves empty and
+ * never rejects — the renderer shows a rejection as a failed search, and being
+ * superseded is not a failure.
+ *
+ * ponytail: the scan still runs on the main thread, bounded by SCAN_MAX_ENTRIES
+ * and MAX_FILE_BYTES. If a large project ever feels janky while searching, move
+ * scanFile onto a worker_thread; cancellation already has the shape for it.
  */
 export async function searchProjectText(
   root: string,
-  query: string
+  query: string,
+  signal?: CancelSignal
 ): Promise<ProjectSearchResult> {
   const needle = query.trim();
+  if (signal?.aborted) {
+    return { files: [], truncated: false, scanned: 0, cancelled: true };
+  }
   if (queryLengthVerdict(needle) !== "ok") {
     return { files: [], truncated: false, scanned: 0 };
   }
@@ -165,14 +194,28 @@ export async function searchProjectText(
   const relativePaths = await listProjectFilesRecursive(
     realRoot,
     SCAN_MAX_ENTRIES,
-    SCAN_MAX_DEPTH
+    SCAN_MAX_DEPTH,
+    signal
   );
+  if (signal?.aborted) {
+    return { files: [], truncated: false, scanned: relativePaths.length, cancelled: true };
+  }
   const walkTruncated = relativePaths.length >= SCAN_MAX_ENTRIES;
 
   const files: SearchFileResult[] = [];
   let capped = false;
 
   for (let index = 0; index < relativePaths.length; index += SCAN_CONCURRENCY) {
+    // Checked per batch, not per file: a batch is 16 reads, so this drops a
+    // superseded search within one batch of the keystroke that replaced it.
+    if (signal?.aborted) {
+      return {
+        files: [],
+        truncated: false,
+        scanned: relativePaths.length,
+        cancelled: true
+      };
+    }
     if (files.length >= MAX_RESULT_FILES) {
       capped = true;
       break;

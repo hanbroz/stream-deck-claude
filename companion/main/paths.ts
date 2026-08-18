@@ -149,13 +149,16 @@ const MENTION_IGNORED_DIRECTORIES = new Set([
 export async function listProjectFilesRecursive(
   root: string,
   maxEntries = 2000,
-  maxDepth = 6
+  maxDepth = 6,
+  signal?: { readonly aborted: boolean }
 ): Promise<string[]> {
   const realRoot = await realpath(path.resolve(root));
   const files: string[] = [];
 
   async function visit(directory: string, depth: number): Promise<void> {
-    if (files.length >= maxEntries || depth > maxDepth) {
+    // A superseded search must stop walking too, not just stop reading files:
+    // the walk alone can cover SCAN_MAX_ENTRIES directories.
+    if (files.length >= maxEntries || depth > maxDepth || signal?.aborted) {
       return;
     }
     let entries: Dirent[];

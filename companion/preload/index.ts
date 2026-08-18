@@ -75,6 +75,7 @@ export type ClaudeCompanionApi = {
     copyInto(destinationPath: string, sourcePaths: string[]): Promise<CopyResult>;
     /** Files under the project root whose text contains `query`. */
     search(query: string): Promise<ProjectSearchResult>;
+    searchCancel(): Promise<void>;
   };
   terminal: {
     start(request?: TerminalSessionStartRequest): Promise<TerminalSessionStarted>;
@@ -195,7 +196,8 @@ const api: ClaudeCompanionApi = {
       ipcRenderer.invoke(COMPANION_IPC.pathCopyMeasure, sourcePaths),
     copyInto: (destinationPath, sourcePaths) =>
       ipcRenderer.invoke(COMPANION_IPC.pathCopyInto, destinationPath, sourcePaths),
-    search: (query) => ipcRenderer.invoke(COMPANION_IPC.pathSearch, query)
+    search: (query) => ipcRenderer.invoke(COMPANION_IPC.pathSearch, query),
+    searchCancel: () => ipcRenderer.invoke(COMPANION_IPC.pathSearchCancel)
   },
   terminal: {
     start: (request = {}) => ipcRenderer.invoke(COMPANION_IPC.terminalStart, request),

@@ -457,3 +457,18 @@ describe("contained path operations", () => {
     }
   });
 });
+
+describe("listProjectFilesRecursive cancellation", () => {
+  it("walks nothing when the signal is already aborted", async () => {
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src", "a.ts"), "x");
+    const controller = new AbortController();
+    controller.abort();
+
+    // The walk alone can cover SCAN_MAX_ENTRIES directories, so a superseded
+    // search must stop here too, not only before reading file contents.
+    await expect(
+      listProjectFilesRecursive(root, 2000, 6, controller.signal)
+    ).resolves.toEqual([]);
+  });
+});

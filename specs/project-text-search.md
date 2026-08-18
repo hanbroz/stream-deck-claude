@@ -131,9 +131,24 @@ handler that interrupts Claude.
 ### Superseded searches
 
 The renderer holds a counter that increments on every search it starts. A result
-is rendered only when its counter still matches the current one. Nothing is
-cancelled in the main process — every scan is capped, so the wasted work is
-bounded and a cancellation protocol would be more moving parts than it saves.
+is rendered only when its counter still matches the current one.
+
+That counter alone was not enough. It stops a stale *reply* from rendering, but
+the scan behind it kept running to the end in the main process — the same thread
+that forwards PTY output to the renderer — and one ran per debounced keystroke,
+so they stacked. The caps bound each scan, not the number of them in flight.
+
+So the main process cancels too. Each `path:search` aborts the previous scan
+before starting its own, and `path:search-cancel` aborts the last one when no
+newer search follows: closing the overlay, and backspacing the query below the
+minimum length. Both are checked at three points — before the walk starts,
+inside the directory walk, and once per batch of the scan loop — so an abandoned
+search stops within a batch rather than at the end of the project.
+
+An aborted scan resolves; it never rejects, because the renderer shows a
+rejection as a failed search and being superseded is not a failure. It carries
+`cancelled: true` so an empty `files` says "stopped looking" rather than "nothing
+matches" to anyone reading the result on its own.
 
 ### Revealing in the tree
 
@@ -160,3 +175,16 @@ directory: case-insensitive matching, binary files skipped via the NUL probe,
 oversized files skipped, ignored directories not visited, the per-file hit cap
 and the file cap both reported through `truncated`, and a query under 2
 characters returning nothing.
+
+Cancellation is covered at each layer it acts on. `project-search.test.ts` drives
+the scan loop's own guard with a signal that reports aborted only after the walk
+has finished, so the guard is exercised rather than skipped, and checks that a
+genuine empty result stays unmarked. `paths.test.ts` covers the walk stopping.
+`ipc.test.ts` overlaps two `path:search` invocations without awaiting between
+them and asserts the first comes back cancelled — awaiting would let it finish
+and prove nothing.
+
+`shared/search-query.ts` holds the length policy both processes apply, with its
+own test. It lives in `shared/` because the renderer bundles for the browser: a
+value imported out of `main/` drags `node:fs` into a bundle that cannot resolve
+it, and neither the typechecker nor the tests see that — only the build does.

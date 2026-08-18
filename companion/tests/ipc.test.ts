@@ -130,6 +130,31 @@ describe("registerCompanionIpc", () => {
     // supplies no command string, so there is nothing to inject through IPC.
     await ipcMain.handlers.get(COMPANION_IPC.terminalRelogin)?.({});
     expect(openTerminalFolder).toHaveBeenCalledWith(root, "claude auth login");
+
+    // Cancelling with no search in flight must not throw: closing the overlay
+    // fires this whether or not anything is running.
+    await expect(
+      ipcMain.handlers.get(COMPANION_IPC.pathSearchCancel)?.({})
+    ).resolves.toBeUndefined();
+    // Two searches genuinely in flight: the second must cancel the first, which
+    // is the stacking this channel exists to prevent. Deliberately not awaited
+    // in between — awaiting would let the first finish and prove nothing.
+    const superseded = ipcMain.handlers.get(COMPANION_IPC.pathSearch)?.({}, "needle");
+    const newest = ipcMain.handlers.get(COMPANION_IPC.pathSearch)?.({}, "needle");
+    expect(((await superseded) as { cancelled?: boolean }).cancelled).toBe(true);
+    expect(((await newest) as { cancelled?: boolean }).cancelled).toBeUndefined();
+
+    // A cancelled search must not poison the next one.
+    await ipcMain.handlers.get(COMPANION_IPC.pathSearchCancel)?.({});
+    const afterCancel = (await ipcMain.handlers.get(COMPANION_IPC.pathSearch)?.(
+      {},
+      "needle"
+    )) as { cancelled?: boolean };
+    expect(afterCancel.cancelled).toBeUndefined();
+    // A malformed payload rejects without disturbing anything.
+    await expect(
+      ipcMain.handlers.get(COMPANION_IPC.pathSearch)?.({}, 42)
+    ).rejects.toThrow();
     await expect(
       ipcMain.handlers.get(COMPANION_IPC.claudeStart)?.({}, { cwd: ".." })
     ).rejects.toThrow("Path is outside the allowed root");
