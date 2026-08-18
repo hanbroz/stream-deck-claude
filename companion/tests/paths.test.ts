@@ -21,6 +21,7 @@ import {
   listProjectFilesRecursive,
   measureCopySources,
   openContainedPath,
+  renameContainedPath,
   resolveCompanionRuntimeEnv,
   resolveCompanionRoot,
   resolveContainedPath,
@@ -54,6 +55,46 @@ describe("resolveContainedPath", () => {
     expect(() => resolveContainedPath(root, "..")).toThrow(
       "Path is outside the allowed root"
     );
+  });
+});
+
+describe("renameContainedPath", () => {
+  it("renames in place, and refuses escapes, collisions and the root", async () => {
+    const realRoot = await realpath(root);
+    await createContainedFile(realRoot, ".", "old.ts", "content");
+    await createContainedFile(realRoot, ".", "taken.ts", "");
+    await mkdir(path.join(realRoot, "src"));
+
+    await expect(renameContainedPath(realRoot, "old.ts", "new.ts")).resolves.toBe(
+      path.join(realRoot, "new.ts")
+    );
+    await expect(readFile(path.join(realRoot, "new.ts"), "utf8")).resolves.toBe("content");
+
+    // A directory renames the same way, subtree and all.
+    await createContainedFile(realRoot, "src", "index.ts", "x");
+    await expect(renameContainedPath(realRoot, "src", "lib")).resolves.toBe(
+      path.join(realRoot, "lib")
+    );
+    await expect(readFile(path.join(realRoot, "lib", "index.ts"), "utf8")).resolves.toBe("x");
+
+    // The new name is a name, never a path: no separators, no traversal.
+    await expect(renameContainedPath(realRoot, "new.ts", "../escaped.ts")).rejects.toThrow(
+      "Name is invalid"
+    );
+    await expect(renameContainedPath(realRoot, "new.ts", "sub/escaped.ts")).rejects.toThrow(
+      "Name is invalid"
+    );
+    await expect(renameContainedPath(realRoot, "..", "hijacked")).rejects.toThrow(
+      "Path is outside the allowed root"
+    );
+    await expect(renameContainedPath(realRoot, ".", "hijacked")).rejects.toThrow(
+      "Cannot rename the project root"
+    );
+    // An existing name is never silently overwritten.
+    await expect(renameContainedPath(realRoot, "new.ts", "taken.ts")).rejects.toThrow(
+      "Name is already taken"
+    );
+    await expect(readFile(path.join(realRoot, "taken.ts"), "utf8")).resolves.toBe("");
   });
 });
 

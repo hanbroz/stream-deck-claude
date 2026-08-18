@@ -38,6 +38,31 @@ export function displayModelName(model: string | undefined): string | undefined 
   return parseModelId(model)?.label;
 }
 
+/**
+ * The session id a key snapshot should carry.
+ *
+ * Three sources, and the order between the last two is the whole point. A live
+ * conversation always wins. With none, the folder's resume id keeps the key
+ * useful before the first message — but once the conversation has been ended
+ * that id names the very conversation the user discarded, and handing it back
+ * would restore the key's resume pointer to it. Ended means the launch id, the
+ * same placeholder the opening and reset snapshots use.
+ */
+export function snapshotSessionId(options: {
+  liveSessionId?: string;
+  resumeSessionId?: string;
+  launchId: string;
+  conversationEnded: boolean;
+}): string {
+  if (options.liveSessionId) {
+    return options.liveSessionId;
+  }
+  if (options.conversationEnded) {
+    return options.launchId;
+  }
+  return options.resumeSessionId ?? options.launchId;
+}
+
 export function buildContextSnapshot(input: ContextSnapshotInput): Record<string, unknown> {
   const usedPercentage = input.usedTokens === null
     ? null

@@ -1,4 +1,4 @@
-import { cp, lstat, mkdir, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { Dirent } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -351,6 +351,42 @@ export async function createContainedFile(
   const filePath = resolveContainedPath(realRoot, path.join(path.relative(realRoot, parent), name));
   await writeFile(filePath, content, { encoding: "utf8", flag: "wx" });
   return filePath;
+}
+
+/**
+ * Rename a file or folder in place. The replacement is a bare NAME, not a path
+ * — `assertSafeName` rejects separators — so a rename can never move an entry
+ * out of its folder, let alone out of the project. The project root itself has
+ * no parent inside the root and so cannot be renamed.
+ *
+ * Renaming onto an existing entry is refused rather than overwriting it, which
+ * `fs.rename` would happily do for a file. A name that differs only in case is
+ * the same entry on Windows, so it is allowed through as a genuine rename.
+ */
+export async function renameContainedPath(
+  root: string,
+  requestedPath: string,
+  newName: string
+): Promise<string> {
+  assertSafeName(newName, "Name");
+  const realRoot = await realpath(path.resolve(root));
+  const target = await resolveExistingContainedPath(realRoot, requestedPath);
+  if (target === realRoot) {
+    throw new Error("Cannot rename the project root");
+  }
+
+  const destination = path.join(path.dirname(target), newName);
+  // ponytail: case-insensitive compare matches Windows, the only platform this
+  // app ships on. A case-sensitive filesystem would need a real inode compare.
+  if (destination.toLowerCase() !== target.toLowerCase()) {
+    const taken = await lstat(destination).then(() => true, () => false);
+    if (taken) {
+      throw new Error("Name is already taken");
+    }
+  }
+
+  await rename(target, destination);
+  return destination;
 }
 
 /**

@@ -62,6 +62,7 @@ export const COMPANION_IPC = {
   claudeConfigure: "companion:claude:configure",
   claudeApply: "companion:claude:apply",
   claudeClear: "companion:claude:clear",
+  claudeContextReset: "companion:claude:context-reset",
   claudeInterrupt: "companion:claude:interrupt",
   claudeKill: "companion:claude:kill",
   claudePasteClipboardImage: "companion:claude:paste-clipboard-image",
@@ -82,11 +83,14 @@ export const COMPANION_IPC = {
   pathList: "companion:path:list",
   pathCreateDirectory: "companion:path:create-directory",
   pathCreateFile: "companion:path:create-file",
+  pathRename: "companion:path:rename",
   pathOpen: "companion:path:open",
   pathReveal: "companion:path:reveal",
   pathCopyMeasure: "companion:path:copy-measure",
   pathCopyInto: "companion:path:copy-into",
+  pathSearch: "companion:path:search",
   terminalOpenFolder: "companion:terminal:open-folder",
+  terminalRelogin: "companion:terminal:relogin",
   diag: "companion:diag",
   claudeHistory: "companion:claude:history",
   clipboardWriteText: "companion:clipboard:write-text",
@@ -99,6 +103,15 @@ export const COMPANION_IPC = {
 
 export type CompanionIpcChannel =
   (typeof COMPANION_IPC)[keyof typeof COMPANION_IPC];
+
+/**
+ * The sign-in command handed to the external terminal when a login expires.
+ *
+ * `claude login` does not exist — authentication lives under the `auth`
+ * subcommand. Shared so the sentence the user reads and the command actually run
+ * cannot drift apart.
+ */
+export const CLAUDE_RELOGIN_COMMAND = "claude auth login";
 
 const RUNTIME_ARG_PREFIX = "--claude-companion-runtime=";
 

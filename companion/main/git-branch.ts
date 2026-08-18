@@ -8,6 +8,9 @@ export type GitBranchInfo = {
   // Branch name for a normal checkout, short commit id when detached.
   branch?: string;
   detached?: boolean;
+  // Fetch URL of "origin" (or the first remote when there is no origin).
+  // Absent when the repository has no remote configured at all.
+  remote?: string;
 };
 
 const NOT_TRACKED: GitBranchInfo = { tracked: false };
@@ -20,17 +23,25 @@ const HEAD_REF_PREFIX = "ref:";
 const HEADS_PREFIX = "refs/heads/";
 // sha1 today, sha256 once a repo opts into it.
 const COMMIT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/iu;
+// `[remote "origin"]` in .git/config, and the `url = ...` under it.
+const REMOTE_SECTION = /^\[\s*remote\s+"([^"]*)"\s*\]/u;
+const URL_ENTRY = /^url\s*=\s*(.*)$/iu;
 // A real .git pointer or HEAD is well under this. The indicator re-reads every
 // few seconds, so an oversized file must not be pulled into memory each time.
 const MAX_READ_BYTES = 4096;
+// A config carrying every remote and branch of a large repo still fits here.
+const MAX_CONFIG_BYTES = 128 * 1024;
 
-/** Read at most MAX_READ_BYTES, so a huge file cannot be slurped on a timer. */
-async function readHead(filePath: string): Promise<string> {
+/** Read at most `maxBytes`, so a huge file cannot be slurped on a timer. */
+async function readHead(filePath: string, maxBytes = MAX_READ_BYTES): Promise<string> {
   const handle = await open(filePath, "r");
   try {
-    const buffer = Buffer.alloc(MAX_READ_BYTES);
-    const { bytesRead } = await handle.read(buffer, 0, MAX_READ_BYTES, 0);
-    return buffer.subarray(0, bytesRead).toString("utf8");
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+    const text = buffer.subarray(0, bytesRead).toString("utf8");
+    // A file that filled the buffer was cut mid-line; that partial tail would
+    // otherwise parse as a truncated URL, which is worse than no URL.
+    return bytesRead < maxBytes ? text : text.slice(0, text.lastIndexOf("\n") + 1);
   } finally {
     await handle.close();
   }
@@ -80,6 +91,69 @@ async function resolveGitDir(startPath: string): Promise<string | undefined> {
 }
 
 /**
+ * A remote URL may carry credentials as userinfo (https://oauth2:TOKEN@host/x).
+ * Strip them: the address is what the user wants to read and paste, and a token
+ * must never reach the clipboard or the screen. The scp-like form
+ * (git@github.com:org/repo.git) has no "://" and is left alone.
+ */
+function stripCredentials(url: string): string {
+  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/iu, "$1");
+}
+
+/**
+ * Fetch URL of "origin", or of the first remote when there is no origin.
+ * Undefined when the repository has no remote — the caller shows nothing then.
+ */
+async function readRemoteUrl(gitDir: string): Promise<string | undefined> {
+  // A linked worktree has no config of its own; it points at the shared one.
+  let configDir = gitDir;
+  try {
+    const commonDir = (await readHead(path.join(gitDir, "commondir"))).trim();
+    if (commonDir) {
+      configDir = path.resolve(gitDir, commonDir);
+    }
+  } catch {
+    // No commondir file — an ordinary .git directory holds its own config.
+  }
+
+  let config: string;
+  try {
+    config = await readHead(path.join(configDir, "config"), MAX_CONFIG_BYTES);
+  } catch {
+    return undefined;
+  }
+
+  let section: string | undefined;
+  let origin: string | undefined;
+  let first: string | undefined;
+  for (const rawLine of config.split("\n")) {
+    const line = rawLine.trim();
+    // ponytail: no inline-comment handling — a "#" inside a remote URL is not
+    // a thing, and a whole-line comment is all git itself writes.
+    if (!line || line.startsWith("#") || line.startsWith(";")) {
+      continue;
+    }
+    if (line.startsWith("[")) {
+      section = REMOTE_SECTION.exec(line)?.[1];
+      continue;
+    }
+    if (!section) {
+      continue;
+    }
+    const url = URL_ENTRY.exec(line)?.[1]?.trim();
+    // First url of a remote wins, the same one `git remote get-url` prints.
+    if (!url) {
+      continue;
+    }
+    if (section === "origin") {
+      origin ??= stripCredentials(url);
+    }
+    first ??= stripCredentials(url);
+  }
+  return origin ?? first;
+}
+
+/**
  * Read-only branch lookup for the status bar. Reads .git/HEAD directly rather
  * than spawning git, so it costs one small read per poll and works even when
  * git is not on PATH.
@@ -94,6 +168,13 @@ export async function readGitBranch(rootPath: string): Promise<GitBranchInfo> {
   if (!gitDir) {
     return NOT_TRACKED;
   }
+  const head = await readHeadInfo(gitDir);
+  const remote = await readRemoteUrl(gitDir);
+  return remote ? { ...head, remote } : head;
+}
+
+/** HEAD half of readGitBranch: which branch (or commit) this work tree is on. */
+async function readHeadInfo(gitDir: string): Promise<GitBranchInfo> {
   try {
     const head = (await readHead(path.join(gitDir, "HEAD"))).trim();
     if (head.startsWith(HEAD_REF_PREFIX)) {

@@ -9,8 +9,10 @@ import { resolveCompanionRuntimeEnv } from "./paths";
 import { createCompanionWindow } from "./window";
 import os from "node:os";
 
+import { createActivityTracker } from "./activity-tracker";
 import { ClaudePtyManager } from "./claude-session";
 import {
+  snapshotSessionId,
   writeContextSnapshot,
   writeRuntimeActivity,
   writeRuntimeActivitySync,
@@ -107,14 +109,16 @@ async function start(): Promise<void> {
   // The Stream Deck key should show model + context the moment the app opens,
   // not only after the first message: seed the snapshot from the saved model
   // prefs and the resumed conversation's last recorded usage.
+  const startupFamily: ClaudeModel = CLAUDE_MODELS.includes(runtimeEnv.metadata.model as ClaudeModel)
+    ? (runtimeEnv.metadata.model as ClaudeModel)
+    : "opus";
+  const startupModelId = REPRESENTATIVE_MODEL_ID[startupFamily];
   if (runtimeEnv.bindingId && runtimeEnv.launchId) {
     const bindingId = runtimeEnv.bindingId;
     const launchId = runtimeEnv.launchId;
     void (async () => {
-      const family: ClaudeModel = CLAUDE_MODELS.includes(runtimeEnv.metadata.model as ClaudeModel)
-        ? (runtimeEnv.metadata.model as ClaudeModel)
-        : "opus";
-      const representativeId = REPRESENTATIVE_MODEL_ID[family];
+      const family = startupFamily;
+      const representativeId = startupModelId;
       const usage = runtimeEnv.resumeSessionId
         ? await historyReader.lastContextUsage(runtimeEnv.resumeSessionId)
         : undefined;
@@ -150,6 +154,47 @@ async function start(): Promise<void> {
       // The most recent context the stream reported, so applying a model can
       // refresh the key with the real usage instead of resetting it to 0%.
       let lastContext: { claudeSessionId: string; usedTokens: number; windowTokens: number } | undefined;
+      // The model choice outlives the conversation — ending one keeps it — so a
+      // reset snapshot can still name the model instead of blanking that half of
+      // the key too.
+      let currentModelId = startupModelId;
+      // Ending the conversation must not let the folder's resume id speak for it
+      // again; see snapshotSessionId.
+      let conversationEnded = false;
+      /**
+       * Put the key back to "--" because the conversation changed size without
+       * being measured. The stream reports usage only at the start of a reply,
+       * so both callers here — ending the conversation and compacting it — leave
+       * no number behind; the recorded one now describes a conversation that no
+       * longer exists, and showing it reads as if nothing happened.
+       *
+       * `keepConversation` separates the two: a compaction continues the same
+       * conversation, and the key's resume pointer is derived from this id, so
+       * it has to survive. An ended one has no id left to name.
+       */
+      const forgetContextUsage = (keepConversation: boolean): void => {
+        const continuedSessionId = keepConversation ? lastContext?.claudeSessionId : undefined;
+        lastContext = undefined;
+        conversationEnded = !keepConversation;
+        if (!runtimeEnv.bindingId || !runtimeEnv.launchId) {
+          return;
+        }
+        void writeContextSnapshot({
+          dataDir: runtimeEnv.usageDataDir,
+          bindingId: runtimeEnv.bindingId,
+          launchId: runtimeEnv.launchId,
+          // The launch id stands in exactly as it does for the opening snapshot.
+          sessionId: continuedSessionId ?? runtimeEnv.launchId,
+          projectDir: runtimeEnv.rootPath,
+          model: currentModelId,
+          usedTokens: null,
+          windowTokens: contextWindowForModel(currentModelId),
+          capturedAt: Date.now()
+        }).catch(() => {
+          // Leaves the stale percentage up until the next reply — the same
+          // outcome as before this reset existed.
+        });
+      };
       const ptyManager = new ClaudePtyManager({
           command: runtimeEnv.claudePath,
           onContext: (info) => {
@@ -159,6 +204,10 @@ async function start(): Promise<void> {
                 usedTokens: info.usedTokens,
                 windowTokens: info.windowTokens
               };
+              conversationEnded = false;
+            }
+            if (info.model) {
+              currentModelId = info.model;
             }
             // Feed the Stream Deck Code Start key, which cannot read a --print
             // session's usage on its own. Requires the launch identifiers.
@@ -178,7 +227,8 @@ async function start(): Promise<void> {
             }).catch(() => {
               // The key simply keeps its last value if the snapshot write fails.
             });
-          }
+          },
+          onCleared: () => forgetContextUsage(false)
       });
 
       // Mirror the conversation phase onto the key's activity dot: without
@@ -250,14 +300,9 @@ async function start(): Promise<void> {
           // Shutting down anyway; the staleness window still retires the record.
         }
       });
-      ptyManager.on("data", (_sessionId: string, events: readonly { kind: string; phase?: string }[]) => {
-        for (const event of events) {
-          if (event.kind === "phase") {
-            recordActivity(event.phase === "waiting" || event.phase === "ready" ? "waiting" : "running");
-          } else if (event.kind === "error" || event.kind === "login") {
-            recordActivity("waiting");
-          }
-        }
+      const trackActivity = createActivityTracker();
+      ptyManager.on("data", (_sessionId, events) => {
+        recordActivity(trackActivity(events));
       });
       recordActivity("waiting"); // the app opens idle, waiting for input
 
@@ -276,18 +321,20 @@ async function start(): Promise<void> {
             contextPercentage: runtimeEnv.metadata.contextPercent
           }
         }),
+        onContextReset: () => forgetContextUsage(true),
         applyModelPrefs: async ({ model, effort }) => {
           await writeModelPrefs(runtimeEnv.usageDataDir, runtimeEnv.rootPath, { model, effort });
           if (!runtimeEnv.bindingId || !runtimeEnv.launchId) {
             return;
           }
-          // Before the first message there is no live conversation id, so fall
-          // back to the folder's resume id so the key still updates immediately.
-          const sessionId = lastContext?.claudeSessionId ?? runtimeEnv.resumeSessionId;
-          if (!sessionId) {
-            return;
-          }
+          const sessionId = snapshotSessionId({
+            liveSessionId: lastContext?.claudeSessionId,
+            resumeSessionId: runtimeEnv.resumeSessionId,
+            launchId: runtimeEnv.launchId,
+            conversationEnded
+          });
           const representativeId = REPRESENTATIVE_MODEL_ID[model];
+          currentModelId = representativeId;
           await writeContextSnapshot({
             dataDir: runtimeEnv.usageDataDir,
             bindingId: runtimeEnv.bindingId,
@@ -295,7 +342,10 @@ async function start(): Promise<void> {
             sessionId,
             projectDir: runtimeEnv.rootPath,
             model: representativeId,
-            usedTokens: lastContext?.usedTokens ?? 0,
+            // null, not 0: with no usage reported yet the key must keep showing
+            // "--". A 0 here invented a percentage, and after the conversation
+            // was ended it overwrote the "--" this switch is supposed to preserve.
+            usedTokens: lastContext?.usedTokens ?? null,
             windowTokens: contextWindowForModel(representativeId),
             capturedAt: Date.now()
           }).catch(() => {

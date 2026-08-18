@@ -12,3 +12,20 @@ describe("createWindowsTerminalFolderPlan", () => {
   });
 });
 
+describe("createWindowsTerminalFolderPlan with a command", () => {
+  it("hands the command to powershell as argv instead of typed input", () => {
+    expect(createWindowsTerminalFolderPlan("D:\\Projects\\A & B", "claude auth login")).toEqual({
+      command: "wt.exe",
+      args: [
+        "-d",
+        "D:\\Projects\\A & B",
+        "powershell.exe",
+        "-NoLogo",
+        "-NoExit",
+        "-Command",
+        "claude auth login"
+      ],
+      cwd: "D:\\Projects\\A & B"
+    });
+  });
+});

@@ -98,6 +98,93 @@ describe("readGitBranch", () => {
     await expect(readGitBranch(root)).resolves.toEqual({ tracked: true });
   });
 
+  it("reads the origin remote so the indicator can offer it for copying", async () => {
+    const root = await makeTemporaryDirectory();
+    await mkdir(path.join(root, ".git"), { recursive: true });
+    await writeFile(path.join(root, ".git", "HEAD"), "ref: refs/heads/main\n", "utf8");
+    await writeFile(
+      path.join(root, ".git", "config"),
+      '[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:acme/app.git\n' +
+        "\tfetch = +refs/heads/*:refs/remotes/origin/*\n",
+      "utf8"
+    );
+
+    await expect(readGitBranch(root)).resolves.toEqual({
+      tracked: true,
+      branch: "main",
+      remote: "git@github.com:acme/app.git"
+    });
+  });
+
+  it("prefers origin over another remote, and takes the first one when there is none", async () => {
+    const root = await makeTemporaryDirectory();
+    await mkdir(path.join(root, ".git"), { recursive: true });
+    await writeFile(path.join(root, ".git", "HEAD"), "ref: refs/heads/main\n", "utf8");
+    const upstream = '[remote "upstream"]\n\turl = https://example.com/upstream.git\n';
+    await writeFile(
+      path.join(root, ".git", "config"),
+      `${upstream}[remote "origin"]\n\turl = https://example.com/mine.git\n`,
+      "utf8"
+    );
+    await expect(readGitBranch(root)).resolves.toMatchObject({
+      remote: "https://example.com/mine.git"
+    });
+
+    await writeFile(path.join(root, ".git", "config"), upstream, "utf8");
+    await expect(readGitBranch(root)).resolves.toMatchObject({
+      remote: "https://example.com/upstream.git"
+    });
+  });
+
+  it("never hands out a token embedded in the remote URL", async () => {
+    const root = await makeTemporaryDirectory();
+    await mkdir(path.join(root, ".git"), { recursive: true });
+    await writeFile(path.join(root, ".git", "HEAD"), "ref: refs/heads/main\n", "utf8");
+    await writeFile(
+      path.join(root, ".git", "config"),
+      '[remote "origin"]\n\turl = https://oauth2:glpat-secret@gitlab.example.com/team/app.git\n',
+      "utf8"
+    );
+
+    await expect(readGitBranch(root)).resolves.toMatchObject({
+      remote: "https://gitlab.example.com/team/app.git"
+    });
+  });
+
+  it("omits the remote entirely when the repository has none", async () => {
+    const root = await makeTemporaryDirectory();
+    await mkdir(path.join(root, ".git"), { recursive: true });
+    await writeFile(path.join(root, ".git", "HEAD"), "ref: refs/heads/main\n", "utf8");
+    await writeFile(path.join(root, ".git", "config"), "[core]\n\tbare = false\n", "utf8");
+
+    await expect(readGitBranch(root)).resolves.toEqual({ tracked: true, branch: "main" });
+  });
+
+  it("reads a linked worktree's remote from the shared config it points at", async () => {
+    // A worktree keeps only HEAD and a commondir pointer; remotes live in the
+    // main repository's config, so looking beside HEAD would find nothing.
+    const root = await makeTemporaryDirectory();
+    const mainGitDir = path.join(root, "main-repo", ".git");
+    const worktreeGitDir = path.join(mainGitDir, "worktrees", "wt");
+    await mkdir(worktreeGitDir, { recursive: true });
+    await writeFile(path.join(worktreeGitDir, "HEAD"), "ref: refs/heads/wt-branch\n", "utf8");
+    await writeFile(path.join(worktreeGitDir, "commondir"), "../..\n", "utf8");
+    await writeFile(
+      path.join(mainGitDir, "config"),
+      '[remote "origin"]\n\turl = https://example.com/shared.git\n',
+      "utf8"
+    );
+    const worktree = path.join(root, "wt");
+    await mkdir(worktree, { recursive: true });
+    await writeFile(path.join(worktree, ".git"), `gitdir: ${worktreeGitDir}\n`, "utf8");
+
+    await expect(readGitBranch(worktree)).resolves.toEqual({
+      tracked: true,
+      branch: "wt-branch",
+      remote: "https://example.com/shared.git"
+    });
+  });
+
   it("does not fall through to an enclosing repository when .git is unreadable", async () => {
     // The parent is a real repo; the child holds a .git that is neither a
     // directory nor a gitdir pointer. Walking up would report "outer" as the

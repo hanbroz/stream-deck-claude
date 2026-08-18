@@ -130,6 +130,14 @@ export type ClaudePtyManagerOptions = {
   agentIdleTimeoutMs?: number;
   /** Notified with live context usage so the Stream Deck key can be updated. */
   onContext?: (info: ClaudeContextInfo) => void;
+  /**
+   * Notified when the conversation is forgotten, before any usage exists for the
+   * next one. The Stream Deck key's snapshot is keyed by launch id, not session
+   * id, so nothing else overwrites it until the new conversation's first reply —
+   * which left the key showing the ended conversation's percentage as if it
+   * belonged to the fresh one.
+   */
+  onCleared?: () => void;
 };
 
 export type ClaudePtyEvents = {
@@ -161,6 +169,7 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
   private readonly finaliseGraceMs: number;
   private readonly agentIdleTimeoutMs: number;
   private readonly onContext?: (info: ClaudeContextInfo) => void;
+  private readonly onCleared?: () => void;
 
   constructor(options: ClaudePtyManagerOptions = {}) {
     super();
@@ -170,6 +179,7 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     this.finaliseGraceMs = options.finaliseGraceMs ?? 1500;
     this.agentIdleTimeoutMs = options.agentIdleTimeoutMs ?? 10 * 60 * 1000;
     this.onContext = options.onContext;
+    this.onCleared = options.onCleared;
   }
 
   /**
@@ -230,6 +240,9 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     // The session is idle again; without this the key's activity record
     // would keep whatever state the killed run left behind.
     this.emit("data", sessionId, [{ kind: "phase", phase: "ready" }]);
+    // Notified here rather than at the IPC handler so every caller of clear()
+    // resets the key, not just the one route the renderer happens to use.
+    this.onCleared?.();
   }
 
   /**

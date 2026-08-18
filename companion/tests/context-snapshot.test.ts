@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildContextSnapshot,
   displayModelName,
+  snapshotSessionId,
   writeContextSnapshot,
   writeRuntimeActivity
 } from "../main/context-snapshot";
@@ -123,5 +124,44 @@ describe("writeRuntimeActivity", () => {
     } finally {
       await remove(dataDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("snapshotSessionId", () => {
+  it("names the live conversation whenever one has reported in", () => {
+    expect(
+      snapshotSessionId({
+        liveSessionId: "live",
+        resumeSessionId: "resumed",
+        launchId: "launch",
+        conversationEnded: false
+      })
+    ).toBe("live");
+  });
+
+  it("falls back to the folder's resume id before the first message", () => {
+    expect(
+      snapshotSessionId({
+        resumeSessionId: "resumed",
+        launchId: "launch",
+        conversationEnded: false
+      })
+    ).toBe("resumed");
+  });
+
+  it("stands the launch id in once the conversation was ended", () => {
+    // The resume id names the conversation the user just discarded; reviving it
+    // here would restore the key's pointer to it.
+    expect(
+      snapshotSessionId({
+        resumeSessionId: "resumed",
+        launchId: "launch",
+        conversationEnded: true
+      })
+    ).toBe("launch");
+  });
+
+  it("uses the launch id when the folder has no resume id at all", () => {
+    expect(snapshotSessionId({ launchId: "launch", conversationEnded: false })).toBe("launch");
   });
 });

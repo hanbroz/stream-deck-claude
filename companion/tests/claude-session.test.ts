@@ -206,6 +206,21 @@ describe("ClaudePtyManager (per-message runs)", () => {
   });
 
   /**
+   * The Stream Deck key's snapshot is keyed by launch id, so nothing overwrites
+   * it between conversations. Without this notification the key kept showing the
+   * ended conversation's percentage as if it belonged to the fresh one.
+   */
+  it("reports a cleared conversation so the key can drop the ended one's usage", () => {
+    const onCleared = vi.fn();
+    // No runFactory needed: start() spawns nothing, and clear() has no run to kill.
+    const manager = new ClaudePtyManager({ command: "claude.exe", onCleared });
+    const started = manager.start({ cwd: "D:\\repo", mode: "resume", sessionId: "saved-1" });
+
+    manager.clear(started.sessionId);
+    expect(onCleared).toHaveBeenCalledTimes(1);
+  });
+
+  /**
    * After end_turn a superseded run lingers during the finalise grace; its late
    * output (trailing text, a `result`, a context event) must not bleed into the
    * next message's turn.

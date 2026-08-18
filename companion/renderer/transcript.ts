@@ -4,6 +4,27 @@ import { parseQuestionBlock } from "../shared/question-block";
 export type TurnRole = "user" | "assistant" | "error" | "notice";
 
 /**
+ * How far above the bottom still counts as parked there. Fractional line heights
+ * and display scaling routinely leave a pixel or two of slack that never reaches
+ * an exact zero, and the margin also forgives a single stray wheel notch.
+ */
+export const STICK_SLACK_PX = 48;
+
+/**
+ * Whether the transcript should keep following new output. A viewport taller
+ * than its content yields a negative distance, which must read as parked —
+ * otherwise a fresh console would refuse to scroll on its very first answer.
+ */
+export function isParkedAtBottom(
+  scrollHeight: number,
+  scrollTop: number,
+  clientHeight: number,
+  slack = STICK_SLACK_PX
+): boolean {
+  return scrollHeight - scrollTop - clientHeight <= slack;
+}
+
+/**
  * Builds the conversation DOM.
  *
  * Every piece of model output reaches the page through textContent, never

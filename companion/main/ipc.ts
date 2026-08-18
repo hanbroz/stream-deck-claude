@@ -3,6 +3,7 @@ import type { WebContents } from "electron";
 import {
   CLAUDE_EFFORTS,
   CLAUDE_MODELS,
+  CLAUDE_RELOGIN_COMMAND,
   COMPANION_IPC,
   type ClaudeEffort,
   type ClaudeModel,
@@ -22,10 +23,12 @@ import {
   listProjectFilesRecursive,
   measureCopySources,
   openContainedPath,
+  renameContainedPath,
   revealContainedPath,
   resolveContainedDirectory,
   type PathShell
 } from "./paths";
+import { searchProjectText, type ProjectSearchResult } from "./project-search";
 import { ProjectTerminalManager } from "./terminal-session";
 import type { ConversationHistoryReader, HistoryPage } from "./transcript-history";
 import type { SlashCommand } from "../shared/slash-commands";
@@ -68,12 +71,16 @@ export type CompanionIpcDependencies = {
     createFromDataURL(dataUrl: string): unknown;
   };
   shell: PathShell;
-  openTerminalFolder?: (folder: string) => unknown;
+  openTerminalFolder?: (folder: string, command?: string) => unknown;
   sessionStatus?: () => Promise<CompanionSessionStatus> | CompanionSessionStatus;
   historyReader?: ConversationHistoryReader;
   // Persist the applied model/effort for this folder and refresh the Stream Deck
   // key so it shows the new model without waiting for the next message.
   applyModelPrefs?: (prefs: { model: ClaudeModel; effort: ClaudeEffort }) => Promise<void> | void;
+  // A compaction shrank the conversation without measuring the result, so the
+  // recorded usage is now wrong and there is nothing to replace it with until
+  // the next reply.
+  onContextReset?: () => void;
   // The slash commands the composer's "/" menu offers.
   slashCommands?: () => Promise<SlashCommand[]> | SlashCommand[];
 };
@@ -260,11 +267,27 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
         requireString(content, "content")
       )
   );
+  deps.ipcMain.handle(
+    COMPANION_IPC.pathRename,
+    (_event: SenderEvent, targetPath: unknown, name: unknown) =>
+      renameContainedPath(
+        deps.rootPath,
+        requireString(targetPath, "path"),
+        requireString(name, "name")
+      )
+  );
   deps.ipcMain.handle(COMPANION_IPC.claudeCommands, async (): Promise<SlashCommand[]> =>
     (await deps.slashCommands?.()) ?? []
   );
   deps.ipcMain.handle(COMPANION_IPC.pathFiles, async (): Promise<string[]> =>
     listProjectFilesRecursive(deps.rootPath)
+  );
+  // The root is always deps.rootPath, never a caller-supplied path, so this
+  // channel cannot be aimed outside the project.
+  deps.ipcMain.handle(
+    COMPANION_IPC.pathSearch,
+    async (_event: SenderEvent, query: unknown): Promise<ProjectSearchResult> =>
+      searchProjectText(deps.rootPath, requireString(query, "query"))
   );
   deps.ipcMain.handle(COMPANION_IPC.pathDelete, async (_event: SenderEvent, path: unknown) => {
     await deleteContainedPath(deps.rootPath, requireString(path, "path"), deps.shell);
@@ -291,6 +314,14 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   );
   deps.ipcMain.handle(COMPANION_IPC.terminalOpenFolder, async (_event: SenderEvent, path: unknown) => {
     openTerminal(await resolveContainedDirectory(deps.rootPath, requireString(path, "path")));
+  });
+
+  // Re-login runs in an external terminal because `claude --print` has no TTY and
+  // the in-app shell cannot be typed into reliably at startup. The command is a
+  // constant here rather than a parameter: this handler spawns a shell, so taking
+  // one from the renderer would be a command-injection channel.
+  deps.ipcMain.handle(COMPANION_IPC.terminalRelogin, async () => {
+    openTerminal(deps.rootPath, CLAUDE_RELOGIN_COMMAND);
   });
   deps.ipcMain.handle(
     COMPANION_IPC.terminalStart,
@@ -384,6 +415,9 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   });
   deps.ipcMain.handle(COMPANION_IPC.claudeClear, (_event: SenderEvent, sessionId) => {
     ptyManager.clear(requireString(sessionId, "sessionId"));
+  });
+  deps.ipcMain.handle(COMPANION_IPC.claudeContextReset, () => {
+    deps.onContextReset?.();
   });
   deps.ipcMain.handle(COMPANION_IPC.claudeInterrupt, (_event: SenderEvent, sessionId) =>
     ptyManager.interrupt(requireString(sessionId, "sessionId"))

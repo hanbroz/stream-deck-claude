@@ -125,6 +125,11 @@ describe("registerCompanionIpc", () => {
     await expect(
       ipcMain.handlers.get(COMPANION_IPC.terminalOpenFolder)?.({}, "..")
     ).rejects.toThrow("Path is outside the allowed root");
+
+    // Re-login opens an external terminal with the command as argv; the renderer
+    // supplies no command string, so there is nothing to inject through IPC.
+    await ipcMain.handlers.get(COMPANION_IPC.terminalRelogin)?.({});
+    expect(openTerminalFolder).toHaveBeenCalledWith(root, "claude auth login");
     await expect(
       ipcMain.handlers.get(COMPANION_IPC.claudeStart)?.({}, { cwd: ".." })
     ).rejects.toThrow("Path is outside the allowed root");
@@ -260,6 +265,25 @@ describe("registerCompanionIpc", () => {
 
     ipcMain.handlers.get(COMPANION_IPC.claudeClear)?.({}, "s");
     expect(clear).toHaveBeenCalledWith("s");
+  });
+
+  /**
+   * Only the renderer can tell a real compaction from the CLI declining one,
+   * and the usage it invalidated is held in the main process — so this hop is
+   * the only way the Stream Deck key learns its number went stale.
+   */
+  it("forwards a context reset to the main process", () => {
+    const onContextReset = vi.fn();
+    const ipcMain = registerFor({ onContextReset });
+
+    ipcMain.handlers.get(COMPANION_IPC.claudeContextReset)?.({});
+    expect(onContextReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("survives a context reset with no handler wired", () => {
+    const ipcMain = registerFor();
+
+    expect(() => ipcMain.handlers.get(COMPANION_IPC.claudeContextReset)?.({})).not.toThrow();
   });
 
   it("copies dropped sources into a contained destination and rejects a bad payload", async () => {

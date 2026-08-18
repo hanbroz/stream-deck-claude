@@ -22,6 +22,7 @@ import { diag, setDiagSink } from "../shared/diag";
 
 import type { CopyMeasurement } from "../shared/copy-guard";
 import type { CopyResult } from "../main/paths";
+import type { ProjectSearchResult } from "../main/project-search";
 
 export type ClaudeCompanionApi = {
   runtime: {
@@ -40,6 +41,12 @@ export type ClaudeCompanionApi = {
     apply(sessionId: string, options: { model: ClaudeModel; effort: ClaudeEffort }): Promise<void>;
     commands(): Promise<SlashCommand[]>;
     clear(sessionId: string): Promise<void>;
+    /**
+     * Report that the conversation was compacted. Only the renderer can tell a
+     * real compaction from the CLI declining one, and the measurement it
+     * invalidated is held in the main process.
+     */
+    resetContext(): Promise<void>;
     interrupt(sessionId: string): Promise<boolean>;
     history(sessionId: string, offset: number, limit: number): Promise<HistoryPage>;
     kill(sessionId: string): void;
@@ -57,6 +64,8 @@ export type ClaudeCompanionApi = {
     list(path?: string): Promise<DirectoryEntry[]>;
     createDirectory(parentPath: string, name: string): Promise<string>;
     createFile(parentPath: string, name: string, content?: string): Promise<string>;
+    /** Rename an entry in place; resolves with its new absolute path. */
+    rename(path: string, name: string): Promise<string>;
     delete(path: string): Promise<void>;
     files(): Promise<string[]>;
     open(path: string): Promise<void>;
@@ -64,6 +73,8 @@ export type ClaudeCompanionApi = {
     filePath(file: File): string;
     measureCopy(sourcePaths: string[]): Promise<CopyMeasurement>;
     copyInto(destinationPath: string, sourcePaths: string[]): Promise<CopyResult>;
+    /** Files under the project root whose text contains `query`. */
+    search(query: string): Promise<ProjectSearchResult>;
   };
   terminal: {
     start(request?: TerminalSessionStartRequest): Promise<TerminalSessionStarted>;
@@ -79,6 +90,7 @@ export type ClaudeCompanionApi = {
       }) => void
     ): () => void;
     openFolder(path: string): Promise<void>;
+    relogin(): Promise<void>;
   };
   session: {
     status(): Promise<CompanionSessionStatus>;
@@ -153,6 +165,7 @@ const api: ClaudeCompanionApi = {
       ipcRenderer.invoke(COMPANION_IPC.claudeApply, sessionId, options),
     commands: () => ipcRenderer.invoke(COMPANION_IPC.claudeCommands),
     clear: (sessionId) => ipcRenderer.invoke(COMPANION_IPC.claudeClear, sessionId),
+    resetContext: () => ipcRenderer.invoke(COMPANION_IPC.claudeContextReset),
     interrupt: (sessionId) => ipcRenderer.invoke(COMPANION_IPC.claudeInterrupt, sessionId),
     history: (sessionId, offset, limit) =>
       ipcRenderer.invoke(COMPANION_IPC.claudeHistory, sessionId, offset, limit),
@@ -168,6 +181,7 @@ const api: ClaudeCompanionApi = {
       ipcRenderer.invoke(COMPANION_IPC.pathCreateDirectory, parentPath, name),
     createFile: (parentPath, name, content = "") =>
       ipcRenderer.invoke(COMPANION_IPC.pathCreateFile, parentPath, name, content),
+    rename: (path, name) => ipcRenderer.invoke(COMPANION_IPC.pathRename, path, name),
     delete: (path) => ipcRenderer.invoke(COMPANION_IPC.pathDelete, path),
     files: () => ipcRenderer.invoke(COMPANION_IPC.pathFiles),
     open: (path) => ipcRenderer.invoke(COMPANION_IPC.pathOpen, path),
@@ -180,7 +194,8 @@ const api: ClaudeCompanionApi = {
     measureCopy: (sourcePaths) =>
       ipcRenderer.invoke(COMPANION_IPC.pathCopyMeasure, sourcePaths),
     copyInto: (destinationPath, sourcePaths) =>
-      ipcRenderer.invoke(COMPANION_IPC.pathCopyInto, destinationPath, sourcePaths)
+      ipcRenderer.invoke(COMPANION_IPC.pathCopyInto, destinationPath, sourcePaths),
+    search: (query) => ipcRenderer.invoke(COMPANION_IPC.pathSearch, query)
   },
   terminal: {
     start: (request = {}) => ipcRenderer.invoke(COMPANION_IPC.terminalStart, request),
@@ -191,7 +206,8 @@ const api: ClaudeCompanionApi = {
     kill: (sessionId) => ipcRenderer.send(COMPANION_IPC.terminalKill, sessionId),
     onData: (listener) => subscribe(COMPANION_IPC.terminalData, listener),
     onExit: (listener) => subscribe(COMPANION_IPC.terminalExit, listener),
-    openFolder: (path) => ipcRenderer.invoke(COMPANION_IPC.terminalOpenFolder, path)
+    openFolder: (path) => ipcRenderer.invoke(COMPANION_IPC.terminalOpenFolder, path),
+    relogin: () => ipcRenderer.invoke(COMPANION_IPC.terminalRelogin)
   },
   session: {
     status: () => ipcRenderer.invoke(COMPANION_IPC.sessionStatus)

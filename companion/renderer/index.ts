@@ -10,9 +10,12 @@ import {
 import { parseModelId, REPRESENTATIVE_MODEL_ID } from "../shared/model-name";
 import type { ClaudeCompanionApi } from "../preload";
 import type { GitBranchInfo } from "../main/git-branch";
+import { MAX_QUERY_LENGTH, queryLengthVerdict } from "../main/project-search";
+import type { ProjectSearchResult, SearchHit } from "../main/project-search";
 import {
   CLAUDE_EFFORTS,
   CLAUDE_MODELS,
+  CLAUDE_RELOGIN_COMMAND,
   type ClaudeEffort,
   type ClaudeModel,
   type ClaudeSessionStarted,
@@ -45,8 +48,10 @@ import {
 import {
   createTargetFor,
   findNode,
-  mergeFreshChildren,
+  normalizeCreateName,
   parentPathOf,
+  projectRelativePath,
+  refreshLoadedTree,
   replaceRoots,
   setNodeChildren,
   setNodeExpanded,
@@ -69,6 +74,7 @@ import {
   createAgentBoard,
   createAgentRow,
   createTurn,
+  isParkedAtBottom,
   paintTurn,
   type AgentRowRefs,
   type Turn,
@@ -149,6 +155,7 @@ const mentionMenu = mustElement<HTMLElement>("mention-menu");
 const promptHighlight = mustElement<HTMLElement>("prompt-highlight");
 const gitBranchElement = mustElement<HTMLElement>("git-branch");
 const gitBranchName = mustElement<HTMLElement>("git-branch-name");
+const gitRemoteButton = mustElement<HTMLButtonElement>("git-remote");
 const windowMinimize = mustElement<HTMLButtonElement>("window-minimize");
 const windowMaximize = mustElement<HTMLButtonElement>("window-maximize");
 const windowClose = mustElement<HTMLButtonElement>("window-close");
@@ -159,7 +166,12 @@ const terminalCopyToast = mustElement<HTMLElement>("terminal-copy-toast");
 const terminalSplitSign = mustElement<HTMLElement>("terminal-split-sign");
 const terminalElement = mustElement<HTMLElement>("terminal");
 const consoleElement = mustElement<HTMLElement>("console-log");
+const jumpToBottom = mustElement<HTMLButtonElement>("jump-to-bottom");
 const agentLive = mustElement<HTMLElement>("agent-live");
+const searchOverlay = mustElement<HTMLElement>("search-overlay");
+const searchInput = mustElement<HTMLInputElement>("search-input");
+const searchCount = mustElement<HTMLElement>("search-count");
+const searchResults = mustElement<HTMLElement>("search-results");
 
 const buildVersion = companionBuildVersion();
 titleBuildVersion.textContent = buildVersion;
@@ -301,6 +313,16 @@ const turns: Turn[] = [];
 let activeAssistantTurn: Turn | undefined;
 let repaintHandle = 0;
 const HISTORY_PAGE = 20;
+/**
+ * Whether the transcript still follows new output. Scrolling up pins the view so
+ * a streaming answer can be read from the middle, and the jump button offers the
+ * way back. Held as state fed by the scroll event rather than measured when a
+ * turn arrives: by then the turn is already in the DOM and scrollHeight has
+ * grown, so "was I at the bottom a moment ago?" can no longer be answered.
+ * Content growing downwards fires no scroll event, so the reader's last scroll
+ * is still the honest answer.
+ */
+let stickToBottom = true;
 // Paging state for the resumed conversation shown above live messages.
 let historySessionId: string | undefined;
 let historyOffset = 0;
@@ -313,6 +335,12 @@ function appendTurn(role: TurnRole, text: string): Turn {
   paintTurn(turn);
   turns.push(turn);
   consoleElement.append(turn.element);
+  // Your own message always pulls the view down: you just pressed Enter, so
+  // being parked further up was about the previous answer, not this one.
+  if (role === "user") {
+    stickToBottom = true;
+    jumpToBottom.hidden = true;
+  }
   scrollConsoleToBottom();
   return turn;
 }
@@ -327,8 +355,18 @@ function prependTurn(role: TurnRole, text: string): void {
 }
 
 function scrollConsoleToBottom(): void {
+  if (!stickToBottom) {
+    jumpToBottom.hidden = false;
+    return;
+  }
   consoleElement.scrollTop = consoleElement.scrollHeight;
 }
+
+jumpToBottom.addEventListener("click", () => {
+  stickToBottom = true;
+  jumpToBottom.hidden = true;
+  consoleElement.scrollTop = consoleElement.scrollHeight;
+});
 
 async function loadInitialHistory(sessionId: string): Promise<void> {
   if (!api) {
@@ -380,6 +418,14 @@ async function loadOlderHistory(): Promise<void> {
 }
 
 consoleElement.addEventListener("scroll", () => {
+  stickToBottom = isParkedAtBottom(
+    consoleElement.scrollHeight,
+    consoleElement.scrollTop,
+    consoleElement.clientHeight
+  );
+  if (stickToBottom) {
+    jumpToBottom.hidden = true;
+  }
   if (consoleElement.scrollTop <= 40) {
     void loadOlderHistory();
   }
@@ -873,12 +919,363 @@ promptInput.addEventListener("keydown", (event) => {
 });
 
 // Esc interrupts the message Claude is currently generating, wherever focus is.
+// The search overlay's capture-phase handler stops Esc before it reaches here
+// while the overlay is open, so closing the overlay never also interrupts.
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && claudeStatus.dataset.busy === "true") {
     event.preventDefault();
     void interruptClaude();
   }
 });
+
+// ── Project text search (Shift Shift / Ctrl+Shift+F) ──
+// Content search over the project's text files, IntelliJ Find in Files style.
+// Companion has no editor, so a result opens in the explorer tree (Enter) or in
+// the OS default app (Ctrl+Enter). See specs/project-text-search.md.
+
+type SearchRow =
+  | { kind: "file"; path: string; relativePath: string; hitCount: number; truncated: boolean }
+  | { kind: "hit"; path: string; relativePath: string; hit: SearchHit };
+
+const SEARCH_DEBOUNCE_MS = 250;
+const SHIFT_SHIFT_WINDOW_MS = 300;
+
+let searchRows: SearchRow[] = [];
+let searchIndex = 0;
+// Bumped for every search started, and for every close. A result renders only
+// while its number is still current, so a slow scan can never overwrite the
+// answer to newer typing — no cancellation protocol needed.
+let searchSeq = 0;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let searchQueryLength = 0;
+let lastShiftAtMs = 0;
+let searchReturnFocus: HTMLElement | undefined;
+
+function openSearch(): void {
+  if (!searchOverlay.hidden) {
+    searchInput.select();
+    return;
+  }
+  searchReturnFocus = document.activeElement as HTMLElement | null ?? undefined;
+  searchOverlay.hidden = false;
+  searchInput.select();
+  searchInput.focus();
+  // Re-run whatever is still in the field so reopening never shows stale hits.
+  scheduleSearch();
+}
+
+function closeSearch(): void {
+  if (searchOverlay.hidden) {
+    return;
+  }
+  clearTimeout(searchTimer);
+  searchSeq += 1;
+  searchOverlay.hidden = true;
+  // Focus goes back where it was — otherwise it lands on <body> and the
+  // terminal stops taking keystrokes until it is clicked.
+  searchReturnFocus?.focus();
+  searchReturnFocus = undefined;
+}
+
+function scheduleSearch(): void {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => void runSearch(), SEARCH_DEBOUNCE_MS);
+}
+
+async function runSearch(): Promise<void> {
+  const query = searchInput.value.trim();
+  const seq = (searchSeq += 1);
+  searchQueryLength = query.length;
+
+  const verdict = queryLengthVerdict(query);
+  if (verdict !== "ok" || !api) {
+    searchRows = [];
+    searchIndex = 0;
+    // A too-long query is dropped by the search itself, so saying nothing here
+    // rendered as a definitive "결과 없음" for a search that never ran.
+    searchCount.textContent =
+      verdict === "too-long"
+        ? `검색어가 너무 깁니다 (최대 ${MAX_QUERY_LENGTH}자)`
+        : "";
+    renderSearchResults();
+    return;
+  }
+
+  const result = await api.paths.search(query).then(
+    (value) => value,
+    () => undefined
+  );
+  if (seq !== searchSeq) {
+    return; // superseded by newer typing, or the overlay closed
+  }
+
+  searchRows = result ? toSearchRows(result) : [];
+  searchIndex = 0;
+  searchCount.textContent = result ? summarizeSearch(result) : "검색에 실패했습니다.";
+  renderSearchResults();
+}
+
+function toSearchRows(result: ProjectSearchResult): SearchRow[] {
+  return result.files.flatMap((file) => [
+    {
+      kind: "file" as const,
+      path: file.path,
+      relativePath: file.relativePath,
+      hitCount: file.hits.length,
+      truncated: file.truncated
+    },
+    ...file.hits.map((hit) => ({
+      kind: "hit" as const,
+      path: file.path,
+      relativePath: file.relativePath,
+      hit
+    }))
+  ]);
+}
+
+function summarizeSearch(result: ProjectSearchResult): string {
+  if (result.files.length === 0) {
+    return "결과 없음";
+  }
+  const hits = result.files.reduce((total, file) => total + file.hits.length, 0);
+  const summary = `파일 ${result.files.length}개 · ${hits}건`;
+  // "이상" marks a lower bound, the same wording the copy guard uses when its
+  // own walk is truncated.
+  return result.truncated ? `${summary} 이상 · 일부만 표시` : summary;
+}
+
+/**
+ * Paint `text` with the match at `column` wrapped in a <mark>. The column comes
+ * from the search itself, so nothing is searched twice and a query containing
+ * regex metacharacters is still highlighted exactly where it matched.
+ */
+function appendHighlighted(host: HTMLElement, text: string, column: number, length: number): void {
+  if (column < 0 || length <= 0 || column + length > text.length) {
+    host.textContent = text;
+    return;
+  }
+  const mark = document.createElement("mark");
+  mark.textContent = text.slice(column, column + length);
+  host.append(
+    document.createTextNode(text.slice(0, column)),
+    mark,
+    document.createTextNode(text.slice(column + length))
+  );
+}
+
+function renderSearchResults(): void {
+  searchResults.replaceChildren();
+
+  if (searchRows.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "search-empty";
+    empty.textContent =
+      searchQueryLength < 2 ? "2자 이상 입력하세요." : "일치하는 파일이 없습니다.";
+    searchResults.append(empty);
+    return;
+  }
+
+  searchRows.forEach((row, index) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `search-row search-row--${row.kind}${index === searchIndex ? " is-active" : ""}`;
+    item.setAttribute("role", "option");
+    item.setAttribute("aria-selected", String(index === searchIndex));
+
+    if (row.kind === "file") {
+      const slash = row.relativePath.lastIndexOf("/");
+
+      const icon = document.createElement("img");
+      icon.className = "search-row__icon";
+      icon.src = explorerIconPath(row.relativePath.slice(slash + 1), "file");
+      icon.alt = "";
+      icon.setAttribute("aria-hidden", "true");
+      icon.draggable = false;
+
+      const label = document.createElement("span");
+      label.className = "search-row__path";
+      label.textContent = row.relativePath.slice(slash + 1);
+      if (slash > 0) {
+        const directory = document.createElement("span");
+        directory.className = "search-row__dir";
+        directory.textContent = `  ${row.relativePath.slice(0, slash)}`;
+        label.append(directory);
+      }
+
+      const count = document.createElement("span");
+      count.className = "search-row__count";
+      count.textContent = row.truncated ? `${row.hitCount}건 이상` : `${row.hitCount}건`;
+
+      item.append(icon, label, count);
+    } else {
+      const line = document.createElement("span");
+      line.className = "search-row__line";
+      line.textContent = String(row.hit.line);
+
+      const text = document.createElement("span");
+      text.className = "search-row__text";
+      appendHighlighted(text, row.hit.text, row.hit.column, searchQueryLength);
+
+      item.append(line, text);
+    }
+
+    item.addEventListener("mousedown", (event) => {
+      event.preventDefault(); // keep the search field focused
+      searchIndex = index;
+      void activateSearchRow(event.ctrlKey);
+    });
+    item.addEventListener("mouseenter", () => {
+      searchIndex = index;
+      renderSearchResults();
+    });
+
+    searchResults.append(item);
+  });
+}
+
+function scrollActiveSearchRowIntoView(): void {
+  searchResults.querySelector(".search-row.is-active")?.scrollIntoView({ block: "nearest" });
+}
+
+async function activateSearchRow(openExternally: boolean): Promise<void> {
+  const row = searchRows[searchIndex];
+  if (!row) {
+    return;
+  }
+  closeSearch();
+
+  if (openExternally) {
+    try {
+      await api?.paths.open(row.path);
+    } catch {
+      showToast("파일을 열지 못했습니다.");
+    }
+    return;
+  }
+
+  await revealInTree(row.relativePath);
+}
+
+/**
+ * Expand the explorer down to `relativePath` and select that file's row.
+ *
+ * The walk matches each segment against the current node's children BY NAME
+ * rather than rebuilding path strings, so it carries no assumptions about
+ * separators or drive-letter case. A segment with no match means the file moved
+ * or was deleted since the scan: the walk stops and the tree is left alone.
+ */
+async function revealInTree(relativePath: string): Promise<void> {
+  const segments = relativePath.split("/").filter((segment) => segment.length > 0);
+  let children = treeRoots;
+  let node: TreeNode | undefined;
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index] ?? "";
+    node = children.find((child) => child.name.toLowerCase() === segment.toLowerCase());
+    if (!node) {
+      showToast("파일을 트리에서 찾지 못했습니다.");
+      return;
+    }
+    if (index === segments.length - 1) {
+      break;
+    }
+    if (node.loaded) {
+      treeRoots = setNodeExpanded(treeRoots, node.path, true);
+    } else {
+      try {
+        treeRoots = setNodeChildren(
+          treeRoots,
+          node.path,
+          entriesToNodes((await api?.paths.list(node.path)) ?? [])
+        );
+      } catch {
+        showToast("폴더를 열지 못했습니다.");
+        return;
+      }
+    }
+    children = findNode(treeRoots, node.path)?.children ?? [];
+  }
+
+  if (!node) {
+    return;
+  }
+  // A revealed file is invisible while the explorer is collapsed to its rail.
+  setExplorerCollapsed(false);
+  selectedPath = node.path;
+  renderTree();
+  rowForPath(node.path)?.scrollIntoView({ block: "nearest" });
+}
+
+searchInput.addEventListener("input", scheduleSearch);
+
+searchOverlay.addEventListener("mousedown", (event) => {
+  if (event.target === searchOverlay) {
+    closeSearch();
+  }
+});
+
+// Capture phase, on purpose: xterm reads keys from its own helper <textarea>,
+// so a bubble-phase listener would see Ctrl+Shift+F only after the terminal had
+// already forwarded it to the PTY. Capturing at the document runs first, and
+// stopPropagation() there ends the event's journey entirely.
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (searchOverlay.hidden) {
+      if (event.ctrlKey && event.shiftKey && !event.altKey && event.code === "KeyF") {
+        event.preventDefault();
+        event.stopPropagation();
+        openSearch();
+        return;
+      }
+      // Double-Shift: two taps inside the window with nothing in between. A
+      // held modifier, an auto-repeat, or an active IME composition all
+      // disqualify the tap — which is what keeps Alt+Shift (the Windows layout
+      // switch) and ordinary capital letters from opening the overlay.
+      if (event.key === "Shift") {
+        if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) {
+          lastShiftAtMs = 0;
+          return;
+        }
+        const now = Date.now();
+        if (now - lastShiftAtMs < SHIFT_SHIFT_WINDOW_MS) {
+          lastShiftAtMs = 0;
+          openSearch();
+        } else {
+          lastShiftAtMs = now;
+        }
+        return;
+      }
+      lastShiftAtMs = 0;
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeSearch();
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (searchRows.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      searchIndex = (searchIndex + step + searchRows.length) % searchRows.length;
+      renderSearchResults();
+      scrollActiveSearchRowIntoView();
+      return;
+    }
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      event.stopPropagation();
+      void activateSearchRow(event.ctrlKey);
+    }
+  },
+  true
+);
 
 // Clicking an option in a ```question card sends that answer immediately,
 // AskUserQuestion-style; the card locks so it reads as answered.
@@ -1091,15 +1488,36 @@ contextMenu.addEventListener("click", (event) => {
   } else if (button.dataset.action === "new-folder") {
     startInlineCreate(node, "directory");
   } else if (button.dataset.action === "refresh") {
-    void refreshNode(node);
+    void refreshNode();
   } else if (button.dataset.action === "show-explorer") {
     void api?.paths.reveal(node.path);
   } else if (button.dataset.action === "open-terminal") {
     void api?.terminal.openFolder(node.kind === "directory" ? node.path : parentPathOf(node.path));
+  } else if (button.dataset.action === "copy-path") {
+    const relative = projectRelativePath(projectRoot, node.path);
+    void copyToClipboard(relative, `경로를 복사했습니다: ${relative}`);
+  } else if (button.dataset.action === "copy-name") {
+    void copyToClipboard(node.name, `파일명을 복사했습니다: ${node.name}`);
+  } else if (button.dataset.action === "rename") {
+    startInlineRename(node);
   } else if (button.dataset.action === "delete") {
     void deleteNode(node);
   }
 });
+
+/**
+ * Copy through the main process. navigator.clipboard.writeText rejects in the
+ * sandboxed renderer whenever the document is not focused — and clicking a
+ * context menu item is exactly such a moment.
+ */
+async function copyToClipboard(text: string, message: string): Promise<void> {
+  try {
+    await api?.clipboardWriteText(text);
+    showToast(message);
+  } catch {
+    showToast("클립보드에 복사하지 못했습니다.");
+  }
+}
 
 /** Move a tree entry to the Recycle Bin after confirmation, then re-list its parent. */
 async function deleteNode(node: TreeNode): Promise<void> {
@@ -1121,7 +1539,7 @@ async function deleteNode(node: TreeNode): Promise<void> {
     selectedPath = projectRoot;
   }
   try {
-    await refreshPath(parentPathOf(node.path));
+    await refreshTree();
   } catch {
     showToast("Refresh failed.");
   }
@@ -1180,7 +1598,7 @@ async function copyDroppedFiles(destination: string, files: File[]): Promise<voi
   }
 
   try {
-    await refreshPath(destination);
+    await refreshTree();
   } catch {
     // The copy already landed; only the tree is stale. Saying "복사하지 못했습니다"
     // here would send the user back to drag again and make a (1) duplicate.
@@ -1610,24 +2028,25 @@ async function toggleDirectory(node: TreeNode): Promise<void> {
 }
 
 /**
- * Re-list a directory from disk and swap it into the tree, keeping the
- * expanded state of entries that still exist. The project root swaps the
- * top-level list itself since it has no node of its own.
+ * Re-list the whole project from disk — every folder already opened, not just
+ * the one that was clicked — keeping the expanded state of entries that still
+ * exist.
+ *
+ * Refreshing only one level made entries invisible for as long as the app
+ * stayed open: files that appear while it is idle (a git checkout or merge, a
+ * build) are rarely in the folder the user happens to right-click, and no
+ * amount of refreshing elsewhere brought them in.
  */
-async function refreshPath(directoryPath: string): Promise<void> {
-  const fresh = entriesToNodes((await api?.paths.list(directoryPath)) ?? []);
-  if (directoryPath === projectRoot) {
-    treeRoots = replaceRoots(mergeFreshChildren(treeRoots, fresh));
-  } else {
-    const current = findNode(treeRoots, directoryPath);
-    treeRoots = setNodeChildren(treeRoots, directoryPath, mergeFreshChildren(current?.children, fresh));
-  }
+async function refreshTree(): Promise<void> {
+  treeRoots = await refreshLoadedTree(projectRoot, treeRoots, async (directoryPath) =>
+    entriesToNodes((await api?.paths.list(directoryPath)) ?? [])
+  );
   renderTree();
 }
 
-async function refreshNode(node: TreeNode): Promise<void> {
+async function refreshNode(): Promise<void> {
   try {
-    await refreshPath(node.kind === "directory" ? node.path : parentPathOf(node.path));
+    await refreshTree();
     showToast("Explorer refreshed.");
   } catch {
     showToast("Refresh failed.");
@@ -1637,8 +2056,11 @@ async function refreshNode(node: TreeNode): Promise<void> {
 function showContextMenu(x: number, y: number): void {
   contextMenuTitle.textContent = contextPath ? projectNameFromPath(contextPath) : projectNameFromPath(projectRoot);
   contextMenu.hidden = false;
-  contextMenu.style.left = `${Math.min(x, window.innerWidth - 248)}px`;
-  contextMenu.style.top = `${Math.min(y, window.innerHeight - 228)}px`;
+  // Measure after unhiding rather than assuming a size: the menu's height is
+  // its item count, so the old hardcoded 228px pushed it off the bottom edge
+  // the moment an item was added.
+  contextMenu.style.left = `${Math.max(0, Math.min(x, window.innerWidth - contextMenu.offsetWidth))}px`;
+  contextMenu.style.top = `${Math.max(0, Math.min(y, window.innerHeight - contextMenu.offsetHeight))}px`;
 }
 
 function hideContextMenu(): void {
@@ -1672,12 +2094,102 @@ function startInlineCreate(node: TreeNode, kind: TreeNodeKind): void {
   input.addEventListener("blur", onBlur);
   input.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      // Without this the document-level Escape handler also fires and interrupts
+      // the reply streaming behind the inline editor.
+      event.stopPropagation();
       dispose();
     } else if (event.key === "Enter") {
       event.preventDefault();
       void commitInlineCreate(node, kind, input, dispose);
     }
   });
+}
+
+/**
+ * Rename in place, VS Code style: the row is swapped for an input holding the
+ * current name so the entry keeps its position while it is edited, and the
+ * selection covers the stem only — typing replaces the name and keeps the
+ * extension. Disposing re-renders from tree state, which puts the row back.
+ */
+function startInlineRename(node: TreeNode): void {
+  if (node.path === projectRoot) {
+    showToast("프로젝트 폴더는 이름을 바꿀 수 없습니다.");
+    return;
+  }
+
+  const row = treeElement.querySelector<HTMLElement>(`[data-path="${cssEscape(node.path)}"]`);
+  if (!row) {
+    return;
+  }
+
+  const input = document.createElement("input");
+  input.className = "inline-create";
+  input.value = node.name;
+  input.setAttribute("aria-label", `Rename ${node.name}`);
+  row.replaceWith(input);
+  input.focus();
+  const dot = node.kind === "file" ? node.name.lastIndexOf(".") : -1;
+  input.setSelectionRange(0, dot > 0 ? dot : node.name.length);
+
+  // Same re-entrancy trap as the create input: removing a focused input fires a
+  // synchronous blur, so the listener comes off before the node does.
+  function dispose(): void {
+    input.removeEventListener("blur", onBlur);
+    input.remove();
+    renderTree();
+  }
+  function onBlur(): void {
+    dispose();
+  }
+  input.addEventListener("blur", onBlur);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      // Without this the document-level Escape handler also fires and interrupts
+      // the reply streaming behind the inline editor.
+      event.stopPropagation();
+      dispose();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      void commitInlineRename(node, input.value, dispose);
+    }
+  });
+}
+
+async function commitInlineRename(
+  node: TreeNode,
+  value: string,
+  dispose: () => void
+): Promise<void> {
+  const name = normalizeCreateName(value);
+  if (name.length === 0 || name === node.name) {
+    dispose();
+    return;
+  }
+
+  let renamedPath: string | undefined;
+  try {
+    renamedPath = await api?.paths.rename(node.path, name);
+  } catch {
+    showToast("이름을 바꾸지 못했습니다.");
+  } finally {
+    dispose();
+  }
+
+  if (!renamedPath) {
+    return;
+  }
+  // A renamed folder takes its subtree's paths with it, so a selection anywhere
+  // inside it is now stale; the renamed entry is the sensible survivor.
+  if (selectedPath === node.path || selectedPath?.startsWith(`${node.path}\\`)) {
+    selectedPath = renamedPath;
+  }
+  try {
+    await refreshTree();
+  } catch {
+    showToast("이름은 바꿨지만 탐색기를 새로고침하지 못했습니다.");
+    return;
+  }
+  showToast(`'${node.name}' → '${name}'`);
 }
 
 async function commitInlineCreate(
@@ -1711,7 +2223,7 @@ async function commitInlineCreate(
       treeRoots = setNodeExpanded(treeRoots, request.parentPath, true);
     }
     try {
-      await refreshPath(request.parentPath);
+      await refreshTree();
     } catch {
       showToast("Refresh failed.");
     }
@@ -2266,16 +2778,16 @@ async function sendIntent(intent: SubmitIntent, queuedTurn?: Turn): Promise<void
   }
 }
 
-const RELOGIN_COMMAND = "claude auth login";
-
 /**
- * Recover from an expired login without leaving the app.
+ * Recover from an expired login in a separate OS terminal window.
  *
  * `claude --print` carries no TTY, so the sign-in flow cannot run in the
- * conversation itself. The project terminal is a real PTY, so opening it and
- * handing it `claude auth login` puts the user one Enter away from being logged
- * in again. A terminal the user already opened is left alone — it may be running
- * something — and only gets the panel focus plus the instruction.
+ * conversation itself. The in-app terminal has one, but the command had to be
+ * typed into it the instant it opened, and the pty resolves when the shell is
+ * spawned rather than when it starts reading stdin — so the line was swallowed
+ * and the sign-in never ran. A separate window takes the command as argv, which
+ * has no such race. Nothing reports back when the sign-in finishes, so the
+ * notice asks for the message to be sent again.
  */
 let reloginPending = false;
 async function offerRelogin(): Promise<void> {
@@ -2283,18 +2795,11 @@ async function offerRelogin(): Promise<void> {
     return;
   }
   reloginPending = true;
-  const hadTerminal = terminalSessionId !== undefined;
   try {
-    await setTerminalSplit(true, projectRoot);
-    const autoTyped = !hadTerminal && terminalSessionId !== undefined;
-    if (autoTyped) {
-      api?.terminal.write(terminalSessionId as string, `${RELOGIN_COMMAND}\r`);
-    }
+    await api?.terminal.relogin();
     appendTurn(
       "notice",
-      autoTyped
-        ? `Claude Code 로그인이 만료되었습니다. 아래 터미널에서 \`${RELOGIN_COMMAND}\` 를 실행했습니다. 로그인을 마친 뒤 메시지를 다시 보내주세요.`
-        : `Claude Code 로그인이 만료되었습니다. 아래 터미널에서 \`${RELOGIN_COMMAND}\` 를 실행해 로그인한 뒤 메시지를 다시 보내주세요.`
+      `Claude Code 로그인이 만료되었습니다. 새 터미널 창에서 \`${CLAUDE_RELOGIN_COMMAND}\` 를 실행했습니다. 로그인을 마친 뒤 메시지를 다시 보내주세요.`
     );
     showToast("Claude 로그인이 만료되었습니다.");
   } finally {
@@ -2593,6 +3098,26 @@ function renderContextUsage(usedTokens: number, windowTokens: number): void {
   renderStatus({ state: lastSessionState, contextPercentage: percentage });
 }
 
+/**
+ * Forget the recorded context usage after a compaction.
+ *
+ * The transcript shrank and nothing measured the result: the stream reports
+ * usage only at the start of a reply, and the saved transcript's newest figure
+ * is still the pre-compaction one. So there is no honest number until the next
+ * message, and the meter says "--" rather than repeat a figure that describes a
+ * conversation which no longer exists.
+ *
+ * Clearing the percentage also stops an automatic compaction from firing on the
+ * very next turn boundary: `shouldAutoCompact` ignores an undefined percentage,
+ * where the stale one still sat above the threshold that had just been acted on.
+ */
+function forgetContextUsage(): void {
+  lastContextPercentage = undefined;
+  renderStatus({ state: lastSessionState });
+  // The Stream Deck key reads a separate copy held by the main process.
+  void api?.claude.resetContext();
+}
+
 function renderClaudeStatus(phase: ClaudePhase | "error", detail?: string): void {
   lastStatusPhase = phase;
   lastStatusDetail = detail;
@@ -2786,8 +3311,12 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
             // The CLI answered in words; its own message says it better.
             removeTurn(placeholder);
           } else {
+            // A real compaction: the transcript shrank, and nothing measured
+            // the result. Everything showing the old number now describes a
+            // conversation that no longer exists.
+            forgetContextUsage();
             placeholder.text =
-              "대화 컨텍스트를 압축했습니다. 다음 메시지부터 CTX 사용량이 줄어듭니다.";
+              "대화 컨텍스트를 압축했습니다. CTX 사용량은 다음 메시지에서 다시 표시됩니다.";
             paintTurn(placeholder);
           }
         }
@@ -2878,13 +3407,40 @@ function showTerminalCopyToast(): void {
   }, 1400);
 }
 
+// The popup is the only thing that shows the remote address, so it is also
+// what copies it — a click anywhere on it puts the URL on the clipboard.
+// Same main-process clipboard as the terminal copy above, for the same reason.
+gitRemoteButton.addEventListener("click", () => {
+  const url = gitRemoteButton.textContent ?? "";
+  if (!url) {
+    return;
+  }
+  void api?.clipboardWriteText(url).then(
+    () => showToast("복사 되었습니다."),
+    () => showToast("복사하지 못했습니다.")
+  );
+});
+
+/** No remote (or no repository) means no popup — hovering then shows nothing. */
+function renderGitRemote(url: string | undefined): void {
+  gitRemoteButton.textContent = url ?? "";
+  // The visible text is the address; the label says what clicking it does.
+  gitRemoteButton.setAttribute("aria-label", url ? `원격 저장소 주소 복사: ${url}` : "");
+  gitRemoteButton.hidden = !url;
+}
+
+// The chip carries no native tooltip of its own: the remote popup is the only
+// thing that opens on hover, and a second overlapping box restating the branch
+// name — which the chip already shows — was in its way. Every state the tooltip
+// used to explain is in the visible text instead ("확인 중", "Git 아님",
+// "브랜치 불명"), or in the monospace styling that marks a detached HEAD.
 function renderGitBranch(info: GitBranchInfo | undefined): void {
+  renderGitRemote(info?.remote);
   // No answer at all is NOT the same as "not a repository". Claiming the
   // latter sends the user hunting for a .git that is actually there.
   if (!info) {
     gitBranchElement.classList.add("is-untracked");
     gitBranchElement.classList.remove("is-detached");
-    gitBranchElement.title = "Git 상태를 읽지 못했습니다";
     gitBranchName.textContent = "확인 중";
     return;
   }
@@ -2893,13 +3449,6 @@ function renderGitBranch(info: GitBranchInfo | undefined): void {
   const name = info.branch;
   gitBranchElement.classList.toggle("is-untracked", !info.tracked);
   gitBranchElement.classList.toggle("is-detached", detached);
-  gitBranchElement.title = !info.tracked
-    ? "이 폴더는 Git 저장소가 아닙니다"
-    : !name
-      ? "Git 저장소이지만 현재 브랜치를 읽지 못했습니다"
-      : detached
-        ? `분리된 HEAD: ${name}`
-        : `현재 Git 브랜치: ${name}`;
   gitBranchName.textContent = info.tracked ? name ?? "브랜치 불명" : "Git 아님";
 }
 
