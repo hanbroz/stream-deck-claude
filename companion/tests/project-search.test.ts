@@ -7,8 +7,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   MAX_FILE_BYTES,
   MAX_HITS_PER_FILE,
-  MAX_QUERY_LENGTH,
-  queryLengthVerdict,
   searchProjectText
 } from "../main/project-search";
 
@@ -134,23 +132,5 @@ describe("searchProjectText", () => {
 
     expect(result.files).toHaveLength(0);
     expect(result.scanned).toBe(1);
-  });
-});
-
-describe("queryLengthVerdict", () => {
-  it("rejects queries below the minimum", () => {
-    expect(queryLengthVerdict("a")).toBe("too-short");
-    expect(queryLengthVerdict("   ")).toBe("too-short");
-  });
-
-  it("rejects queries past the maximum", () => {
-    expect(queryLengthVerdict("x".repeat(MAX_QUERY_LENGTH + 1))).toBe("too-long");
-  });
-
-  it("accepts the boundaries and measures the trimmed query", () => {
-    expect(queryLengthVerdict("ab")).toBe("ok");
-    expect(queryLengthVerdict("x".repeat(MAX_QUERY_LENGTH))).toBe("ok");
-    // Trailing space must not push an otherwise valid query over the edge.
-    expect(queryLengthVerdict("x".repeat(MAX_QUERY_LENGTH) + " ")).toBe("ok");
   });
 });

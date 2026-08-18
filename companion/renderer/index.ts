@@ -8,9 +8,9 @@ import {
   projectNameFromPath
 } from "./labels";
 import { parseModelId, REPRESENTATIVE_MODEL_ID } from "../shared/model-name";
+import { MAX_QUERY_LENGTH, queryLengthVerdict } from "../shared/search-query";
 import type { ClaudeCompanionApi } from "../preload";
 import type { GitBranchInfo } from "../main/git-branch";
-import { MAX_QUERY_LENGTH, queryLengthVerdict } from "../main/project-search";
 import type { ProjectSearchResult, SearchHit } from "../main/project-search";
 import {
   CLAUDE_EFFORTS,

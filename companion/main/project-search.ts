@@ -1,6 +1,11 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  MAX_QUERY_LENGTH,
+  MIN_QUERY_LENGTH,
+  queryLengthVerdict
+} from "../shared/search-query";
 import { listProjectFilesRecursive } from "./paths";
 
 export type SearchHit = {
@@ -27,29 +32,7 @@ export type ProjectSearchResult = {
   scanned: number;
 };
 
-export const MIN_QUERY_LENGTH = 2;
-export const MAX_QUERY_LENGTH = 200;
 export const MAX_FILE_BYTES = 1024 * 1024;
-
-export type QueryLengthVerdict = "too-short" | "too-long" | "ok";
-
-/**
- * Whether a query is searchable, as one answer both sides share.
- *
- * The renderer used to check only the minimum while this module also dropped
- * anything past the maximum, so an over-long query came back empty and rendered
- * as a confident "결과 없음". One verdict, one threshold, no drift.
- */
-export function queryLengthVerdict(query: string): QueryLengthVerdict {
-  const needle = query.trim();
-  if (needle.length < MIN_QUERY_LENGTH) {
-    return "too-short";
-  }
-  if (needle.length > MAX_QUERY_LENGTH) {
-    return "too-long";
-  }
-  return "ok";
-}
 
 export const MAX_HITS_PER_FILE = 20;
 export const MAX_RESULT_FILES = 200;
