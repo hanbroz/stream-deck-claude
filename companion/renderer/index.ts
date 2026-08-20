@@ -539,10 +539,7 @@ windowClose.addEventListener("click", () => {
 });
 
 terminalSplitToggle.addEventListener("click", () => {
-  void setTerminalSplit(
-    !appShell.classList.contains("is-terminal-split"),
-    terminalCwdForSelection()
-  );
+  void setTerminalSplit(!appShell.classList.contains("is-terminal-split"));
 });
 
 terminalPanelClose.addEventListener("click", () => {
@@ -2582,7 +2579,7 @@ async function reloadCommandInventory(): Promise<void> {
  */
 async function handOffToTerminal(name: string): Promise<void> {
   const reusedTerminal = terminalSessionId !== undefined;
-  await setTerminalSplit(true, projectRoot);
+  await setTerminalSplit(true);
   if (!api || !terminalSessionId) {
     appendTurn("error", "TERMINAL 탭을 열지 못했습니다.");
     return;
@@ -3069,22 +3066,19 @@ function cancelQueuedSend(turn: Turn): void {
   );
 }
 
-async function setTerminalSplit(open: boolean, cwd = terminalCwdForSelection()): Promise<void> {
+/**
+ * The panel terminal always opens at the project root, never at whatever the
+ * explorer happens to have selected — a shell whose cwd depends on the last
+ * clicked folder makes every relative path in it a guess.
+ */
+async function setTerminalSplit(open: boolean): Promise<void> {
   appShell.classList.toggle("is-terminal-split", open);
   terminalSplitSign.textContent = open ? "x" : "+";
   if (open) {
     applyTerminalWidth(terminalWidth, false);
-    await ensureProjectTerminal(cwd);
+    await ensureProjectTerminal(projectRoot);
   }
   window.setTimeout(fitTerminals, 0);
-}
-
-function terminalCwdForSelection(): string {
-  const node = selectedPath ? findNode(treeRoots, selectedPath) : undefined;
-  if (!node) {
-    return projectRoot;
-  }
-  return node.kind === "directory" ? node.path : parentPathOf(node.path);
 }
 
 async function ensureProjectTerminal(cwd: string): Promise<void> {
