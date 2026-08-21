@@ -69,7 +69,9 @@ The Companion renderer follows the imported Claude Design screen in [`companion/
 
 The explorer/workspace boundary, console/embedded-terminal boundary, and workspace/chat boundary each have a draggable Split handle. Their sizes are constrained to keep both sides usable, can also be adjusted with arrow keys/Home/End after focusing a handle, and are remembered locally for the next Companion launch.
 
-The maintained visual contract is documented in [`DESIGN.md`](DESIGN.md). The renderer keeps the reference's 40px title bar, 36px session tabs, 260px explorer, Cascadia Code console, optional embedded terminal split, bottom composer dock, and orange focus states; runtime-only controls are kept in compact explorer actions or context menus so they do not displace the reference layout. The Claude output area is selectable/read-only, while the composer accepts Korean text, clipboard images, Enter-to-send, and Shift+Enter newlines.
+The maintained visual contract is documented in [`DESIGN.md`](DESIGN.md). The renderer keeps the reference's 40px title bar, 36px session tabs, 260px explorer, Cascadia Code console, optional embedded terminal split, bottom composer dock, and accent focus states; runtime-only controls are kept in compact explorer actions or context menus so they do not displace the reference layout. The Claude output area is selectable/read-only, while the composer accepts Korean text, clipboard images, Enter-to-send, and Shift+Enter newlines.
+
+The settings button in the title bar opens a colour theme picker: seven dark themes (`Claude Dark`, Catppuccin Mocha, Tokyo Night, Nord, Dracula, One Dark Pro, Gruvbox Dark) and five light ones (Catppuccin Latte, Solarized Light, GitHub Light, One Light, Gruvbox Light). `Claude Dark` is the reference palette and stays the default. The choice applies immediately, recolours the embedded terminal along with the rest of the window, and is remembered for the next launch. Every rule in the stylesheet resolves to a palette token, so a theme is one block of 23 colours; contrast is pinned by tests at WCAG AA for the light themes and 3.6:1 for the dark ones, which is why a few of the upstream palettes are darker here than in their editor originals — those values are picked for syntax inside a code pane, not for UI labels on window chrome.
 
 If Code Start still opens the previous dark console window with a native `File / Edit / View / Window` menu, the old Companion binary is still being used. For a released/installed plugin, install the matching `Code Deck Companion Setup *.exe` once and restart Stream Deck. During local development you do not need to reinstall for every change: run `npm run companion:dir`, keep the plugin linked with `npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin`, and Code Start resolves `dist/companion/win-unpacked/Code Deck Companion.exe` before the per-user installed copy. `CLAUDE_DECK_COMPANION_PATH` can also point Stream Deck at a specific unpacked executable.
 
@@ -180,6 +182,8 @@ Claude Code는 상태 표시줄 JSON을 통해 `rate_limits.five_hour`와 `rate_
 3. Code Start의 경우 프로젝트명을 입력하고 Claude Code를 실행할 폴더를 선택한 다음 설정을 저장합니다.
 4. 버튼을 한 번 누릅니다. 플러그인은 `~/.claude/settings.json`을 백업하고 상태 표시줄 브리지와 수명 주기 훅을 설치하며, 기존 상태 표시줄 명령과 훅은 보존합니다.
 5. Claude Code에서 메시지를 한 번 전송합니다. 사용량 버튼에는 현재 사용률과 초기화 시간이, Code Start에는 실행한 세션의 현재 모델·컨텍스트 사용량 막대가 표시됩니다.
+
+Companion 타이틀바의 설정 버튼에서 컬러 테마를 고를 수 있습니다. 다크 7종(`Claude Dark`, Catppuccin Mocha, Tokyo Night, Nord, Dracula, One Dark Pro, Gruvbox Dark)과 라이트 5종(Catppuccin Latte, Solarized Light, GitHub Light, One Light, Gruvbox Light)이 있으며, 기본값인 `Claude Dark`는 기존 화면 그대로입니다. 선택은 즉시 적용되고 내장 터미널 색까지 함께 바뀌며 다음 실행에도 유지됩니다.
 
 Usage 버튼은 로컬 캐시를 1초마다 확인하고 값이 같으면 이미지를 다시 전송하지 않습니다. 이 갱신은 Claude 요청을 보내거나 사용량을 소비하지 않습니다. 다만 Claude Code가 새 `rate_limits` 값을 제공하기 전까지 웹 화면보다 늦을 수 있으며, 새 데이터보다 초기화 시각이 먼저 지나면 오래된 백분율 대신 `REFRESH`가 표시됩니다.
 

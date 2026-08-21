@@ -24,6 +24,13 @@
           <span id="title-build-version" class="titlebar__version" title="Companion build time"></span>
         </div>
         <div class="window-controls" aria-label="Window controls">
+          <button id="open-settings" class="titlebar__action" type="button" title="설정" aria-label="설정" aria-haspopup="dialog" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 7h9M19 7h2M3 17h5M15 17h6" />
+              <circle cx="15.5" cy="7" r="2.6" />
+              <circle cx="11.5" cy="17" r="2.6" />
+            </svg>
+          </button>
           <button id="window-minimize" class="window-control" type="button" title="Minimize" aria-label="Minimize">
             <svg viewBox="0 0 11 11" aria-hidden="true"><path d="M0 5.5h11" /></svg>
           </button>
@@ -218,6 +225,13 @@
         </section>
       </div>
     </main>
+
+    <!-- Rows are built in renderer/index.ts from the THEMES table, so the
+         palette list has one home (themes.ts + the styles.css blocks). -->
+    <div id="settings-panel" class="settings-panel" role="dialog" aria-label="설정" hidden>
+      <div class="settings-panel__title">컬러 테마</div>
+      <div id="theme-list" class="theme-list" role="radiogroup" aria-label="컬러 테마"></div>
+    </div>
 
     <div id="context-menu" class="context-menu" role="menu" hidden>
       <div id="context-menu-title" class="context-menu__title">PROJECT</div>

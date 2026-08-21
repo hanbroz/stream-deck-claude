@@ -1,4 +1,5 @@
 import { FitAddon } from "@xterm/addon-fit";
+import type { ITheme } from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import {
@@ -7,6 +8,14 @@ import {
   formatModelName,
   projectNameFromPath
 } from "./labels";
+import {
+  DEFAULT_THEME,
+  GROUP_LABELS,
+  normalizeThemeId,
+  terminalPalette,
+  THEMES,
+  type ThemeId
+} from "./themes";
 import { parseModelId, REPRESENTATIVE_MODEL_ID } from "../shared/model-name";
 import { MAX_QUERY_LENGTH, queryLengthVerdict } from "../shared/search-query";
 import type { ClaudeCompanionApi } from "../preload";
@@ -172,6 +181,9 @@ const searchOverlay = mustElement<HTMLElement>("search-overlay");
 const searchInput = mustElement<HTMLInputElement>("search-input");
 const searchCount = mustElement<HTMLElement>("search-count");
 const searchResults = mustElement<HTMLElement>("search-results");
+const openSettingsButton = mustElement<HTMLButtonElement>("open-settings");
+const settingsPanel = mustElement<HTMLElement>("settings-panel");
+const themeList = mustElement<HTMLElement>("theme-list");
 
 const buildVersion = companionBuildVersion();
 titleBuildVersion.textContent = buildVersion;
@@ -247,21 +259,127 @@ applyTerminalWidth(terminalWidth, false);
 applyComposerHeight(composerHeight, false);
 installSplitters();
 
+// ── Colour theme ──
+// The palettes live entirely in CSS (:root[data-theme=…] in styles.css); this
+// only decides which block applies and remembers the choice. The attribute is
+// set before the Terminal below is constructed, so xterm reads the chosen
+// palette instead of the default one and then has to be recoloured.
+const THEME_STORAGE_KEY = "claude-companion:theme";
+
+let activeTheme: ThemeId = readStoredTheme();
+document.documentElement.dataset.theme = activeTheme;
+
+function readStoredTheme(): ThemeId {
+  try {
+    return normalizeThemeId(window.localStorage.getItem(THEME_STORAGE_KEY));
+  } catch {
+    return DEFAULT_THEME;
+  }
+}
+
+function xtermTheme(): ITheme {
+  const styles = getComputedStyle(document.documentElement);
+  const group = THEMES.find((choice) => choice.id === activeTheme)?.group ?? "dark";
+
+  return terminalPalette((name) => styles.getPropertyValue(name).trim(), group);
+}
+
 const terminal = new Terminal({
   allowProposedApi: false,
   cursorBlink: true,
   fontFamily: '"Cascadia Code", "D2Coding", Consolas, monospace',
   fontSize: 12.5,
-  theme: {
-    background: "#181818",
-    foreground: "#dcdcdc",
-    cursor: "#cccccc",
-    selectionBackground: "#5a3a2f"
-  }
+  theme: xtermTheme()
 });
 const fitAddon = new FitAddon();
 terminal.loadAddon(fitAddon);
 terminal.open(terminalElement);
+
+let renderedGroup: string | undefined;
+for (const choice of THEMES) {
+  if (choice.group !== renderedGroup) {
+    renderedGroup = choice.group;
+    const heading = document.createElement("div");
+    heading.className = "theme-group";
+    heading.textContent = GROUP_LABELS[choice.group];
+    themeList.append(heading);
+  }
+
+  const option = document.createElement("button");
+  option.type = "button";
+  option.className = "theme-option";
+  option.dataset.theme = choice.id;
+  option.setAttribute("role", "radio");
+  option.setAttribute("aria-checked", "false");
+
+  const swatch = document.createElement("span");
+  swatch.className = "theme-option__swatch";
+  for (const colour of choice.swatch) {
+    const chip = document.createElement("span");
+    chip.style.background = colour;
+    swatch.append(chip);
+  }
+
+  const name = document.createElement("span");
+  name.className = "theme-option__name";
+  name.textContent = choice.label;
+
+  const check = document.createElement("span");
+  check.className = "theme-option__check";
+
+  option.append(swatch, name, check);
+  option.addEventListener("click", () => applyTheme(choice.id));
+  themeList.append(option);
+}
+applyTheme(activeTheme);
+
+function applyTheme(id: ThemeId): void {
+  activeTheme = id;
+  document.documentElement.dataset.theme = id;
+  terminal.options.theme = xtermTheme();
+
+  themeList.querySelectorAll<HTMLElement>(".theme-option").forEach((option) => {
+    const chosen = option.dataset.theme === id;
+    option.setAttribute("aria-checked", String(chosen));
+    const check = option.querySelector(".theme-option__check");
+    if (check) {
+      check.textContent = chosen ? "✓" : "";
+    }
+  });
+
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, id);
+  } catch {
+    // A locked-down renderer still themes this session; persistence is extra.
+  }
+}
+
+function setSettingsOpen(open: boolean): void {
+  settingsPanel.hidden = !open;
+  openSettingsButton.setAttribute("aria-expanded", String(open));
+}
+
+openSettingsButton.addEventListener("click", (event) => {
+  // Without this the same click reaches the document handler below and closes
+  // the popover in the same tick it opened.
+  event.stopPropagation();
+  setSettingsOpen(settingsPanel.hidden);
+});
+
+// Clicks inside the popover (i.e. picking a theme) leave it open, so several
+// palettes can be tried without reopening it each time.
+settingsPanel.addEventListener("click", (event) => event.stopPropagation());
+document.addEventListener("click", () => setSettingsOpen(false));
+
+// Registered ahead of the Esc-interrupts-Claude handler further down, and stops
+// it: closing the popover must not also cancel the running turn.
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !settingsPanel.hidden) {
+    event.stopImmediatePropagation();
+    setSettingsOpen(false);
+    openSettingsButton.focus();
+  }
+});
 
 // Copy the selection to the clipboard when a drag ends, and confirm with a
 // brief toast under the terminal — xterm has no copy affordance of its own.
