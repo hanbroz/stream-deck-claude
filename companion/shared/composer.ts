@@ -28,6 +28,31 @@ export type ComposerState = {
 /** Lines at or above which a paste is attached rather than inserted. */
 export const PASTE_ATTACH_MIN_LINES = 20;
 
+/**
+ * Ceiling on one attachment, and on how many ride along at once.
+ *
+ * An attachment is not a one-off cost: `--resume` carries it in the prefix of
+ * every later turn until a compaction drops it, so a clipboard the user never
+ * looked at is re-billed for the rest of the conversation. 200k characters is
+ * roughly 50k tokens — large enough for the log someone actually meant to
+ * share, small enough that a stray buffer cannot quietly resize the session.
+ */
+export const PASTE_ATTACH_MAX_CHARS = 200_000;
+export const PASTE_ATTACH_MAX_COUNT = 5;
+
+/** Cut an oversized paste to the ceiling, reporting how much was dropped. */
+export function clampPasteText(text: string): { text: string; dropped: number } {
+  if (text.length <= PASTE_ATTACH_MAX_CHARS) {
+    return { text, dropped: 0 };
+  }
+  const dropped = text.length - PASTE_ATTACH_MAX_CHARS;
+  return {
+    text: `${text.slice(0, PASTE_ATTACH_MAX_CHARS)}
+[...${dropped.toLocaleString("ko-KR")}자 잘림]`,
+    dropped
+  };
+}
+
 export function countLines(text: string): number {
   return text.length === 0 ? 0 : text.split(/\r\n|\r|\n/u).length;
 }
@@ -181,10 +206,21 @@ export function pushHistory(history: string[], text: string): void {
  *
  * Deliberately far below the window limit. Cost is (requests × prefix size), so
  * every turn taken at 90% pays for a ~900k-token prefix; measured sessions ran
- * at a ~450k mean prefix for over a thousand requests. Compacting once costs a
- * few thousand output tokens — far less than carrying the context to the end.
+ * at a ~450k MEAN prefix over more than a thousand requests.
+ *
+ * 45, not 70. Compaction costs one turn that reads the whole prefix, and the
+ * turns it saves each cost the prefix they would have carried, so lowering the
+ * mark trades a slightly more frequent fixed cost for a uniformly smaller
+ * prefix — worth it while the floor stays well under the mark. On a 1M window
+ * 70% did not fire until ~700k, which left the mean prefix ABOVE the mean the
+ * measurements already showed was too expensive; 45% caps it at 450k instead.
+ *
+ * The floor is the limit on going lower: a conversation cannot compact below
+ * its preamble, and `autoCompactArmed` only re-arms once usage falls back under
+ * the mark, so a mark at or under the floor would fire once and then never
+ * again. 45% of a 1M window is 450k against a preamble measured at ~22k.
  */
-export const AUTO_COMPACT_AT_PERCENT = 70;
+export const AUTO_COMPACT_AT_PERCENT = 45;
 
 /**
  * May the app compact right now?

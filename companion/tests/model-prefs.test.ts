@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { readModelPrefs, writeModelPrefs } from "../main/model-prefs";
+import { MODEL_PREFS_VERSION, readModelPrefs, writeModelPrefs } from "../main/model-prefs";
 
 let dataDir: string;
 const ROOT = "D:\\projects\\demo";
@@ -43,8 +43,26 @@ describe("model-prefs", () => {
   it("drops values outside the known model/effort sets", async () => {
     const target = prefsFile(ROOT);
     await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, JSON.stringify({ model: "gpt", effort: "turbo" }), "utf8");
+    await writeFile(
+      target,
+      JSON.stringify({ v: MODEL_PREFS_VERSION, model: "gpt", effort: "turbo" }),
+      "utf8"
+    );
     expect(await readModelPrefs(dataDir, ROOT)).toEqual({ model: undefined, effort: undefined });
+  });
+
+  it("ignores a pref an older build seeded rather than the user choosing it", async () => {
+    // A saved pref outranks the default, so an unversioned file — every one of
+    // which holds the opus/high-or-higher value the old build wrote on first
+    // launch — would make changing the default a no-op forever.
+    const target = prefsFile(ROOT);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, JSON.stringify({ model: "opus", effort: "xhigh" }), "utf8");
+    expect(await readModelPrefs(dataDir, ROOT)).toEqual({});
+
+    // A deliberate pick made now is versioned, and survives from then on.
+    await writeModelPrefs(dataDir, ROOT, { model: "opus", effort: "xhigh" });
+    expect(await readModelPrefs(dataDir, ROOT)).toEqual({ model: "opus", effort: "xhigh" });
   });
 
   it("returns empty prefs when the file is corrupt", async () => {

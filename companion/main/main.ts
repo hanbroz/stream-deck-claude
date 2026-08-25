@@ -111,7 +111,7 @@ async function start(): Promise<void> {
   // prefs and the resumed conversation's last recorded usage.
   const startupFamily: ClaudeModel = CLAUDE_MODELS.includes(runtimeEnv.metadata.model as ClaudeModel)
     ? (runtimeEnv.metadata.model as ClaudeModel)
-    : "opus";
+    : "sonnet";
   const startupModelId = REPRESENTATIVE_MODEL_ID[startupFamily];
   if (runtimeEnv.bindingId && runtimeEnv.launchId) {
     const bindingId = runtimeEnv.bindingId;

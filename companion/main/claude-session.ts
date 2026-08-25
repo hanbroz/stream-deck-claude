@@ -177,6 +177,14 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     this.command = options.command ?? "claude";
     this.env = options.env ?? process.env;
     this.finaliseGraceMs = options.finaliseGraceMs ?? 1500;
+    // Do not shorten this to bound cost. The cap measures SILENCE, and an
+    // agent's only heartbeat is an `activity` event per tool it starts — a
+    // subagent sitting in one Bash call is silent for that call's whole
+    // duration, which the CLI lets run to 600s. Anything at or under that kills
+    // work in progress, and a killed agent's tokens are spent either way. The
+    // real cost here is the double-billing this window allows when the next
+    // message starts a second run on the same conversation; that is bounded by
+    // making the spend visible, not by cutting the agent off mid-tool.
     this.agentIdleTimeoutMs = options.agentIdleTimeoutMs ?? 10 * 60 * 1000;
     this.onContext = options.onContext;
     this.onCleared = options.onCleared;

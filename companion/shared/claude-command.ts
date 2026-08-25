@@ -149,7 +149,13 @@ export function createClaudeCommandArgs(request: ClaudeCommandRequest): string[]
     // Print mode disables the interactive AskUserQuestion tool, so choice
     // questions arrive as a ```question block the renderer turns into buttons.
     "--append-system-prompt",
-    QUESTION_SYSTEM_PROMPT
+    QUESTION_SYSTEM_PROMPT,
+    // A backstop, not a throttle. `--dangerously-skip-permissions` removes the
+    // human gate on every tool, so one Enter can loop without bound; measured
+    // across 138 real messages the loop ran a median of 6 requests, p95 27, and
+    // never past 44. 100 leaves that untouched and still ends a runaway.
+    "--max-turns",
+    "100"
   ];
 
   if (mode === "resume") {

@@ -1,24 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTO_COMPACT_AT_PERCENT,
+  PASTE_ATTACH_MAX_CHARS,
+  PASTE_ATTACH_MIN_LINES,
   addComposerImages,
-  createComposerState,
-  navigateHistory,
-  pushHistory,
-  imageId,
-  removeComposerImage,
-  setComposerText,
-  setComposing,
-  shouldSubmitFromKeyboard,
-  submitComposer,
   addComposerPaste,
+  clampPasteText,
   composeOutgoingText,
   countLines,
+  createComposerState,
+  imageId,
   looksLikeCompletedMilestone,
+  navigateHistory,
+  pushHistory,
+  removeComposerImage,
   removeComposerPaste,
+  setComposerText,
+  setComposing,
   shouldAttachPaste,
   shouldAutoCompact,
   shouldRecallHistory,
-  PASTE_ATTACH_MIN_LINES
+  shouldSubmitFromKeyboard,
+  submitComposer
 } from "../shared/composer";
 
 describe("composer", () => {
@@ -32,8 +35,11 @@ describe("composer", () => {
   });
 
   it("compacts only while idle and waiting for the user", () => {
+    // Relative to the constant, not a copy of it: the threshold is a tuning
+    // knob, and a test that restates the number fails on every retune while
+    // proving nothing about the behaviour it is meant to pin down.
     const idle = {
-      percentage: 72,
+      percentage: AUTO_COMPACT_AT_PERCENT + 2,
       armed: true,
       busy: false,
       queuedCount: 0,
@@ -42,8 +48,9 @@ describe("composer", () => {
     };
 
     expect(shouldAutoCompact(idle)).toBe(true);
-    // Under the mark: nothing to do yet.
-    expect(shouldAutoCompact({ ...idle, percentage: 69 })).toBe(false);
+    // Exactly at the mark still fires; just under it does not.
+    expect(shouldAutoCompact({ ...idle, percentage: AUTO_COMPACT_AT_PERCENT })).toBe(true);
+    expect(shouldAutoCompact({ ...idle, percentage: AUTO_COMPACT_AT_PERCENT - 1 })).toBe(false);
     expect(shouldAutoCompact({ ...idle, percentage: undefined })).toBe(false);
     // Mid-conversation — the whole point is not to land between a question and
     // its answer, or on top of a message the user already queued.
@@ -53,6 +60,29 @@ describe("composer", () => {
     expect(shouldAutoCompact({ ...idle, hasSession: false })).toBe(false);
     // The latch: a compaction that freed too little must not loop.
     expect(shouldAutoCompact({ ...idle, armed: false })).toBe(false);
+  });
+
+  it("pins the compaction mark, because the number itself is the cost contract", () => {
+    // The assertions above are relative to the constant, so they hold for ANY
+    // value — 0 (compact every turn) and 450 (never compact, the meter clamps
+    // at 100) both passed the whole suite. What the prefix costs is decided by
+    // this number, so the number is what has to be pinned. Changing it means
+    // re-measuring and updating the rationale in DESIGN.md.
+    expect(AUTO_COMPACT_AT_PERCENT).toBe(45);
+  });
+
+  it("caps an oversized paste and reports what it dropped", () => {
+    const under = "x".repeat(PASTE_ATTACH_MAX_CHARS);
+    expect(clampPasteText(under)).toEqual({ text: under, dropped: 0 });
+
+    const over = "y".repeat(PASTE_ATTACH_MAX_CHARS + 1234);
+    const clamped = clampPasteText(over);
+    expect(clamped.dropped).toBe(1234);
+    expect(clamped.text.startsWith("y".repeat(PASTE_ATTACH_MAX_CHARS))).toBe(true);
+    // The notice has to survive into the body: `--resume` carries the
+    // attachment in every later prefix, so a silent truncation would read as
+    // the whole file for the rest of the conversation.
+    expect(clamped.text).toContain("잘림");
   });
 
   it("offers a fresh conversation only when a milestone actually finished", () => {

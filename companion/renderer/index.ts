@@ -32,8 +32,10 @@ import {
 } from "../shared/claude-command";
 import {
   AUTO_COMPACT_AT_PERCENT,
+  PASTE_ATTACH_MAX_COUNT,
   addComposerImages,
   addComposerPaste,
+  clampPasteText,
   composeOutgoingText,
   countLines,
   createComposerState,
@@ -236,15 +238,21 @@ let lastContextPercentage: number | undefined;
 // --print session and otherwise leaves the bar reading "Claude Code".
 let lastStreamModel: string | undefined;
 // Seed from the model/effort the user last applied for this folder (restored by
-// the main process), falling back to the opus/high default on first launch.
+// the main process), falling back to sonnet/medium on first launch.
+//
+// Deliberately not opus/high. Every message spawns a fresh `claude --print`
+// run, so this default is paid on EVERY turn rather than once: opus costs
+// roughly 5x sonnet against the plan's rate limit and `--effort high` inflates
+// the output side on top of that. Wanting opus is a dropdown away, and the
+// choice is remembered per folder.
 const seededModel = api?.runtime.model;
 const seededEffort = api?.runtime.effort;
 let claudeModel: ClaudeModel = CLAUDE_MODELS.includes(seededModel as ClaudeModel)
   ? (seededModel as ClaudeModel)
-  : "opus";
+  : "sonnet";
 let claudeEffort: ClaudeEffort = CLAUDE_EFFORTS.includes(seededEffort as ClaudeEffort)
   ? (seededEffort as ClaudeEffort)
-  : "high";
+  : "medium";
 modelSelect.value = claudeModel;
 effortSelect.value = claudeEffort;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -2426,11 +2434,25 @@ let pasteSequence = 0;
 
 /** Hold a long paste as an attachment instead of dropping it in the textarea. */
 function attachPastedText(text: string): void {
+  if (composer.pastes.length >= PASTE_ATTACH_MAX_COUNT) {
+    showToast(`첨부는 ${PASTE_ATTACH_MAX_COUNT}건까지입니다. 먼저 하나를 지워주세요.`);
+    promptInput.focus();
+    return;
+  }
   pasteSequence += 1;
-  const lineCount = countLines(text);
-  composer = addComposerPaste(composer, { id: `paste-${pasteSequence}`, text, lineCount });
+  const clamped = clampPasteText(text);
+  const lineCount = countLines(clamped.text);
+  composer = addComposerPaste(composer, {
+    id: `paste-${pasteSequence}`,
+    text: clamped.text,
+    lineCount
+  });
   renderImagePreview();
-  showToast(`${lineCount.toLocaleString()}줄을 첨부했습니다.`);
+  showToast(
+    clamped.dropped > 0
+      ? `${lineCount.toLocaleString()}줄을 첨부했습니다. 너무 길어 ${clamped.dropped.toLocaleString()}자를 잘랐습니다.`
+      : `${lineCount.toLocaleString()}줄을 첨부했습니다.`
+  );
   promptInput.focus();
 }
 
@@ -2522,6 +2544,11 @@ async function interruptClaude(): Promise<void> {
     // The process was killed mid-run — nothing was compacted.
     discardCompactingPlaceholder();
     finishAssistantTurn();
+    // Esc means STOP. Interrupt no longer reaches the queue flush (that is
+    // "waiting"-only now, and interrupt synthesises "ready"), so release the
+    // queue here rather than leaving it to fire at some later turn boundary
+    // the user has long stopped expecting.
+    releasePendingSends("응답을 중단하여");
     renderClaudeStatus("waiting");
     showToast("응답을 중단했습니다.");
   }
@@ -2607,17 +2634,26 @@ async function recoverFromMissingResume(cwd: string, retryIntents: SubmitIntent[
 }
 
 async function clearSession(): Promise<void> {
-  if (activeClaudeSession) {
-    await api?.claude.clear(activeClaudeSession.sessionId);
-  }
-  clearConsoleOutput();
+  // Drop the queue before the await, and repaint in `finally`. clear() can
+  // reject — main throws when the renderer still holds a session id that its
+  // map no longer has — and an early return there used to leave the screen
+  // showing queued turns whose entries were already gone, with a cancel button
+  // that silently did nothing. Emptying first and repainting unconditionally
+  // keeps what is drawn equal to what is held on both paths.
   lastContextPercentage = undefined;
   lastStreamModel = undefined;
   pendingSendQueue.length = 0; // a fresh conversation abandons queued sends
-  renderStatus({ state: lastSessionState, contextPercentage: null });
-  renderClaudeStatus("ready");
-  showToast("새 대화를 시작했습니다.");
-  promptInput.focus();
+  try {
+    if (activeClaudeSession) {
+      await api?.claude.clear(activeClaudeSession.sessionId);
+    }
+  } finally {
+    clearConsoleOutput();
+    renderStatus({ state: lastSessionState, contextPercentage: null });
+    renderClaudeStatus("ready");
+    showToast("새 대화를 시작했습니다.");
+    promptInput.focus();
+  }
 }
 
 async function resumeSession(): Promise<void> {
@@ -2980,7 +3016,7 @@ async function offerRelogin(): Promise<void> {
 /**
  * Give up on queued messages when the turn ends in failure.
  *
- * The queue only flushes on a `waiting`/`ready` phase, which a failed or
+ * The queue only flushes on a `waiting` phase, which a failed or
  * auth-expired turn never reaches. Without this the "다음 작업 예약" badge kept a
  * promise it could not honour: the turn sat on screen greyed out forever, and a
  * later message landed *below* it, so the transcript order lied too.
@@ -3494,7 +3530,12 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       }
       renderClaudeStatus(event.phase, event.detail);
       // The turn is over: flush the message the user queued mid-generation.
-      if (event.phase === "waiting" || event.phase === "ready") {
+      //
+      // "waiting" only, never "ready". A real end_turn emits "waiting";
+      // "ready" is synthesised solely by clear() and interrupt(), so acting on
+      // it fires a queued send, or a whole-context /compact, at the exact
+      // moment the user pressed Esc to STOP spending or cleared to start over.
+      if (event.phase === "waiting") {
         // Only when nothing was released: a flushed message means the session
         // is about to work again, so it is not waiting for the user.
         if (!flushNextPendingSend() && !maybeAutoCompact()) {

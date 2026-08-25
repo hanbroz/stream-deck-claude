@@ -86,6 +86,8 @@ For the current Claude Console input/output investigation, see [`docs/CLAUDE_COM
 
 Usage keys check the local cache every second and skip unchanged images. These refreshes do not send Claude requests or consume usage. The value can still trail the web dashboard until Claude Code publishes a newer `rate_limits` payload; if a reset time passes first, the key displays `REFRESH` instead of a stale percentage.
 
+The composer starts on **Sonnet** at **medium** effort. Companion runs one `claude --print --resume` process per message, so the default is paid on every turn rather than once, and Opus costs roughly five times as much against the plan's rate limit. Pick a different model or effort in the composer whenever a task needs it — the choice applies from the next message and is remembered for that folder. The conversation is compacted automatically once it passes 45% of the context window, because every later turn re-sends the whole prefix; Esc stops a reply without triggering a compaction, and releases anything queued behind it.
+
 ### Local development
 
 ```powershell
@@ -187,6 +189,8 @@ Companion 타이틀바의 설정 버튼에서 컬러 테마를 고를 수 있습
 
 Usage 버튼은 로컬 캐시를 1초마다 확인하고 값이 같으면 이미지를 다시 전송하지 않습니다. 이 갱신은 Claude 요청을 보내거나 사용량을 소비하지 않습니다. 다만 Claude Code가 새 `rate_limits` 값을 제공하기 전까지 웹 화면보다 늦을 수 있으며, 새 데이터보다 초기화 시각이 먼저 지나면 오래된 백분율 대신 `REFRESH`가 표시됩니다.
 
+컴포저의 기본값은 **Sonnet · medium**입니다. Companion은 메시지 한 건마다 `claude --print --resume` 프로세스를 새로 띄우므로 기본값이 한 번이 아니라 매 턴 지불되며, Opus는 요금제 한도 대비 약 5배를 소모합니다. 필요한 작업에서는 컴포저에서 모델과 effort를 바꾸면 됩니다 — 다음 메시지부터 적용되고 해당 폴더에 기억됩니다. 대화는 컨텍스트 창의 45%를 넘으면 자동으로 압축됩니다. 이후의 모든 턴이 프리픽스 전체를 다시 보내기 때문입니다. Esc로 응답을 중단하면 압축이 발생하지 않으며, 뒤에 예약된 메시지도 함께 취소됩니다.
+
 ### 로컬 개발
 
 ```powershell
@@ -279,6 +283,8 @@ Claude Code 通过状态栏 JSON 提供 `rate_limits.five_hour` 和 `rate_limits
 
 用量按键每秒检查一次本地缓存，并跳过未变化的图像。这不会发送 Claude 请求，也不会消耗用量。在 Claude Code 发布新的 `rate_limits` 数据前，该值仍可能落后于网页；如果重置时间先到，按键会显示 `REFRESH`，而不是过期的百分比。
 
+输入框默认使用 **Sonnet · medium**。Companion 每条消息都会新建一个 `claude --print --resume` 进程，因此默认值是每轮支付而非只付一次，而 Opus 对套餐额度的消耗约为五倍。需要时可在输入框中更换模型或 effort — 从下一条消息起生效，并会为该文件夹记住选择。对话超过上下文窗口的 45% 时会自动压缩，因为之后的每一轮都会重新发送整个前缀。按 Esc 中断回复不会触发压缩，并会一并取消排队中的消息。
+
 ### 本地开发
 
 ```powershell
@@ -357,6 +363,8 @@ Claude CodeはステータスラインJSONを通じて`rate_limits.five_hour`と
 5. Claude Codeでメッセージを1件送信します。使用量キーには現在の割合とリセットまでの残り時間が、Code Startには起動したセッションの現在のモデルとコンテキスト使用量バーが表示されます。
 
 使用量キーはローカルキャッシュを1秒ごとに確認し、画像が変わらない場合は再送しません。この更新はClaudeへのリクエストを送信せず、使用量も消費しません。Claude Codeが新しい`rate_limits`データを公開するまではWeb画面より遅れる場合があり、先にリセット時刻を過ぎた場合は古い割合の代わりに`REFRESH`が表示されます。
+
+コンポーザーの既定は **Sonnet · medium** です。Companionはメッセージごとに `claude --print --resume` プロセスを新しく起動するため、既定値は一度ではなく毎ターン支払われ、Opusはプランのレート制限に対しておよそ5倍を消費します。必要な作業ではコンポーザーでモデルやeffortを変更してください — 次のメッセージから適用され、そのフォルダーに記憶されます。会話はコンテキストウィンドウの45%を超えると自動的に圧縮されます。以降のすべてのターンがプレフィックス全体を再送するためです。Escで応答を中断しても圧縮は起こらず、後ろに予約されたメッセージも取り消されます。
 
 ### ローカル開発
 

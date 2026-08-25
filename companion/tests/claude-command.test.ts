@@ -17,7 +17,9 @@ const BASE_ARGS = [
   "--include-partial-messages",
   "--verbose",
   "--append-system-prompt",
-  QUESTION_SYSTEM_PROMPT
+  QUESTION_SYSTEM_PROMPT,
+  "--max-turns",
+  "100"
 ];
 
 describe("createClaudeCommandArgs", () => {
