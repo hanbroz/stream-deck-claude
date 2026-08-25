@@ -67,7 +67,7 @@ describe("runtime metadata args", () => {
       model: "Opus 4.8",
       effort: "xhigh",
       contextPercent: 42,
-      resumeSessionId: "resume-1"
+      resumeCandidateId: "resume-1"
     });
 
     expect(readRuntimeProjectMetadataArg(["electron", arg])).toEqual({
@@ -76,7 +76,7 @@ describe("runtime metadata args", () => {
       model: "Opus 4.8",
       effort: "xhigh",
       contextPercent: 42,
-      resumeSessionId: "resume-1"
+      resumeCandidateId: "resume-1"
     });
   });
 

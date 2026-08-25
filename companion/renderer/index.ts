@@ -1798,20 +1798,63 @@ async function initialize(): Promise<void> {
   selectedPath = projectRoot;
   renderTree();
 
-  const resumeSessionId = api?.runtime.resumeSessionId;
-  if (resumeSessionId && api.runtime.folder) {
-    resumeSessionInput.value = resumeSessionId;
+  const resumeCandidateId = api?.runtime.resumeCandidateId;
+  if (resumeCandidateId && api.runtime.folder) {
+    resumeSessionInput.value = resumeCandidateId;
   }
   // Load the "/" menu inventory in the background; failure just leaves it empty.
   void api?.claude.commands().then((commands) => {
     slashCommands = commands;
   }).catch(() => {});
   try {
-    await startClaudeSession(resumeSessionId);
+    // Always a new conversation. The folder's last one is offered below.
+    await startClaudeSession();
+    offerResume();
   } catch (error) {
     renderStatus({ state: "ended" });
     appendConsoleOutput(`[Claude Code failed to start: ${error instanceof Error ? error.message : "unknown error"}]\n`);
   }
+}
+
+/**
+ * Offer the folder's last conversation — never load it.
+ *
+ * Continuing on open reads as a convenience and bills like a subscription.
+ * Because a message respawns the CLI, the inherited prefix is not paid once but
+ * re-bought every turn: across five measured sessions 53% of all spend was
+ * prefix carried in at launch, and one conversation grew over ten launches from
+ * 97k to 535k tokens because nothing ever ended it. That context is worth the
+ * money when the work really does continue, so the choice belongs to the user —
+ * with the price on the button rather than hidden behind it.
+ */
+function offerResume(): void {
+  const candidateId = api?.runtime.resumeCandidateId;
+  if (candidateId === undefined) {
+    return;
+  }
+  const tokens = api?.runtime.resumeCandidateTokens;
+  const price = tokens === undefined ? "" : ` (약 ${tokens.toLocaleString()} 토큰)`;
+  const turn = appendTurn(
+    "notice",
+    `새 대화로 시작했습니다. 이 폴더에는 이전 대화${price}가 있습니다. ` +
+      "이어받으면 그 내용이 앞으로 보내는 모든 메시지에 함께 실립니다. " +
+      "이어서 하실 일이면 누르시고, 새 작업이면 그냥 두세요."
+  );
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "notice__action";
+  action.textContent = "이전 대화 이어받기";
+  action.addEventListener("click", () => {
+    action.disabled = true;
+    void startClaudeSession(candidateId).catch((error: unknown) => {
+      action.disabled = false;
+      appendTurn(
+        "notice",
+        `이전 대화를 이어받지 못했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`
+      );
+    });
+  });
+  turn.body.append(action);
 }
 
 type SplitBounds = {

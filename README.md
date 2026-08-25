@@ -88,6 +88,8 @@ Usage keys check the local cache every second and skip unchanged images. These r
 
 The composer starts on **Sonnet** at **medium** effort. Companion runs one `claude --print --resume` process per message, so the default is paid on every turn rather than once, and Opus costs roughly five times as much against the plan's rate limit. Pick a different model or effort in the composer whenever a task needs it — the choice applies from the next message and is remembered for that folder. The conversation is compacted automatically once it passes 45% of the context window, because every later turn re-sends the whole prefix; Esc stops a reply without triggering a compaction, and releases anything queued behind it.
 
+Opening the app starts a **new conversation**. If the folder has an earlier one, the console offers it behind a button with its size on the label — press it to continue, or leave it and the old context costs nothing. Continuing was previously automatic, which read as a convenience and billed like a subscription: every message re-sends the whole conversation, so an inherited prefix is paid on each turn rather than once. Across five measured sessions that came to 53% of all spend.
+
 ### Local development
 
 ```powershell
@@ -191,6 +193,8 @@ Usage 버튼은 로컬 캐시를 1초마다 확인하고 값이 같으면 이미
 
 컴포저의 기본값은 **Sonnet · medium**입니다. Companion은 메시지 한 건마다 `claude --print --resume` 프로세스를 새로 띄우므로 기본값이 한 번이 아니라 매 턴 지불되며, Opus는 요금제 한도 대비 약 5배를 소모합니다. 필요한 작업에서는 컴포저에서 모델과 effort를 바꾸면 됩니다 — 다음 메시지부터 적용되고 해당 폴더에 기억됩니다. 대화는 컨텍스트 창의 45%를 넘으면 자동으로 압축됩니다. 이후의 모든 턴이 프리픽스 전체를 다시 보내기 때문입니다. Esc로 응답을 중단하면 압축이 발생하지 않으며, 뒤에 예약된 메시지도 함께 취소됩니다.
 
+앱을 열면 **새 대화로 시작**합니다. 해당 폴더에 이전 대화가 있으면 콘솔에 크기와 함께 버튼으로 제안하니, 이어서 하실 일이면 누르시고 새 작업이면 그냥 두시면 비용이 들지 않습니다. 예전에는 자동으로 이어받았는데, 편해 보이지만 실제로는 구독료처럼 청구됐습니다 — 메시지마다 대화 전체가 다시 전송되므로 물려받은 내용을 한 번이 아니라 매 턴 지불합니다. 실측한 5개 세션에서 이 몫이 **전체 소비의 53%** 였습니다.
+
 ### 로컬 개발
 
 ```powershell
@@ -285,6 +289,8 @@ Claude Code 通过状态栏 JSON 提供 `rate_limits.five_hour` 和 `rate_limits
 
 输入框默认使用 **Sonnet · medium**。Companion 每条消息都会新建一个 `claude --print --resume` 进程，因此默认值是每轮支付而非只付一次，而 Opus 对套餐额度的消耗约为五倍。需要时可在输入框中更换模型或 effort — 从下一条消息起生效，并会为该文件夹记住选择。对话超过上下文窗口的 45% 时会自动压缩，因为之后的每一轮都会重新发送整个前缀。按 Esc 中断回复不会触发压缩，并会一并取消排队中的消息。
 
+打开应用会**开始新对话**。如果该文件夹存在此前的对话，控制台会以按钮形式提示并标注其大小 —— 需要接续时点击，开始新任务则无需理会，不会产生费用。此前是自动接续的，看似方便实则按订阅计费：每条消息都会重新发送整个对话，因此继承的前缀不是付一次，而是每轮都付。在实测的五个会话中，这部分占到全部消耗的 53%。
+
 ### 本地开发
 
 ```powershell
@@ -365,6 +371,8 @@ Claude CodeはステータスラインJSONを通じて`rate_limits.five_hour`と
 使用量キーはローカルキャッシュを1秒ごとに確認し、画像が変わらない場合は再送しません。この更新はClaudeへのリクエストを送信せず、使用量も消費しません。Claude Codeが新しい`rate_limits`データを公開するまではWeb画面より遅れる場合があり、先にリセット時刻を過ぎた場合は古い割合の代わりに`REFRESH`が表示されます。
 
 コンポーザーの既定は **Sonnet · medium** です。Companionはメッセージごとに `claude --print --resume` プロセスを新しく起動するため、既定値は一度ではなく毎ターン支払われ、Opusはプランのレート制限に対しておよそ5倍を消費します。必要な作業ではコンポーザーでモデルやeffortを変更してください — 次のメッセージから適用され、そのフォルダーに記憶されます。会話はコンテキストウィンドウの45%を超えると自動的に圧縮されます。以降のすべてのターンがプレフィックス全体を再送するためです。Escで応答を中断しても圧縮は起こらず、後ろに予約されたメッセージも取り消されます。
+
+アプリを開くと**新しい会話で始まります**。そのフォルダーに以前の会話があれば、コンソールがサイズを添えたボタンで提案します。続きの作業なら押し、新しい作業ならそのままにしておけば費用はかかりません。以前は自動的に引き継いでいましたが、便利に見えて実際にはサブスクリプションのように請求されていました — メッセージごとに会話全体が再送されるため、引き継いだ分は一度ではなく毎ターン支払うことになります。実測した5セッションでは、これが全消費の53%を占めていました。
 
 ### ローカル開発
 

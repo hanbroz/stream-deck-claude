@@ -47,7 +47,17 @@ export type RuntimeProjectMetadata = {
   model?: string;
   effort?: ClaudeEffort;
   contextPercent?: number;
-  resumeSessionId?: string;
+  /**
+   * The folder's most recent conversation — a candidate to OFFER, never one to
+   * load on its own. Opening the app used to continue it silently, and because
+   * every message respawns the CLI, the inherited prefix was re-billed on each
+   * one rather than paid once: measured over five sessions, 53% of all spend
+   * was prefix carried in at launch, and one conversation grew across ten
+   * launches from 97k to 535k tokens without ever being cleared.
+   */
+  resumeCandidateId?: string;
+  /** That candidate's last recorded context size, so the offer can price it. */
+  resumeCandidateTokens?: number;
 };
 
 export type DirectoryEntry = {
@@ -203,8 +213,13 @@ export function readRuntimeProjectMetadataArg(argv: string[]): RuntimeProjectMet
     effort: CLAUDE_EFFORTS.includes(parsed.effort as ClaudeEffort) ? parsed.effort : undefined,
     contextPercent:
       typeof parsed.contextPercent === "number" ? parsed.contextPercent : undefined,
-    resumeSessionId:
-      typeof parsed.resumeSessionId === "string" ? parsed.resumeSessionId : undefined
+    resumeCandidateId:
+      typeof parsed.resumeCandidateId === "string" ? parsed.resumeCandidateId : undefined,
+    resumeCandidateTokens:
+      typeof parsed.resumeCandidateTokens === "number" &&
+      Number.isFinite(parsed.resumeCandidateTokens)
+        ? parsed.resumeCandidateTokens
+        : undefined
   };
 }
 

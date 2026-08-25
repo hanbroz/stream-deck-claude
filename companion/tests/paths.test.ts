@@ -135,13 +135,13 @@ describe("contained path operations", () => {
       bindingId: undefined,
       launchId: undefined,
       usageDataDir: path.join(process.cwd(), "AppData", "Local", "ClaudeUsageDeck"),
-      resumeSessionId: "resume-session",
+      resumeCandidateId: "resume-session",
       metadata: {
         folder: await realpath(configured),
         projectName: "Demo Project",
         model: "Opus 4.8",
         contextPercent: 43.7,
-        resumeSessionId: "resume-session"
+        resumeCandidateId: "resume-session"
       }
     });
     await expect(resolveCompanionRoot({})).rejects.toThrow(
@@ -153,7 +153,7 @@ describe("contained path operations", () => {
       CLAUDE_CONFIG_DIR: configDir
     })).resolves.toMatchObject({
       metadata: { projectName: path.basename(configured) },
-      resumeSessionId: "legacy-resume-session"
+      resumeCandidateId: "legacy-resume-session"
     });
   });
 
@@ -184,25 +184,25 @@ describe("contained path operations", () => {
       )
     ).resolves.toBe(false);
 
-    // An invalid explicit id falls back to the folder's newest transcript
-    // rather than starting cold — Code Start should continue the last session.
+    // An invalid explicit id falls back to the folder's newest transcript as
+    // the candidate, so the offer still names a conversation that exists.
     await expect(
       resolveCompanionRuntimeEnv({
         [COMPANION_FOLDER_ENV]: configured,
         [COMPANION_RESUME_SESSION_ID_ENV]: "missing-session",
         CLAUDE_CONFIG_DIR: configDir
       })
-    ).resolves.toMatchObject({ resumeSessionId: "valid-session" });
+    ).resolves.toMatchObject({ resumeCandidateId: "valid-session" });
     await expect(
       resolveCompanionRuntimeEnv({
         [COMPANION_FOLDER_ENV]: configured,
         [COMPANION_RESUME_SESSION_ID_ENV]: "valid-session",
         CLAUDE_CONFIG_DIR: configDir
       })
-    ).resolves.toMatchObject({ resumeSessionId: "valid-session", metadata: { resumeSessionId: "valid-session" } });
+    ).resolves.toMatchObject({ resumeCandidateId: "valid-session", metadata: { resumeCandidateId: "valid-session" } });
   });
 
-  it("resumes the newest transcript when Code Start passes no id", async () => {
+  it("offers the newest transcript when Code Start passes no id", async () => {
     const configured = path.join(root, "auto-resume");
     const configDir = path.join(root, "auto-config");
     await mkdir(configured);
@@ -215,16 +215,39 @@ describe("contained path operations", () => {
 
     await expect(
       resolveCompanionRuntimeEnv({ [COMPANION_FOLDER_ENV]: configured, CLAUDE_CONFIG_DIR: configDir })
-    ).resolves.toMatchObject({ resumeSessionId: "newer" });
+    ).resolves.toMatchObject({ resumeCandidateId: "newer" });
   });
 
-  it("starts fresh when the folder has no saved conversation", async () => {
+  it("never hands back a conversation to load on its own", async () => {
+    // The regression this pins: `resolveCompanionRuntimeEnv` used to return the
+    // newest conversation as something to CONTINUE, and the window opened
+    // inside it. Because a message respawns the CLI, that inherited prefix was
+    // re-bought every turn rather than paid once. The id may only travel as a
+    // candidate the renderer offers — no field here may name a live session.
+    const configured = path.join(root, "offer-only");
+    const configDir = path.join(root, "offer-only-config");
+    await mkdir(configured);
+    const encodedFolder = (await realpath(configured)).replace(/[^a-zA-Z0-9]/g, "-");
+    const projectDir = path.join(configDir, "projects", encodedFolder);
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(path.join(projectDir, "prior.jsonl"), "{}\n", "utf8");
+
+    const env = await resolveCompanionRuntimeEnv({
+      [COMPANION_FOLDER_ENV]: configured,
+      CLAUDE_CONFIG_DIR: configDir
+    });
+    expect(env.resumeCandidateId).toBe("prior");
+    expect(Object.keys(env)).not.toContain("resumeSessionId");
+    expect(Object.keys(env.metadata)).not.toContain("resumeSessionId");
+  });
+
+  it("has nothing to offer when the folder has no saved conversation", async () => {
     const configured = path.join(root, "empty-project");
     const configDir = path.join(root, "empty-config");
     await mkdir(configured);
     await expect(
       resolveCompanionRuntimeEnv({ [COMPANION_FOLDER_ENV]: configured, CLAUDE_CONFIG_DIR: configDir })
-    ).resolves.toMatchObject({ resumeSessionId: undefined });
+    ).resolves.toMatchObject({ resumeCandidateId: undefined });
   });
 
   it("lists directories before files and creates child folders/files", async () => {

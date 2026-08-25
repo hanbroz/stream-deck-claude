@@ -31,7 +31,8 @@ export type CompanionRuntimeEnv = {
   bindingId?: string;
   launchId?: string;
   usageDataDir: string;
-  resumeSessionId?: string;
+  /** Offered at startup, not loaded. See RuntimeProjectMetadata. */
+  resumeCandidateId?: string;
 };
 
 function claudeProjectDirectoryName(folder: string): string {
@@ -226,9 +227,12 @@ export async function resolveCompanionRuntimeEnv(
     await claudeConversationExists(env, rootPath, requestedResumeSessionId)
       ? requestedResumeSessionId
       : undefined;
-  // Code Start continues the folder's most recent conversation when it did not
-  // pass an explicit id, so opening a project resumes where it left off.
-  const resumeSessionId = explicitResume ?? await newestClaudeConversationId(env, rootPath);
+  // A candidate to offer, not a conversation to continue. Opening a project
+  // used to resume where it left off, which reads as a convenience and bills
+  // like a subscription: the respawn-per-message design re-buys the inherited
+  // prefix on every turn, so a launch that inherits 326k tokens paid it 167
+  // times over. The renderer puts it behind a button instead.
+  const resumeCandidateId = explicitResume ?? await newestClaudeConversationId(env, rootPath);
   const contextPercent = parseContextPercent(env[COMPANION_CONTEXT_PERCENT_ENV]);
   const localAppData = env.LOCALAPPDATA ?? path.join(env.USERPROFILE ?? process.cwd(), "AppData", "Local");
   const usageDataDir = path.join(localAppData, "ClaudeUsageDeck");
@@ -241,7 +245,7 @@ export async function resolveCompanionRuntimeEnv(
     bindingId: cleanEnvValue(env[COMPANION_BINDING_ID_ENV], COMPANION_BINDING_ID_ENV),
     launchId: cleanEnvValue(env[COMPANION_LAUNCH_ID_ENV], COMPANION_LAUNCH_ID_ENV),
     usageDataDir,
-    resumeSessionId,
+    resumeCandidateId,
     metadata: {
       folder: rootPath,
       projectName:
@@ -250,7 +254,7 @@ export async function resolveCompanionRuntimeEnv(
       model: savedPrefs.model ?? cleanEnvValue(env[COMPANION_MODEL_ENV], COMPANION_MODEL_ENV),
       effort: savedPrefs.effort,
       contextPercent,
-      resumeSessionId
+      resumeCandidateId
     }
   };
 }

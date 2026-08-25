@@ -104,11 +104,11 @@ async function start(): Promise<void> {
     rootPath: runtimeEnv.rootPath,
     claudePath: runtimeEnv.claudePath,
     projectName: runtimeEnv.metadata.projectName,
-    hasResumeSessionId: runtimeEnv.resumeSessionId !== undefined
+    hasResumeCandidate: runtimeEnv.resumeCandidateId !== undefined
   });
-  // The Stream Deck key should show model + context the moment the app opens,
-  // not only after the first message: seed the snapshot from the saved model
-  // prefs and the resumed conversation's last recorded usage.
+  // The Stream Deck key should show the model the moment the app opens. It must
+  // NOT show the candidate's context: nothing was resumed, so that number
+  // describes a conversation this window is not in.
   const startupFamily: ClaudeModel = CLAUDE_MODELS.includes(runtimeEnv.metadata.model as ClaudeModel)
     ? (runtimeEnv.metadata.model as ClaudeModel)
     : "sonnet";
@@ -119,30 +119,34 @@ async function start(): Promise<void> {
     void (async () => {
       const family = startupFamily;
       const representativeId = startupModelId;
-      const usage = runtimeEnv.resumeSessionId
-        ? await historyReader.lastContextUsage(runtimeEnv.resumeSessionId)
-        : undefined;
       await writeContextSnapshot({
         dataDir: runtimeEnv.usageDataDir,
         bindingId,
         launchId,
-        // The launch id stands in when the folder has no conversation yet; a
-        // resume-pointer promotion discards it via the existence check.
-        sessionId: runtimeEnv.resumeSessionId ?? launchId,
+        // Always the launch id: the window opens on a new conversation, and
+        // the real session id replaces this with the first reply's snapshot.
+        sessionId: launchId,
         projectDir: runtimeEnv.rootPath,
         model: representativeId,
-        usedTokens: usage?.usedTokens ?? null,
+        usedTokens: null,
         windowTokens: contextWindowForModel(representativeId),
         capturedAt: Date.now()
       });
       diag("main.snapshot.initial", {
         model: family,
-        hasUsage: usage !== undefined,
-        resumed: runtimeEnv.resumeSessionId !== undefined
+        resumed: false
       });
     })().catch(() => {
       // The key simply waits for the first message's snapshot.
     });
+  }
+  // Price the offer with the candidate's OWN last recorded usage. Estimating
+  // from the transcript's byte size was the alternative and it is not honest
+  // here: the ratio ranged 8.1 to 21.2 bytes per token across real sessions,
+  // so a size-derived figure can be off by more than double.
+  if (runtimeEnv.resumeCandidateId) {
+    const candidate = await historyReader.lastContextUsage(runtimeEnv.resumeCandidateId);
+    runtimeEnv.metadata.resumeCandidateTokens = candidate?.usedTokens;
   }
   await createCompanionWindow({
     BrowserWindow,
@@ -158,9 +162,6 @@ async function start(): Promise<void> {
       // reset snapshot can still name the model instead of blanking that half of
       // the key too.
       let currentModelId = startupModelId;
-      // Ending the conversation must not let the folder's resume id speak for it
-      // again; see snapshotSessionId.
-      let conversationEnded = false;
       /**
        * Put the key back to "--" because the conversation changed size without
        * being measured. The stream reports usage only at the start of a reply,
@@ -175,7 +176,6 @@ async function start(): Promise<void> {
       const forgetContextUsage = (keepConversation: boolean): void => {
         const continuedSessionId = keepConversation ? lastContext?.claudeSessionId : undefined;
         lastContext = undefined;
-        conversationEnded = !keepConversation;
         if (!runtimeEnv.bindingId || !runtimeEnv.launchId) {
           return;
         }
@@ -204,7 +204,6 @@ async function start(): Promise<void> {
                 usedTokens: info.usedTokens,
                 windowTokens: info.windowTokens
               };
-              conversationEnded = false;
             }
             if (info.model) {
               currentModelId = info.model;
@@ -329,9 +328,7 @@ async function start(): Promise<void> {
           }
           const sessionId = snapshotSessionId({
             liveSessionId: lastContext?.claudeSessionId,
-            resumeSessionId: runtimeEnv.resumeSessionId,
-            launchId: runtimeEnv.launchId,
-            conversationEnded
+            launchId: runtimeEnv.launchId
           });
           const representativeId = REPRESENTATIVE_MODEL_ID[model];
           currentModelId = representativeId;

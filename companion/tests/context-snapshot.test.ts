@@ -129,39 +129,15 @@ describe("writeRuntimeActivity", () => {
 
 describe("snapshotSessionId", () => {
   it("names the live conversation whenever one has reported in", () => {
-    expect(
-      snapshotSessionId({
-        liveSessionId: "live",
-        resumeSessionId: "resumed",
-        launchId: "launch",
-        conversationEnded: false
-      })
-    ).toBe("live");
+    expect(snapshotSessionId({ liveSessionId: "live", launchId: "launch" })).toBe("live");
   });
 
-  it("falls back to the folder's resume id before the first message", () => {
-    expect(
-      snapshotSessionId({
-        resumeSessionId: "resumed",
-        launchId: "launch",
-        conversationEnded: false
-      })
-    ).toBe("resumed");
-  });
-
-  it("stands the launch id in once the conversation was ended", () => {
-    // The resume id names the conversation the user just discarded; reviving it
-    // here would restore the key's pointer to it.
-    expect(
-      snapshotSessionId({
-        resumeSessionId: "resumed",
-        launchId: "launch",
-        conversationEnded: true
-      })
-    ).toBe("launch");
-  });
-
-  it("uses the launch id when the folder has no resume id at all", () => {
-    expect(snapshotSessionId({ launchId: "launch", conversationEnded: false })).toBe("launch");
+  it("stands the launch id in until a conversation reports one", () => {
+    // No third source any more. A window opens on a NEW conversation, and the
+    // folder's previous one is adopted only when the user presses the offer —
+    // by which point the first reply has supplied a live id. Restoring a
+    // fallback here would put the key's resume pointer back on a conversation
+    // this window is not in.
+    expect(snapshotSessionId({ launchId: "launch" })).toBe("launch");
   });
 });

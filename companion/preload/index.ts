@@ -32,7 +32,8 @@ export type ClaudeCompanionApi = {
     model?: string;
     effort?: ClaudeEffort;
     contextPercent?: number;
-    resumeSessionId?: string;
+    resumeCandidateId?: string;
+    resumeCandidateTokens?: number;
   };
   claude: {
     start(request: ClaudeSessionStartRequest): Promise<ClaudeSessionStarted>;
@@ -136,7 +137,8 @@ const api: ClaudeCompanionApi = {
     model: runtimeMetadata.model,
     effort: runtimeMetadata.effort,
     contextPercent: runtimeMetadata.contextPercent,
-    resumeSessionId: runtimeMetadata.resumeSessionId
+    resumeCandidateId: runtimeMetadata.resumeCandidateId,
+    resumeCandidateTokens: runtimeMetadata.resumeCandidateTokens
   },
   claude: {
     start: (request) => ipcRenderer.invoke(COMPANION_IPC.claudeStart, request),

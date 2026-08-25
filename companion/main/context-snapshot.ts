@@ -41,26 +41,20 @@ export function displayModelName(model: string | undefined): string | undefined 
 /**
  * The session id a key snapshot should carry.
  *
- * Three sources, and the order between the last two is the whole point. A live
- * conversation always wins. With none, the folder's resume id keeps the key
- * useful before the first message — but once the conversation has been ended
- * that id names the very conversation the user discarded, and handing it back
- * would restore the key's resume pointer to it. Ended means the launch id, the
- * same placeholder the opening and reset snapshots use.
+ * A live conversation wins; the launch id is the placeholder until one exists.
+ *
+ * There used to be a third source between them — the folder's resume id, which
+ * kept the key useful before the first message, guarded by a `conversationEnded`
+ * flag so an ended conversation could not hand its id back. Both are gone with
+ * auto-resume: a window now opens on a new conversation and only ever adopts an
+ * old one when the user presses the offer, at which point the first reply
+ * supplies a live id. Neither the id nor the guard had a value left to carry.
  */
 export function snapshotSessionId(options: {
   liveSessionId?: string;
-  resumeSessionId?: string;
   launchId: string;
-  conversationEnded: boolean;
 }): string {
-  if (options.liveSessionId) {
-    return options.liveSessionId;
-  }
-  if (options.conversationEnded) {
-    return options.launchId;
-  }
-  return options.resumeSessionId ?? options.launchId;
+  return options.liveSessionId ?? options.launchId;
 }
 
 export function buildContextSnapshot(input: ContextSnapshotInput): Record<string, unknown> {
