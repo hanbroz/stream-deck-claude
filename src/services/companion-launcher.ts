@@ -114,6 +114,11 @@ export function createCompanionLaunchPlan(
   // which leaves `app`/`BrowserWindow` unavailable and produces a blank shell.
   delete inheritedEnv.ELECTRON_RUN_AS_NODE;
   delete inheritedEnv.ELECTRON_NO_ATTACH_CONSOLE;
+  // Same class of problem, different victim: a parent Claude session marks its
+  // children with this, and the CLI the Companion hosts would then turn
+  // transcript saving off. The Companion strips it again on its own side for
+  // launches that do not come through here.
+  delete inheritedEnv.CLAUDE_CODE_CHILD_SESSION;
   return {
     command: companionPath,
     // The packaged Electron runtime rejects unknown top-level CLI flags. The

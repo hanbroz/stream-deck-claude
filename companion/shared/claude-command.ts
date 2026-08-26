@@ -54,6 +54,42 @@ export type TerminalSessionStarted = {
  */
 export type CompanionLaunchMode = "app" | "terminal";
 
+/**
+ * Markers a PARENT Claude session leaves in the environment for its own
+ * children, which must not travel into the session this app hosts.
+ *
+ * `CLAUDE_CODE_CHILD_SESSION` makes the CLI treat itself as nested and turn
+ * transcript saving OFF — it says so on startup: "Transcript saving is off —
+ * inherited CLAUDE_CODE_CHILD_SESSION marker". That is not cosmetic here.
+ * `--resume` stops finding the session, and terminal mode reads the transcript
+ * for the context percentage, so the meter and the key would sit at "--"
+ * forever with nothing explaining why.
+ *
+ * The marker arrives whenever anything in the launch chain was itself started
+ * from a Claude session — Stream Deck restarted from one is enough, and it then
+ * flows through the plugin, this app, and the PTY into the CLI. Stripping it is
+ * right rather than forcing persistence back on: the session this app opens is
+ * a real top-level one, so the marker is simply false about it.
+ *
+ * `CLAUDE_CODE_SKIP_PROMPT_HISTORY` is deliberately NOT stripped. The CLI
+ * reports that separately, and a user who set it meant it.
+ */
+export const INHERITED_SESSION_MARKERS = ["CLAUDE_CODE_CHILD_SESSION"] as const;
+
+/** Remove those markers in place. Returns the names actually dropped. */
+export function stripInheritedSessionMarkers(
+  env: Record<string, string | undefined>
+): string[] {
+  const dropped: string[] = [];
+  for (const name of INHERITED_SESSION_MARKERS) {
+    if (env[name] !== undefined) {
+      delete env[name];
+      dropped.push(name);
+    }
+  }
+  return dropped;
+}
+
 export const COMPANION_LAUNCH_MODES: readonly CompanionLaunchMode[] = ["app", "terminal"];
 
 export type RuntimeProjectMetadata = {

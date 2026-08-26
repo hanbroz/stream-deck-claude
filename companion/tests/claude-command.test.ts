@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createClaudeCommandArgs,
   encodeRuntimeProjectMetadata,
-  readRuntimeProjectMetadataArg
+  readRuntimeProjectMetadataArg,
+  stripInheritedSessionMarkers
 } from "../shared/claude-command";
 import { QUESTION_SYSTEM_PROMPT } from "../shared/question-block";
 
@@ -95,5 +96,34 @@ describe("runtime metadata args", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("stripInheritedSessionMarkers", () => {
+  it("drops the nested-session marker and reports what it dropped", () => {
+    const env: Record<string, string | undefined> = {
+      CLAUDE_CODE_CHILD_SESSION: "1",
+      CLAUDE_CODE_SESSION_ID: "abc",
+      PATH: "C:\Windows"
+    };
+
+    expect(stripInheritedSessionMarkers(env)).toEqual(["CLAUDE_CODE_CHILD_SESSION"]);
+    expect(env.CLAUDE_CODE_CHILD_SESSION).toBeUndefined();
+    // Only the marker. The session id is inert on its own, and PATH obviously
+    // has to survive — this runs on the real process environment.
+    expect(env.CLAUDE_CODE_SESSION_ID).toBe("abc");
+    expect(env.PATH).toBe("C:\Windows");
+  });
+
+  it("leaves a deliberate CLAUDE_CODE_SKIP_PROMPT_HISTORY alone", () => {
+    // The CLI reports that one separately, and a user who set it meant it.
+    const env: Record<string, string | undefined> = { CLAUDE_CODE_SKIP_PROMPT_HISTORY: "1" };
+    expect(stripInheritedSessionMarkers(env)).toEqual([]);
+    expect(env.CLAUDE_CODE_SKIP_PROMPT_HISTORY).toBe("1");
+  });
+
+  it("is a no-op when nothing was inherited", () => {
+    const env: Record<string, string | undefined> = {};
+    expect(stripInheritedSessionMarkers(env)).toEqual([]);
   });
 });

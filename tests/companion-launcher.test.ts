@@ -110,6 +110,7 @@ describe("createCompanionLaunchPlan", () => {
   it("preserves Stream Deck identity env and adds resume only when present", () => {
     vi.stubEnv("ELECTRON_RUN_AS_NODE", "1");
     vi.stubEnv("ELECTRON_NO_ATTACH_CONSOLE", "1");
+    vi.stubEnv("CLAUDE_CODE_CHILD_SESSION", "1");
     const plan = createCompanionLaunchPlan(
       "D:\\Companion\\Code Deck Companion.exe",
       "D:\\Projects\\Demo",
@@ -133,6 +134,10 @@ describe("createCompanionLaunchPlan", () => {
     expect(plan.env.CLAUDE_STREAM_DECK_PROJECT_NAME).toBe("020_Source");
     expect(plan.env.CLAUDE_STREAM_DECK_RESUME_SESSION_ID).toBe("session-1");
     expect(plan.env.ELECTRON_RUN_AS_NODE).toBeUndefined();
+    // A parent Claude session marks its children with this, and the CLI the
+    // Companion hosts would then turn transcript saving off — which also blanks
+    // the context percentage, since that is read from the transcript.
+    expect(plan.env.CLAUDE_CODE_CHILD_SESSION).toBeUndefined();
     expect(plan.env.ELECTRON_NO_ATTACH_CONSOLE).toBeUndefined();
   });
 });

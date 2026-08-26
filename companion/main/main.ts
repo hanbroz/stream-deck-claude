@@ -20,7 +20,12 @@ import {
 } from "./context-snapshot";
 import { writeModelPrefs } from "./model-prefs";
 import { listSlashCommands } from "./slash-commands";
-import { CLAUDE_MODELS, COMPANION_IPC, type ClaudeModel } from "../shared/claude-command";
+import {
+  CLAUDE_MODELS,
+  COMPANION_IPC,
+  stripInheritedSessionMarkers,
+  type ClaudeModel
+} from "../shared/claude-command";
 import { ConversationHistoryReader } from "./transcript-history";
 import { readCompanionSessionStatus } from "./session-status";
 import { diag, setDiagSink } from "../shared/diag";
@@ -88,6 +93,14 @@ async function start(): Promise<void> {
   if (process.platform === "win32") {
     const exeHash = createHash("sha1").update(app.getPath("exe")).digest("hex").slice(0, 16);
     app.setAppUserModelId(`com.hanbroz.claudedeck.companion.${exeHash}`);
+  }
+  // Before anything spawns: every Claude process this app starts — the PTY in
+  // terminal mode, `claude --print` in chat mode, the bridged CLI subcommands —
+  // inherits this environment, so the marker has to go once, here, rather than
+  // at each spawn site where the next one added would forget.
+  const droppedMarkers = stripInheritedSessionMarkers(process.env);
+  if (droppedMarkers.length > 0) {
+    diag("main.env.strippedSessionMarkers", { names: droppedMarkers.join(",") });
   }
   const runtimeEnv = await resolveCompanionRuntimeEnv(process.env);
   const configDir = process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(
