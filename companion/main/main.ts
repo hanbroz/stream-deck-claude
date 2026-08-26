@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { registerCompanionIpc } from "./ipc";
-import { resolveCompanionRuntimeEnv } from "./paths";
+import { newestClaudeConversationId, resolveCompanionRuntimeEnv } from "./paths";
 import { createCompanionWindow } from "./window";
 import os from "node:os";
 
@@ -20,7 +20,7 @@ import {
 } from "./context-snapshot";
 import { writeModelPrefs } from "./model-prefs";
 import { listSlashCommands } from "./slash-commands";
-import { CLAUDE_MODELS, type ClaudeModel } from "../shared/claude-command";
+import { CLAUDE_MODELS, COMPANION_IPC, type ClaudeModel } from "../shared/claude-command";
 import { ConversationHistoryReader } from "./transcript-history";
 import { readCompanionSessionStatus } from "./session-status";
 import { diag, setDiagSink } from "../shared/diag";
@@ -195,6 +195,59 @@ async function start(): Promise<void> {
           // outcome as before this reset existed.
         });
       };
+      // Terminal mode drives nothing: the interactive CLI runs inside the PTY
+      // and reports nothing through the stream, so the key's context has to come
+      // from the transcript the CLI writes for itself. This is the same bounded
+      // 256KB tail read that prices the resume offer — a local file, on a timer.
+      // No Claude request is made and no tokens are spent by any of it.
+      if (runtimeEnv.launchMode === "terminal") {
+        const publishTerminalContext = async (): Promise<void> => {
+          const sessionId = await newestClaudeConversationId(process.env, runtimeEnv.rootPath);
+          if (sessionId === undefined) {
+            return;
+          }
+          const usage = await historyReader.lastContextUsage(sessionId);
+          if (usage === undefined) {
+            return;
+          }
+          const model = usage.model ?? currentModelId;
+          const windowTokens = contextWindowForModel(model);
+          // The window's own meter, through the path a streamed context event
+          // takes. The renderer holds no active session in this mode, so it
+          // accepts the event instead of filtering it against one.
+          if (createdWindow.isDestroyed?.() !== true) {
+            createdWindow.webContents.send(COMPANION_IPC.claudeData, {
+              sessionId,
+              events: [{ kind: "context", usedTokens: usage.usedTokens, windowTokens, model }]
+            });
+          }
+          if (!runtimeEnv.bindingId || !runtimeEnv.launchId) {
+            return;
+          }
+          await writeContextSnapshot({
+            dataDir: runtimeEnv.usageDataDir,
+            bindingId: runtimeEnv.bindingId,
+            launchId: runtimeEnv.launchId,
+            sessionId,
+            projectDir: runtimeEnv.rootPath,
+            model,
+            usedTokens: usage.usedTokens,
+            windowTokens,
+            capturedAt: Date.now()
+          });
+        };
+        const tick = (): void => {
+          void publishTerminalContext().catch(() => {
+            // The key keeps its last value; the next tick tries again.
+          });
+        };
+        // Interval only, with no eager first read: a send before the page
+        // loads is dropped, and the meter is worth no special case to fill half
+        // a tick sooner.
+        const contextTimer = setInterval(tick, 5_000);
+        createdWindow.once?.("closed", () => clearInterval(contextTimer));
+      }
+
       const ptyManager = new ClaudePtyManager({
           command: runtimeEnv.claudePath,
           onContext: (info) => {

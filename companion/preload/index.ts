@@ -7,10 +7,11 @@ import {
   type ClaudeModel,
   type ClaudeSessionStartRequest,
   type ClaudeSessionStarted,
+  type CompanionLaunchMode,
   type DirectoryEntry,
   type RuntimeProjectMetadata,
-  type TerminalSessionStarted,
-  type TerminalSessionStartRequest
+  type TerminalSessionStartRequest,
+  type TerminalSessionStarted
 } from "../shared/claude-command";
 import type { CompanionSessionStatus } from "../main/session-status";
 import type { GitBranchInfo } from "../main/git-branch";
@@ -32,6 +33,7 @@ export type ClaudeCompanionApi = {
     model?: string;
     effort?: ClaudeEffort;
     contextPercent?: number;
+    launchMode: CompanionLaunchMode;
     resumeCandidateId?: string;
     resumeCandidateTokens?: number;
   };
@@ -137,6 +139,7 @@ const api: ClaudeCompanionApi = {
     model: runtimeMetadata.model,
     effort: runtimeMetadata.effort,
     contextPercent: runtimeMetadata.contextPercent,
+    launchMode: runtimeMetadata.launchMode ?? "app",
     resumeCandidateId: runtimeMetadata.resumeCandidateId,
     resumeCandidateTokens: runtimeMetadata.resumeCandidateTokens
   },

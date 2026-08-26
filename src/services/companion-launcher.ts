@@ -105,7 +105,8 @@ export function createCompanionLaunchPlan(
   launchId: string,
   claudePath: string,
   resumeSessionId?: string,
-  projectName?: string
+  projectName?: string,
+  launchMode: "app" | "terminal" = "app"
 ): CompanionLaunchPlan {
   const inheritedEnv = { ...process.env };
   // Stream Deck and other Electron hosts may set this flag for their own
@@ -128,6 +129,7 @@ export function createCompanionLaunchPlan(
       CLAUDE_STREAM_DECK_LAUNCH_ID: launchId,
       CLAUDE_STREAM_DECK_FOLDER: folder,
       CLAUDE_STREAM_DECK_CLAUDE_PATH: claudePath,
+      CLAUDE_STREAM_DECK_LAUNCH_MODE: launchMode,
       ...(projectName ? { CLAUDE_STREAM_DECK_PROJECT_NAME: projectName } : {}),
       ...(resumeSessionId ? { CLAUDE_STREAM_DECK_RESUME_SESSION_ID: resumeSessionId } : {})
     }
@@ -179,7 +181,8 @@ export async function launchClaudeCompanion(
   bindingId: string,
   launchId: string,
   resumeSessionId?: string,
-  projectName?: string
+  projectName?: string,
+  launchMode: "app" | "terminal" = "app"
 ): Promise<CompanionLaunchResult> {
   await validateLaunchFolder(folder);
   let companionPath: string;
@@ -199,7 +202,8 @@ export async function launchClaudeCompanion(
     launchId,
     claudePath,
     resumeSessionId,
-    projectName
+    projectName,
+    launchMode
   );
   const companion = spawn(plan.command, plan.args, {
     cwd: plan.cwd,

@@ -139,6 +139,9 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
   const folder = configuredFolder(settings);
   const projectName = configuredProjectName(settings);
   const launchMode = configuredLaunchMode(settings);
+  // The setting still says "terminal"/"companion"; the window calls the same two
+  // surfaces "terminal"/"app".
+  const companionMode: "app" | "terminal" = launchMode === "terminal" ? "terminal" : "app";
   if (!bindingId) {
     await action.showAlert();
     return;
@@ -159,19 +162,21 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
   }
 
   try {
-    // Companion only: focusing is a window operation on the app's own process.
-    // Skipped in terminal mode so a key switched to terminal cannot focus a
-    // Companion left over from the previous mode instead of opening a terminal.
-    if (launchMode === "companion") {
+    {
       // A second press for the same folder focuses the app that is already
       // open instead of spawning a twin, which would also rotate the launch id
       // and orphan the key's snapshot stream.
+      //
+      // Both modes are the same window now, so this is no longer companion-only
+      // — but the running one has to be in the SAME mode. Focusing a window in
+      // the mode the user just switched away from would silently ignore the
+      // setting they came here to change.
       const running = await dependencies.findRunningCompanionLaunch(
         dependencies.defaultUsageDataDir(),
         bindingId,
         folder
       );
-      if (running) {
+      if (running && (running.launchMode ?? "app") === companionMode) {
         const focused = await dependencies.focusCompanionWindow(running.processId);
         if (focused) {
           dependencies.logger.info(
@@ -221,19 +226,24 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
         );
       }
     }
-    // The terminal runs the CLI directly, so it has no way to be handed a
-    // conversation to continue — a press there always starts a new one. The
-    // resume pointer above is still read and pruned so switching back to the
-    // app does not resume a conversation that has since been deleted.
-    const launch = launchMode === "terminal"
-      ? await dependencies.launchClaudeTerminal(folder, bindingId, launchId)
-      : await dependencies.launchClaudeCompanion(
-        folder,
-        bindingId,
-        launchId,
-        resumeSessionId,
-        projectName
-      );
+    // Terminal mode opens the same window on a different surface: the explorer
+    // and the key stay, and the interactive CLI runs in the window's own PTY
+    // rather than an external console. It is also the cheaper surface — one
+    // long-lived process keeps the prompt cache warm, where the app's `--print`
+    // path respawns per message and re-buys the prefix.
+    //
+    // No resume id is handed over in terminal mode: the CLI is typed into, not
+    // driven, so there is nothing to hand a conversation to. The resume pointer
+    // is still read and pruned above so switching back to the app does not
+    // offer a conversation that has since been deleted.
+    const launch = await dependencies.launchClaudeCompanion(
+      folder,
+      bindingId,
+      launchId,
+      companionMode === "terminal" ? undefined : resumeSessionId,
+      projectName,
+      companionMode
+    );
     await dependencies.writeActiveLaunch(dependencies.defaultUsageDataDir(), {
       schemaVersion: 2,
       actionId: bindingId,
@@ -241,6 +251,7 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
       folder,
       startedAt: dependencies.now(),
       terminal: launch.terminal,
+      launchMode: companionMode,
       processId: launch.processId
     });
     dependencies.logger.info(

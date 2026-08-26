@@ -36,13 +36,13 @@
     <div class="field">
       <label for="launchMode">Open with</label>
       <select id="launchMode">
-        <option value="companion">Companion app</option>
-        <option value="terminal">Terminal (Windows Terminal / PowerShell)</option>
+        <option value="companion">Companion app (chat)</option>
+        <option value="terminal">Companion app (terminal)</option>
       </select>
       <p class="hint" id="launchModeHint"></p>
     </div>
     <button id="save" class="primary" type="button">Save settings</button>
-    <p class="help">The button opens this folder and runs <code>claude --dangerously-skip-permissions</code>.</p>
+    <p class="help">The button opens this folder in the Companion window and runs <code>claude --dangerously-skip-permissions</code>.</p>
     <div id="status" role="status" aria-live="polite"></div>
 
     <script>
@@ -59,14 +59,15 @@
         const launchMode = document.getElementById("launchMode");
         const launchModeHint = document.getElementById("launchModeHint");
 
-        // Terminal mode reports its state through Claude Code's hooks, but the
-        // percentage can only come from the status line — which the bridge
-        // leaves alone when another tool already owns it. Say so here rather
-        // than let the key look broken.
+        // Both modes are the same window with the same explorer and the same
+        // key readout; they differ in what fills the right-hand side. Terminal
+        // is the cheaper surface per turn — one long-lived CLI keeps the prompt
+        // cache warm, where chat mode respawns per message — so say that rather
+        // than leave the choice looking cosmetic.
         const showLaunchModeHint = () => {
           launchModeHint.textContent = launchMode.value === "terminal"
-            ? "Shows running / waiting state. Context % needs the status line, and resuming the last conversation is app-only."
-            : "Shows state, context %, and resumes the last conversation.";
+            ? "File explorer with the interactive Claude Code CLI beside it. Shows state and context %. Uses fewer tokens per turn; model and effort are set inside the CLI."
+            : "File explorer with the chat console beside it. Shows state and context %, and offers the folder's last conversation.";
         };
 
         const setStatus = (message, isError = false) => {

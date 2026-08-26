@@ -41,9 +41,25 @@ export type TerminalSessionStarted = {
   shell: TerminalShell;
 };
 
+/**
+ * Which surface the window opens on.
+ *
+ * `app` drives Claude through `claude --print` and renders the conversation
+ * itself. `terminal` runs the interactive CLI inside the embedded PTY and only
+ * hosts it — the explorer, the window chrome and the Stream Deck key are the
+ * same either way. Terminal is the cheaper surface per turn: one long-lived
+ * process keeps the prompt cache warm, where `--print` respawns per message and
+ * re-buys the prefix. Measured at turn starts still inside the 5-minute cache
+ * TTL, `--print` re-wrote a median 76k-123k tokens against the terminal's 12.5k.
+ */
+export type CompanionLaunchMode = "app" | "terminal";
+
+export const COMPANION_LAUNCH_MODES: readonly CompanionLaunchMode[] = ["app", "terminal"];
+
 export type RuntimeProjectMetadata = {
   folder: string;
   projectName: string;
+  launchMode?: CompanionLaunchMode;
   model?: string;
   effort?: ClaudeEffort;
   contextPercent?: number;
@@ -213,6 +229,10 @@ export function readRuntimeProjectMetadataArg(argv: string[]): RuntimeProjectMet
     effort: CLAUDE_EFFORTS.includes(parsed.effort as ClaudeEffort) ? parsed.effort : undefined,
     contextPercent:
       typeof parsed.contextPercent === "number" ? parsed.contextPercent : undefined,
+    launchMode:
+      parsed.launchMode === "terminal" || parsed.launchMode === "app"
+        ? parsed.launchMode
+        : undefined,
     resumeCandidateId:
       typeof parsed.resumeCandidateId === "string" ? parsed.resumeCandidateId : undefined,
     resumeCandidateTokens:

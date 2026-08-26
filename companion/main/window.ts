@@ -14,6 +14,8 @@ export type BrowserWindowLike = {
   unmaximize?(): void;
   isMaximized?(): boolean;
   close?(): void;
+  isDestroyed?(): boolean;
+  once?(event: "closed", handler: () => void): void;
   webContents: {
     send(channel: string, ...args: unknown[]): void;
     setWindowOpenHandler(handler: () => { action: "deny" }): void;

@@ -3,7 +3,10 @@ import { Dirent } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import type { DirectoryEntry } from "../shared/claude-command";
+import {
+  DirectoryEntry,
+  type CompanionLaunchMode
+} from "../shared/claude-command";
 import type { RuntimeProjectMetadata } from "../shared/claude-command";
 import { readModelPrefs } from "./model-prefs";
 import type { CopyMeasurement, CopySummary } from "../shared/copy-guard";
@@ -23,6 +26,7 @@ export const COMPANION_MODEL_ENV = "CLAUDE_STREAM_DECK_MODEL";
 export const COMPANION_CONTEXT_PERCENT_ENV = "CLAUDE_STREAM_DECK_CONTEXT_PERCENT";
 export const COMPANION_BINDING_ID_ENV = "CLAUDE_STREAM_DECK_BINDING_ID";
 export const COMPANION_LAUNCH_ID_ENV = "CLAUDE_STREAM_DECK_LAUNCH_ID";
+export const COMPANION_LAUNCH_MODE_ENV = "CLAUDE_STREAM_DECK_LAUNCH_MODE";
 
 export type CompanionRuntimeEnv = {
   rootPath: string;
@@ -31,6 +35,7 @@ export type CompanionRuntimeEnv = {
   bindingId?: string;
   launchId?: string;
   usageDataDir: string;
+  launchMode: CompanionLaunchMode;
   /** Offered at startup, not loaded. See RuntimeProjectMetadata. */
   resumeCandidateId?: string;
 };
@@ -233,6 +238,10 @@ export async function resolveCompanionRuntimeEnv(
   // prefix on every turn, so a launch that inherits 326k tokens paid it 167
   // times over. The renderer puts it behind a button instead.
   const resumeCandidateId = explicitResume ?? await newestClaudeConversationId(env, rootPath);
+  const launchMode: CompanionLaunchMode =
+    cleanEnvValue(env[COMPANION_LAUNCH_MODE_ENV], COMPANION_LAUNCH_MODE_ENV) === "terminal"
+      ? "terminal"
+      : "app";
   const contextPercent = parseContextPercent(env[COMPANION_CONTEXT_PERCENT_ENV]);
   const localAppData = env.LOCALAPPDATA ?? path.join(env.USERPROFILE ?? process.cwd(), "AppData", "Local");
   const usageDataDir = path.join(localAppData, "ClaudeUsageDeck");
@@ -245,8 +254,10 @@ export async function resolveCompanionRuntimeEnv(
     bindingId: cleanEnvValue(env[COMPANION_BINDING_ID_ENV], COMPANION_BINDING_ID_ENV),
     launchId: cleanEnvValue(env[COMPANION_LAUNCH_ID_ENV], COMPANION_LAUNCH_ID_ENV),
     usageDataDir,
+    launchMode,
     resumeCandidateId,
     metadata: {
+      launchMode,
       folder: rootPath,
       projectName:
         cleanEnvValue(env[COMPANION_PROJECT_NAME_ENV], COMPANION_PROJECT_NAME_ENV) ??

@@ -1550,6 +1550,29 @@ body.is-split-resizing.is-resizing-rows * {
   animation: blink 1s step-end infinite;
 }
 
+/*
+ * Terminal mode: the window HOSTS the interactive CLI rather than driving it,
+ * so the halves that exist to drive it — the read-only console and the composer
+ * — have nothing to show. The explorer and the window chrome are unchanged, and
+ * the terminal takes the whole workspace instead of a fixed-width column. The
+ * split toggle and the panel's close button go too: there is no second pane to
+ * toggle against, and closing the only one would leave an empty window.
+ */
+.app-shell.is-terminal-mode .console-pane,
+.app-shell.is-terminal-mode .terminal-resizer,
+.app-shell.is-terminal-mode .composer-resizer,
+.app-shell.is-terminal-mode .composer,
+.app-shell.is-terminal-mode .session-tab--button,
+.app-shell.is-terminal-mode .terminal-panel__header .icon-button {
+  display: none;
+}
+
+.app-shell.is-terminal-mode .terminal-panel {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
 .terminal-panel {
   display: flex;
   width: var(--terminal-width, min(42vw, 520px));

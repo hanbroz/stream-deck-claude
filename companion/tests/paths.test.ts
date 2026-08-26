@@ -11,6 +11,7 @@ import {
   COMPANION_CLAUDE_PATH_ENV,
   COMPANION_CONTEXT_PERCENT_ENV,
   COMPANION_FOLDER_ENV,
+  COMPANION_LAUNCH_MODE_ENV,
   COMPANION_MODEL_ENV,
   COMPANION_PROJECT_NAME_ENV,
   COMPANION_RESUME_ENV,
@@ -135,8 +136,10 @@ describe("contained path operations", () => {
       bindingId: undefined,
       launchId: undefined,
       usageDataDir: path.join(process.cwd(), "AppData", "Local", "ClaudeUsageDeck"),
+      launchMode: "app",
       resumeCandidateId: "resume-session",
       metadata: {
+        launchMode: "app",
         folder: await realpath(configured),
         projectName: "Demo Project",
         model: "Opus 4.8",
@@ -216,6 +219,33 @@ describe("contained path operations", () => {
     await expect(
       resolveCompanionRuntimeEnv({ [COMPANION_FOLDER_ENV]: configured, CLAUDE_CONFIG_DIR: configDir })
     ).resolves.toMatchObject({ resumeCandidateId: "newer" });
+  });
+
+  it("opens on the terminal surface only when the launch mode says so", async () => {
+    const configured = path.join(root, "surface");
+    await mkdir(configured);
+
+    const app = await resolveCompanionRuntimeEnv({ [COMPANION_FOLDER_ENV]: configured });
+    expect(app.launchMode).toBe("app");
+    expect(app.metadata.launchMode).toBe("app");
+
+    const terminal = await resolveCompanionRuntimeEnv({
+      [COMPANION_FOLDER_ENV]: configured,
+      [COMPANION_LAUNCH_MODE_ENV]: "terminal"
+    });
+    expect(terminal.launchMode).toBe("terminal");
+    expect(terminal.metadata.launchMode).toBe("terminal");
+
+    // Anything else is the app surface, not a third one. The value arrives from
+    // a key's saved settings, so an old or hand-edited value must land on the
+    // mode that renders a usable window rather than on nothing.
+    for (const value of ["", "  ", "Terminal", "powershell", "nonsense"]) {
+      const other = await resolveCompanionRuntimeEnv({
+        [COMPANION_FOLDER_ENV]: configured,
+        [COMPANION_LAUNCH_MODE_ENV]: value
+      });
+      expect(other.launchMode).toBe("app");
+    }
   });
 
   it("never hands back a conversation to load on its own", async () => {

@@ -206,7 +206,7 @@ describe("Code Start relaunch guard", () => {
     expect(harness.launchClaudeTerminal).not.toHaveBeenCalled();
   });
 
-  it("opens a terminal, and records which one, when the launch mode says terminal", async () => {
+  it("opens the window on the terminal surface, not an external console, in terminal mode", async () => {
     const harness = createDependencies();
     const action = createAction();
 
@@ -223,17 +223,23 @@ describe("Code Start relaunch guard", () => {
       dependencies: harness.dependencies
     });
 
-    expect(harness.launchClaudeTerminal).toHaveBeenCalledWith(
+    // Same window, different surface. No resume id travels with it: the CLI in
+    // terminal mode is typed into, not driven, so there is nothing to hand a
+    // conversation to.
+    expect(harness.launchClaudeCompanion).toHaveBeenCalledWith(
       "D:\\Projects\\Demo",
       "binding-1",
-      "launch-123"
+      "launch-123",
+      undefined,
+      "Demo",
+      "terminal"
     );
-    expect(harness.launchClaudeCompanion).not.toHaveBeenCalled();
-    // The key reads liveness from this record, so the terminal it actually
-    // opened has to be what gets stored — not the Companion's own value.
+    expect(harness.launchClaudeTerminal).not.toHaveBeenCalled();
+    // The key reads liveness from this record, and a press has to tell the two
+    // surfaces apart, so the mode is stored alongside the process.
     expect(harness.writeActiveLaunch).toHaveBeenCalledWith(
       "D:\\Data\\ClaudeUsageDeck",
-      expect.objectContaining({ terminal: "windows-terminal", processId: 8765 })
+      expect.objectContaining({ launchMode: "terminal" })
     );
     expect(action.showOk).toHaveBeenCalled();
   });
@@ -267,7 +273,7 @@ describe("Code Start relaunch guard", () => {
    * record for its folder. Focusing that window would swallow the press and
    * never open the terminal the key is now configured for.
    */
-  it("ignores a running Companion when the key is set to terminal", async () => {
+  it("ignores a running window whose surface is not the one the key now asks for", async () => {
     const harness = createDependencies();
     harness.findRunningCompanionLaunch.mockResolvedValue({
       schemaVersion: 2,
@@ -293,8 +299,17 @@ describe("Code Start relaunch guard", () => {
       dependencies: harness.dependencies
     });
 
+    // Focusing the app-surface window would silently ignore the setting the
+    // user came here to change, so the press opens the terminal surface instead.
     expect(harness.focusCompanionWindow).not.toHaveBeenCalled();
-    expect(harness.launchClaudeTerminal).toHaveBeenCalled();
+    expect(harness.launchClaudeCompanion).toHaveBeenCalledWith(
+      "D:\\Projects\\Demo",
+      "binding-1",
+      "launch-123",
+      undefined,
+      "Demo",
+      "terminal"
+    );
   });
 
   it("writes the active launch and reports success when a configured action launches", async () => {
@@ -330,7 +345,8 @@ describe("Code Start relaunch guard", () => {
       "binding-1",
       "launch-123",
       undefined,
-      "Demo"
+      "Demo",
+      "app"
     );
     expect(harness.writeActiveLaunch).toHaveBeenCalledWith(
       "D:\\Data\\ClaudeUsageDeck",
@@ -510,7 +526,8 @@ describe("Code Start relaunch guard", () => {
       "binding-1",
       "launch-123",
       "session-resume",
-      "Demo"
+      "Demo",
+      "app"
     );
   });
 
@@ -552,7 +569,8 @@ describe("Code Start relaunch guard", () => {
       "binding-1",
       "launch-123",
       undefined,
-      "Demo"
+      "Demo",
+      "app"
     );
     expect(action.showAlert).not.toHaveBeenCalled();
   });

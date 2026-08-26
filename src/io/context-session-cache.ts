@@ -223,6 +223,7 @@ function parseActiveLaunch(value: unknown): ActiveCodeLaunch {
     launchId: root.launchId,
     folder: root.folder,
     startedAt: root.startedAt,
+    launchMode: root.launchMode === "terminal" ? "terminal" : "app",
     terminal: root.terminal,
     processId: root.processId
   };

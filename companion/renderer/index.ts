@@ -157,6 +157,7 @@ const workSplitElement = mustElement<HTMLElement>("work-split");
 const terminalPanelElement = mustElement<HTMLElement>("terminal-panel");
 const terminalResizer = mustElement<HTMLDivElement>("terminal-resizer");
 const composerPanel = mustElement<HTMLElement>("composer");
+const sessionTabLabel = mustElement<HTMLElement>("session-tab-label");
 const composerResizer = mustElement<HTMLDivElement>("composer-resizer");
 const modelSelect = mustElement<HTMLSelectElement>("model-select");
 const effortSelect = mustElement<HTMLSelectElement>("effort-select");
@@ -1779,6 +1780,11 @@ function mustElement<T extends HTMLElement>(id: string): T {
 
 async function initialize(): Promise<void> {
   updateProjectName(api?.runtime.projectName || projectNameFromPath(projectRoot));
+  const terminalMode = api?.runtime.launchMode === "terminal";
+  appShell.classList.toggle("is-terminal-mode", terminalMode);
+  if (terminalMode) {
+    sessionTabLabel.textContent = "TERMINAL";
+  }
   const initialStatus = await api?.session?.status?.();
   renderStatus({ state: "idle", ...initialStatus });
   sessionStatusTimer = setInterval(() => {
@@ -1806,6 +1812,10 @@ async function initialize(): Promise<void> {
   void api?.claude.commands().then((commands) => {
     slashCommands = commands;
   }).catch(() => {});
+  if (terminalMode) {
+    await startTerminalModeSession();
+    return;
+  }
   try {
     // Always a new conversation. The folder's last one is offered below.
     await startClaudeSession();
@@ -1814,6 +1824,31 @@ async function initialize(): Promise<void> {
     renderStatus({ state: "ended" });
     appendConsoleOutput(`[Claude Code failed to start: ${error instanceof Error ? error.message : "unknown error"}]\n`);
   }
+}
+
+/**
+ * Terminal mode: host the interactive CLI instead of driving it.
+ *
+ * No `claude --print` session is registered at all, which is the point.
+ * Driving the CLI a message at a time respawns it per turn and re-buys the
+ * whole prefix at cache-creation price; one long-lived process in the PTY keeps
+ * that cache warm — measured at turn starts still inside the 5-minute TTL,
+ * `--print` re-wrote a median 76k-123k tokens against the terminal's 12.5k.
+ *
+ * Model and effort are deliberately NOT passed. Inside an interactive session
+ * those belong to the user and `/model` changes them there; a flag here would
+ * only override the choice they made last time, every time.
+ */
+async function startTerminalModeSession(): Promise<void> {
+  await setTerminalSplit(true);
+  if (!api || terminalSessionId === undefined) {
+    terminal.writeln("[project terminal did not start]");
+    return;
+  }
+  // Safe to send the newline: this shell was started a moment ago by the call
+  // above and is sitting at its prompt with nothing running. The slash-command
+  // handoff only stages its line because it may meet a terminal already busy.
+  api.terminal.write(terminalSessionId, "claude --dangerously-skip-permissions\r");
 }
 
 /**

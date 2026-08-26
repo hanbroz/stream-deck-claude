@@ -20,6 +20,15 @@ export type ActiveCodeLaunch = {
   folder: string;
   startedAt: number;
   terminal: "companion" | "windows-terminal" | "powershell";
+  /**
+   * Which surface that Companion opened on. Both modes are the same process now
+   * — terminal mode hosts the interactive CLI in the window's PTY instead of
+   * launching an external console — so `terminal` above no longer separates
+   * them, and a press must not focus a window running the mode the user just
+   * switched away from. Absent on records written before the modes merged,
+   * which were all `app`.
+   */
+  launchMode?: "app" | "terminal";
   processId: number;
 };
 
