@@ -1,0 +1,6 @@
+# Local agent/editor state that sometimes gets created inside this folder
+# (e.g. an OMC hook run with cwd pointed here) must never ship in the packaged
+# .streamDeckPlugin. streamdeck pack does not consult .gitignore, so it needs
+# its own ignore file.
+.omc/
+.omx/
