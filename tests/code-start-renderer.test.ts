@@ -206,3 +206,28 @@ describe("waiting blink", () => {
     }
   });
 });
+
+describe("unreported activity", () => {
+  const base = {
+    kind: "ready" as const,
+    percentage: 40,
+    model: { displayName: "Opus 5" }
+  };
+
+  // Terminal mode never updates the activity record, so the key blinked for
+  // input all day while the session worked. An unreported session gets neither
+  // animation and a neutral colour instead of idle's red.
+  it("draws neither the blink nor the sweep, in any frame", () => {
+    const backgroundOf = (svg: string): string =>
+      /data-role="key-bg"[^>]*fill="([^"]+)"/.exec(svg)?.[1] ?? "";
+    const modelColorOf = (svg: string): string =>
+      /data-role="model-text"[^>]*fill="([^"]+)"/.exec(svg)?.[1] ?? "";
+
+    for (const frame of [0, 1, 2, 3]) {
+      const svg = renderCodeStartKey("DEMO", { ...base, activity: "unknown" }, frame);
+      expect(backgroundOf(svg)).toBe("#17130f");
+      expect(svg).not.toContain("context-sweep");
+      expect(modelColorOf(svg)).toBe("#a49a92");
+    }
+  });
+});

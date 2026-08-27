@@ -627,7 +627,22 @@ export async function loadCodeStartDisplayState(
     if (!liveness.live) {
       return { kind: "closed", activity: "ended" };
     }
-    const activity = liveness.activity;
+    // Terminal mode reports no activity at all. Its CLI runs in the project
+    // shell, whose env is stripped of the CLAUDE_STREAM_DECK_* identifiers
+    // (projectShellEnv in companion/main/terminal-session.ts), so neither the
+    // statusline bridge's hooks nor the Companion's stream tracker ever write
+    // for it — the record keeps the opening "waiting" forever and blinked the
+    // key for input all through a working session.
+    //
+    // The write itself must stay: this key reads that record's AGE to know the
+    // app is still alive (ACTIVITY_STALE_MS above), so silencing the heartbeat
+    // would retire the key after 90s. The record keeps ticking; the display
+    // stops believing what it says.
+    //
+    // ponytail: delete this branch the day the terminal surface feeds real
+    // activity — the hook path already does it for external terminal launches.
+    const activity: CodeSessionActivity =
+      active.launchMode === "terminal" ? "unknown" : liveness.activity;
 
     const snapshotValue = await readJson(
       contextSessionSnapshotPath(dataDir, actionId, active.launchId)

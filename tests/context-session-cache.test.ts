@@ -660,3 +660,65 @@ describe("context session cache", () => {
     ).resolves.toEqual({ kind: "closed", activity: "ended" });
   });
 });
+
+describe("terminal-mode activity", () => {
+  const launchFor = (suffix: string) => ({
+    schemaVersion: 2 as const,
+    actionId: `action-${suffix}`,
+    launchId: `launch-${suffix}`,
+    folder: "D:\\Projects\\Demo",
+    startedAt: 100,
+    terminal: "companion" as const,
+    processId: process.pid
+  });
+
+  // "waiting" is the only thing terminal mode ever writes: the Companion stamps
+  // it as the window opens and the 30s heartbeat re-dates it, however busy the
+  // CLI in the PTY happens to be. Believing it blinked the key for input right
+  // through a working session.
+  it("shows no activity for a terminal-mode launch, and the real one otherwise", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+
+    await writeActiveLaunch(root, { ...launchFor("terminal"), launchMode: "terminal" });
+    await writeContextSessionRuntime(root, {
+      schemaVersion: 2,
+      actionId: "action-terminal",
+      launchId: "launch-terminal",
+      activity: "waiting",
+      capturedAt: 110
+    });
+    await expect(
+      loadCodeStartDisplayState(root, "action-terminal", "D:\\Projects\\Demo", FRESH_NOW)
+    ).resolves.toEqual({ kind: "starting", activity: "unknown" });
+
+    await writeActiveLaunch(root, { ...launchFor("app"), launchMode: "app" });
+    await writeContextSessionRuntime(root, {
+      schemaVersion: 2,
+      actionId: "action-app",
+      launchId: "launch-app",
+      activity: "waiting",
+      capturedAt: 110
+    });
+    await expect(
+      loadCodeStartDisplayState(root, "action-app", "D:\\Projects\\Demo", FRESH_NOW)
+    ).resolves.toEqual({ kind: "starting", activity: "waiting" });
+  });
+
+  // The record is still the app's heartbeat: a terminal-mode key that stops
+  // hearing it must close, exactly as an app-mode one does.
+  it("still retires a terminal-mode key when the record goes stale", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-code-start-"));
+    await writeActiveLaunch(root, { ...launchFor("terminal"), launchMode: "terminal" });
+    await writeContextSessionRuntime(root, {
+      schemaVersion: 2,
+      actionId: "action-terminal",
+      launchId: "launch-terminal",
+      activity: "waiting",
+      capturedAt: 110
+    });
+
+    await expect(
+      loadCodeStartDisplayState(root, "action-terminal", "D:\\Projects\\Demo", 110 + 120_000)
+    ).resolves.toEqual({ kind: "closed", activity: "ended" });
+  });
+});

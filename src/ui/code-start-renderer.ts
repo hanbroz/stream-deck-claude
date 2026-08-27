@@ -67,6 +67,11 @@ function activityColor(activity: CodeSessionActivity): string {
   if (activity === "running") {
     return "#60d3a3";
   }
+  // Nobody is reporting. Neutral rather than idle's red, which on a key whose
+  // session may well be busy reads as a fault.
+  if (activity === "unknown") {
+    return "#a49a92";
+  }
   return "#ff6b74";
 }
 

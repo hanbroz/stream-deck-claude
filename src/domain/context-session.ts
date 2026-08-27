@@ -32,7 +32,16 @@ export type ActiveCodeLaunch = {
   processId: number;
 };
 
-export type CodeSessionActivity = "idle" | "running" | "waiting" | "ended";
+/**
+ * What a live session is doing.
+ *
+ * `unknown` is not something a session reports — it is the display saying that
+ * nobody is reporting at all. That is the truth for terminal mode: the CLI runs
+ * in a plain PTY that emits no phase, so the record sits at the opening
+ * `waiting` the Companion stamps and blinks the key for input while the session
+ * is working. See loadCodeStartDisplayState.
+ */
+export type CodeSessionActivity = "idle" | "running" | "waiting" | "ended" | "unknown";
 
 export type CodeSessionModel = {
   displayName: string;

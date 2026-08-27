@@ -38,7 +38,8 @@ The Code Start model text changes color according to session activity:
 
 - Green: Claude Code is running.
 - Red: Claude Code is idle.
-- Blue: Claude Code is waiting for your answer.
+- Blue: Claude Code is waiting for your answer. The key blinks while it waits.
+- Grey: terminal mode, which reports no activity. The CLI runs in the window's own terminal and sends no status, so the key shows neither running nor waiting rather than guessing.
 - `Closed`: No app is running for this project — never started, already ended, or stopped reporting. The model line and context bar appear only while an app is actually open.
 
 ### Data source
@@ -170,7 +171,8 @@ Code Start의 모델 텍스트 색상은 세션 상태에 따라 변경됩니다
 
 - 녹색: Claude Code 실행 중
 - 빨간색: Claude Code 대기 중
-- 파란색: Claude Code가 사용자 답변을 기다리는 중
+- 파란색: Claude Code가 사용자 답변을 기다리는 중 — 기다리는 동안 버튼이 깜빡입니다
+- 회색: 터미널 모드 — CLI가 창 안의 터미널에서 실행되어 상태를 보고하지 않으므로, 실행 중·대기 중을 추측해서 표시하지 않습니다
 - `Closed`: 이 프로젝트로 실행 중인 앱이 없음 — 아직 실행하지 않았거나, 종료되었거나, 상태 보고가 끊긴 경우. 모델 텍스트와 컨텍스트 막대는 앱이 실제로 열려 있을 때만 표시됩니다
 
 ### 데이터 출처
