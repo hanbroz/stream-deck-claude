@@ -68,7 +68,10 @@ describe("composer", () => {
     // at 100) both passed the whole suite. What the prefix costs is decided by
     // this number, so the number is what has to be pinned. Changing it means
     // re-measuring and updating the rationale in DESIGN.md.
-    expect(AUTO_COMPACT_AT_PERCENT).toBe(45);
+    // 85, not the cost-optimal 45: explicit user override on 2026-09-01 to
+    // match the CLI's own auto-compact window. See the docblock above the
+    // constant and DESIGN.md for the cost tradeoff this reopens.
+    expect(AUTO_COMPACT_AT_PERCENT).toBe(85);
   });
 
   it("caps an oversized paste and reports what it dropped", () => {

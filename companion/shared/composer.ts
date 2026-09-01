@@ -204,23 +204,27 @@ export function pushHistory(history: string[], text: string): void {
 /**
  * Context share at which the conversation is compacted automatically.
  *
- * Deliberately far below the window limit. Cost is (requests × prefix size), so
- * every turn taken at 90% pays for a ~900k-token prefix; measured sessions ran
- * at a ~450k MEAN prefix over more than a thousand requests.
+ * ponytail: 85, overriding the measured cost-optimal mark of 45 (kept below,
+ * unchanged) per explicit user instruction on 2026-09-01, to match the CLI's
+ * own auto-compact window (also raised to 85% / 850k of the 1M window). The
+ * user was told this reopens the exact regression the 70→45 change below was
+ * made to fix — firing later than the ~450k break-even point makes each
+ * compaction (a full-prefix-reading paid turn) more expensive than the tokens
+ * it saves — and chose 85 anyway. Upgrade path: if cost creeps back up, revert
+ * toward 45-50 and re-measure rather than guessing.
  *
- * 45, not 70. Compaction costs one turn that reads the whole prefix, and the
- * turns it saves each cost the prefix they would have carried, so lowering the
- * mark trades a slightly more frequent fixed cost for a uniformly smaller
- * prefix — worth it while the floor stays well under the mark. On a 1M window
- * 70% did not fire until ~700k, which left the mean prefix ABOVE the mean the
- * measurements already showed was too expensive; 45% caps it at 450k instead.
+ * Original rationale, still true, now overridden:
+ * Cost is (requests × prefix size), so every turn taken at 90% pays for a
+ * ~900k-token prefix; measured sessions ran at a ~450k MEAN prefix over more
+ * than a thousand requests. On a 1M window 70% did not fire until ~700k,
+ * 1.55x that break-even, which is why 45 replaced it.
  *
  * The floor is the limit on going lower: a conversation cannot compact below
  * its preamble, and `autoCompactArmed` only re-arms once usage falls back under
  * the mark, so a mark at or under the floor would fire once and then never
  * again. 45% of a 1M window is 450k against a preamble measured at ~22k.
  */
-export const AUTO_COMPACT_AT_PERCENT = 45;
+export const AUTO_COMPACT_AT_PERCENT = 85;
 
 /**
  * May the app compact right now?
