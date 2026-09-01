@@ -3,6 +3,8 @@ import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 
+import { streamDeck } from "@elgato/streamdeck";
+
 import type { UsageCache } from "../domain/rate-limits";
 import { writeUsageCache } from "../io/usage-cache";
 
@@ -113,7 +115,11 @@ async function resolveAccessToken(): Promise<string | undefined> {
   }
 }
 
-function fetchUsageFromApi(accessToken: string): Promise<UsageApiResponse | undefined> {
+type FetchOutcome =
+  | { ok: true; response: UsageApiResponse }
+  | { ok: false; reason: string };
+
+function fetchUsageFromApi(accessToken: string): Promise<FetchOutcome> {
   return new Promise((resolve) => {
     const req = https.request(
       {
@@ -133,21 +139,21 @@ function fetchUsageFromApi(accessToken: string): Promise<UsageApiResponse | unde
         });
         res.on("end", () => {
           if (res.statusCode !== 200) {
-            resolve(undefined);
+            resolve({ ok: false, reason: `http_${res.statusCode}` });
             return;
           }
           try {
-            resolve(JSON.parse(body) as UsageApiResponse);
+            resolve({ ok: true, response: JSON.parse(body) as UsageApiResponse });
           } catch {
-            resolve(undefined);
+            resolve({ ok: false, reason: "invalid_json" });
           }
         });
       }
     );
-    req.on("error", () => resolve(undefined));
+    req.on("error", (error) => resolve({ ok: false, reason: `network:${error.message}` }));
     req.on("timeout", () => {
       req.destroy();
-      resolve(undefined);
+      resolve({ ok: false, reason: "timeout" });
     });
     req.end();
   });
@@ -175,18 +181,22 @@ export function maybeRefreshUsageViaApi(dataDir: string, nowMs = Date.now()): Pr
   inFlight = (async () => {
     const accessToken = await resolveAccessToken();
     if (!accessToken) {
+      streamDeck.logger.info("Usage API refresh skipped: no access token available.");
       return;
     }
-    const response = await fetchUsageFromApi(accessToken);
-    if (!response) {
+    const outcome = await fetchUsageFromApi(accessToken);
+    if (!outcome.ok) {
+      streamDeck.logger.info(`Usage API refresh failed: ${outcome.reason}.`);
       return;
     }
-    const cache = parseUsageApiResponse(response);
+    const cache = parseUsageApiResponse(outcome.response);
     if (cache) {
       // Replace, never merge: this is a complete snapshot of the account
       // that is logged in RIGHT NOW. Merging kept the previous account's
       // weekly window (with its later reset) alive after a login switch.
       await writeUsageCache(path.join(dataDir, "usage.json"), cache);
+    } else {
+      streamDeck.logger.info("Usage API refresh returned no usable rate-limit windows.");
     }
   })().finally(() => {
     inFlight = undefined;
