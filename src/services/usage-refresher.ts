@@ -1,117 +1,69 @@
-import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import https from "node:https";
+import os from "node:os";
 import path from "node:path";
 
 import type { UsageCache } from "../domain/rate-limits";
 import { writeUsageCache } from "../io/usage-cache";
-import { resolveClaudePath } from "./companion-launcher";
 
 /**
  * Self-serve usage refresh.
  *
  * The OMC statusline cache only updates while an interactive TUI session is
  * open, so the five-hour window regularly outlives it and the key falls to
- * RESET DUE with no way to recover. `claude --print` answers the /usage
- * builtin in ~2s with no model call and no token cost, in a fixed English
- * format — the plugin parses it and merges the result into its own
- * usage.json, making the keys self-sufficient.
+ * RESET DUE with no way to recover. This calls Anthropic's usage API
+ * directly — the same endpoint Claude Code itself reads — and merges the
+ * result into its own usage.json, making the keys self-sufficient.
+ *
+ * This used to spawn `claude --print` and pipe it "/usage", parsing the
+ * reply text. That stopped producing any output in print mode (0 tokens,
+ * empty stdout) — the built-in command isn't reachable that way — so this
+ * talks to the API directly instead.
  */
-const MONTHS: Record<string, number> = {
-  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+
+const USAGE_API_HOSTNAME = "api.anthropic.com";
+const USAGE_API_PATH = "/api/oauth/usage";
+const API_TIMEOUT_MS = 10_000;
+
+type UsageApiWindow = { utilization?: number; resets_at?: string };
+type UsageApiResponse = {
+  five_hour?: UsageApiWindow;
+  seven_day?: UsageApiWindow;
 };
 
-/** Epoch ms for a wall-clock time in an IANA zone (single-iteration offset). */
-function zonedTimeToEpochMs(
-  year: number,
-  month: number,
-  day: number,
-  hour: number,
-  minute: number,
-  timeZone: string
-): number | undefined {
-  const utcGuess = Date.UTC(year, month, day, hour, minute);
-  try {
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-      hour12: false
-    });
-    const parts = Object.fromEntries(
-      formatter.formatToParts(utcGuess).map((part) => [part.type, part.value])
-    );
-    const wallAsUtc = Date.UTC(
-      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
-      Number(parts.hour) % 24, Number(parts.minute), Number(parts.second)
-    );
-    return utcGuess - (wallAsUtc - utcGuess);
-  } catch {
-    return undefined; // unknown zone name — skip this window
-  }
-}
-
-/** `Jul 24, 6:40pm (Asia/Seoul)` → epoch seconds (minutes optional: `5am`). */
-function parseResetTime(text: string, nowMs: number): number | undefined {
-  const match = /([A-Za-z]{3})\s+(\d{1,2}),\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)/iu.exec(text);
-  if (!match) {
-    return undefined;
-  }
-  const month = MONTHS[match[1].toLowerCase()];
-  if (month === undefined) {
-    return undefined;
-  }
-  const day = Number(match[2]);
-  let hour = Number(match[3]) % 12;
-  if (match[5].toLowerCase() === "pm") {
-    hour += 12;
-  }
-  const minute = match[4] === undefined ? 0 : Number(match[4]);
-  const zone = match[6].trim();
-
-  // No year in the text: assume the current one, rolling over at new year.
-  const year = new Date(nowMs).getUTCFullYear();
-  for (const candidate of [year, year + 1]) {
-    const epochMs = zonedTimeToEpochMs(candidate, month, day, hour, minute, zone);
-    if (epochMs === undefined) {
-      return undefined;
-    }
-    // Resets are always in the future (up to 5h/7d); a "past" hit means the
-    // year rolled over between the reset and now.
-    if (epochMs > nowMs - 60_000) {
-      return Math.round(epochMs / 1000);
-    }
-  }
-  return undefined;
-}
-
-function parseWindowLine(
-  output: string,
-  label: RegExp,
-  nowMs: number
-): { usedPercentage: number; resetsAt: number } | undefined {
-  const match = label.exec(output);
-  if (!match) {
-    return undefined;
-  }
-  const percentage = Number(match[1]);
-  const resetsAt = parseResetTime(match[2], nowMs);
-  return Number.isFinite(percentage) && percentage >= 0 && percentage <= 100 && resetsAt !== undefined
-    ? { usedPercentage: percentage, resetsAt }
+function clampPercentage(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(100, Math.max(0, value))
     : undefined;
 }
 
-/** Parse the /usage builtin's text reply into the local usage cache schema. */
-export function parseUsageCliOutput(output: string, nowMs = Date.now()): UsageCache | undefined {
-  const fiveHour = parseWindowLine(
-    output,
-    /Current session:\s*(\d+)%\s*used[^\n]*?resets\s+([^\n]+)/iu,
-    nowMs
-  );
-  const sevenDay = parseWindowLine(
-    output,
-    /Current week \(all models\):\s*(\d+)%\s*used[^\n]*?resets\s+([^\n]+)/iu,
-    nowMs
-  );
+function parseResetsAt(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed / 1000 : undefined;
+}
+
+/** Parse the `/api/oauth/usage` JSON body into the local usage cache schema. */
+export function parseUsageApiResponse(
+  response: UsageApiResponse,
+  nowMs = Date.now()
+): UsageCache | undefined {
+  const fiveHourPercentage = clampPercentage(response.five_hour?.utilization);
+  const fiveHourResetsAt = parseResetsAt(response.five_hour?.resets_at);
+  const sevenDayPercentage = clampPercentage(response.seven_day?.utilization);
+  const sevenDayResetsAt = parseResetsAt(response.seven_day?.resets_at);
+
+  const fiveHour =
+    fiveHourPercentage !== undefined && fiveHourResetsAt !== undefined
+      ? { usedPercentage: fiveHourPercentage, resetsAt: fiveHourResetsAt }
+      : undefined;
+  const sevenDay =
+    sevenDayPercentage !== undefined && sevenDayResetsAt !== undefined
+      ? { usedPercentage: sevenDayPercentage, resetsAt: sevenDayResetsAt }
+      : undefined;
+
   if (!fiveHour && !sevenDay) {
     return undefined;
   }
@@ -125,25 +77,79 @@ export function parseUsageCliOutput(output: string, nowMs = Date.now()): UsageCa
   };
 }
 
-function runUsageCli(claudePath: string, cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // --setting-sources "" keeps the call hermetic: without it the user's
-    // hook stack boots for ~2 minutes per call (measured) instead of ~2s.
-    const child = spawn(
-      claudePath,
-      ["--dangerously-skip-permissions", "--print", "--output-format", "text", "--setting-sources", ""],
-      { cwd, windowsHide: true }
+/**
+ * Resolve a bearer token for the usage API. `CLAUDE_CODE_OAUTH_TOKEN` is a
+ * long-lived, non-rotating token some users switch to specifically to avoid
+ * refresh-token races on `~/.claude/.credentials.json` — Claude Code then
+ * blanks that file's accessToken/refreshToken, so it stops being a usable
+ * fallback for that setup. When the env var isn't set, fall back to the
+ * file for the standard login flow.
+ *
+ * ponytail: no refresh-token flow here — an expired file-based token just
+ * means no fresh data this cycle (the stale cache stays up), not a crash.
+ * Add refresh if that turns out not to be enough.
+ */
+async function resolveAccessToken(): Promise<string | undefined> {
+  const envToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  if (envToken) {
+    return envToken;
+  }
+  try {
+    const credentialsPath = path.join(os.homedir(), ".claude", ".credentials.json");
+    const raw = await readFile(credentialsPath, "utf8");
+    const parsed = JSON.parse(raw) as {
+      claudeAiOauth?: { accessToken?: string; expiresAt?: number };
+    };
+    const creds = parsed.claudeAiOauth;
+    if (!creds?.accessToken) {
+      return undefined;
+    }
+    if (typeof creds.expiresAt === "number" && creds.expiresAt <= Date.now()) {
+      return undefined;
+    }
+    return creds.accessToken;
+  } catch {
+    return undefined;
+  }
+}
+
+function fetchUsageFromApi(accessToken: string): Promise<UsageApiResponse | undefined> {
+  return new Promise((resolve) => {
+    const req = https.request(
+      {
+        hostname: USAGE_API_HOSTNAME,
+        path: USAGE_API_PATH,
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "anthropic-beta": "oauth-2025-04-20"
+        },
+        timeout: API_TIMEOUT_MS
+      },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => {
+          if (res.statusCode !== 200) {
+            resolve(undefined);
+            return;
+          }
+          try {
+            resolve(JSON.parse(body) as UsageApiResponse);
+          } catch {
+            resolve(undefined);
+          }
+        });
+      }
     );
-    let stdout = "";
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error("usage refresh timed out"));
-    }, 60_000);
-    child.stdout.on("data", (data) => { stdout += data; });
-    child.on("error", (error) => { clearTimeout(timer); reject(error); });
-    child.on("close", () => { clearTimeout(timer); resolve(stdout); });
-    child.stdin.write("/usage");
-    child.stdin.end();
+    req.on("error", () => resolve(undefined));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(undefined);
+    });
+    req.end();
   });
 }
 
@@ -154,10 +160,11 @@ let lastAttemptAtMs = 0;
 let inFlight: Promise<void> | undefined;
 
 /**
- * Refresh usage.json via the CLI, at most once per cooldown window across all
- * usage keys. Fire-and-forget: the next 1s render tick picks up the result.
+ * Refresh usage.json from Anthropic's usage API directly, at most once per
+ * cooldown window across all usage keys. Fire-and-forget: the next 1s render
+ * tick picks up the result.
  */
-export function maybeRefreshUsageViaCli(dataDir: string, nowMs = Date.now()): Promise<void> {
+export function maybeRefreshUsageViaApi(dataDir: string, nowMs = Date.now()): Promise<void> {
   if (inFlight) {
     return inFlight;
   }
@@ -166,11 +173,17 @@ export function maybeRefreshUsageViaCli(dataDir: string, nowMs = Date.now()): Pr
   }
   lastAttemptAtMs = nowMs;
   inFlight = (async () => {
-    const claudePath = await resolveClaudePath();
-    const output = await runUsageCli(claudePath, dataDir);
-    const cache = parseUsageCliOutput(output);
+    const accessToken = await resolveAccessToken();
+    if (!accessToken) {
+      return;
+    }
+    const response = await fetchUsageFromApi(accessToken);
+    if (!response) {
+      return;
+    }
+    const cache = parseUsageApiResponse(response);
     if (cache) {
-      // Replace, never merge: /usage is a complete snapshot of the account
+      // Replace, never merge: this is a complete snapshot of the account
       // that is logged in RIGHT NOW. Merging kept the previous account's
       // weekly window (with its later reset) alive after a login switch.
       await writeUsageCache(path.join(dataDir, "usage.json"), cache);

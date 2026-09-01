@@ -26,7 +26,7 @@ import {
   withLastGoodHold,
   type LastGoodUsage
 } from "../services/display-loader";
-import { maybeRefreshUsageViaCli } from "../services/usage-refresher";
+import { maybeRefreshUsageViaApi } from "../services/usage-refresher";
 import { renderUsageKeyImage } from "../ui/key-renderer";
 import { UsageImageCache } from "./usage-image-cache";
 
@@ -107,11 +107,11 @@ export abstract class UsageAction extends SingletonAction {
       externalUsageCachePath: defaultOmcUsageCachePath()
     });
     // Keep our own usage.json current (the refresher's cooldown makes this
-    // one cheap `claude /usage` call every ~10 minutes). It is the primary
-    // source: the OMC cache both goes stale (it only updates while a TUI
-    // session is open) and has served poisoned 0% data after an OMC update.
-    void maybeRefreshUsageViaCli(dataDir).catch((error: unknown) => {
-      streamDeck.logger.error(`Usage CLI refresh failed: ${this.kind}.`, error);
+    // one cheap API call every ~10 minutes). It is the primary source: the
+    // OMC cache both goes stale (it only updates while a TUI session is
+    // open) and has served poisoned 0% data after an OMC update.
+    void maybeRefreshUsageViaApi(dataDir).catch((error: unknown) => {
+      streamDeck.logger.error(`Usage API refresh failed: ${this.kind}.`, error);
     });
     const held = withLastGoodHold(loaded, this.lastGood);
     this.lastGood = held.lastGood;

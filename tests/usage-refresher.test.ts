@@ -1,26 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { parseUsageCliOutput } from "../src/services/usage-refresher";
+import { parseUsageApiResponse } from "../src/services/usage-refresher";
 
-// A verbatim /usage reply (fixed English format, IANA zone in parentheses).
-const SAMPLE = [
-  "You are currently using your subscription to power your Claude Code usage",
-  "",
-  "Current session: 69% used · resets Jul 24, 6:40pm (Asia/Seoul)",
-  "Current week (all models): 75% used · resets Jul 29, 4:59am (Asia/Seoul)",
-  "Current week (Fable): 52% used · resets Jul 29, 5am (Asia/Seoul)",
-  "",
-  "What's contributing to your limits usage?"
-].join("\n");
+// A verbatim /api/oauth/usage reply shape.
+const SAMPLE = {
+  five_hour: { utilization: 69, resets_at: "2026-07-24T09:40:00Z" },
+  seven_day: { utilization: 75, resets_at: "2026-07-28T19:59:00Z" }
+};
 
-describe("parseUsageCliOutput", () => {
-  const nowMs = Date.UTC(2026, 6, 24, 5, 0); // 2026-07-24 14:00 KST
+describe("parseUsageApiResponse", () => {
+  const nowMs = Date.UTC(2026, 6, 24, 5, 0);
 
-  it("parses both windows with zone-correct epoch reset times", () => {
-    const cache = parseUsageCliOutput(SAMPLE, nowMs);
+  it("parses both windows into epoch-second resets", () => {
+    const cache = parseUsageApiResponse(SAMPLE, nowMs);
     expect(cache?.rateLimits.fiveHour).toEqual({
       usedPercentage: 69,
-      // 6:40pm KST = 09:40 UTC
       resetsAt: Date.UTC(2026, 6, 24, 9, 40) / 1000
     });
     expect(cache?.rateLimits.sevenDay).toEqual({
@@ -30,22 +24,28 @@ describe("parseUsageCliOutput", () => {
     expect(cache?.capturedAt).toBe(nowMs);
   });
 
-  it("handles minute-less times and rolls the year over past December", () => {
-    // 2026-12-31 22:00 KST — the "Jan 1, 2am" reset lands in the next year.
-    const decemberNow = Date.UTC(2026, 11, 31, 13, 0);
-    const cache = parseUsageCliOutput(
-      "Current session: 10% used · resets Jan 1, 2am (Asia/Seoul)",
-      decemberNow
+  it("parses a five_hour-only response", () => {
+    const cache = parseUsageApiResponse(
+      { five_hour: { utilization: 10, resets_at: "2027-01-01T17:00:00Z" } },
+      nowMs
     );
-    // Jan 1, 2am KST is already 2027 relative to a Dec 31 "now".
     expect(cache?.rateLimits.fiveHour).toEqual({
       usedPercentage: 10,
-      resetsAt: Date.UTC(2026, 11, 31, 17, 0) / 1000
+      resetsAt: Date.UTC(2027, 0, 1, 17, 0) / 1000
     });
+    expect(cache?.rateLimits.sevenDay).toBeUndefined();
   });
 
-  it("returns undefined when the reply has no parsable windows", () => {
-    expect(parseUsageCliOutput("Unknown command: /usage", nowMs)).toBeUndefined();
-    expect(parseUsageCliOutput("", nowMs)).toBeUndefined();
+  it("clamps out-of-range utilization into 0-100", () => {
+    const cache = parseUsageApiResponse(
+      { five_hour: { utilization: 142, resets_at: "2026-07-24T09:40:00Z" } },
+      nowMs
+    );
+    expect(cache?.rateLimits.fiveHour?.usedPercentage).toBe(100);
+  });
+
+  it("returns undefined when the response has no parsable windows", () => {
+    expect(parseUsageApiResponse({}, nowMs)).toBeUndefined();
+    expect(parseUsageApiResponse({ five_hour: { utilization: 5 } }, nowMs)).toBeUndefined();
   });
 });

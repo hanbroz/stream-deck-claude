@@ -19,7 +19,7 @@ export type LastGoodUsage = { state: UsageDisplayState; atMs: number };
 
 const LAST_GOOD_HOLD_MS = 15 * 60 * 1000;
 // The refresher keeps usage.json at most ~10 minutes old, so a fresh local
-// cache means the CLI pipeline is alive and its numbers are current.
+// cache means the API refresh is alive and its numbers are current.
 const LOCAL_CACHE_FRESH_MS = 15 * 60 * 1000;
 
 /**
