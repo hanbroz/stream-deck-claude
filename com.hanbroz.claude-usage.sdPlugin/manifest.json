@@ -1,6 +1,6 @@
 {
   "Name": "Code Deck for Claude Code",
-  "Version": "0.16.4.0",
+  "Version": "0.17.0.0",
   "Author": "hanbroz",
   "Actions": [
     {
@@ -70,7 +70,7 @@
   ],
   "Nodejs": {
     "Version": "24",
-    "Debug": "enabled"
+    "Debug": "disabled"
   },
   "UUID": "com.hanbroz.claude-usage"
 }
