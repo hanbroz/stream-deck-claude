@@ -118,6 +118,9 @@ async function forwardToOriginal(
       stdio: ["pipe", "pipe", "pipe"]
     });
     child.on("error", reject);
+    // The original HUD may exit without draining stdin; the resulting EPIPE
+    // is not a failure of the forward.
+    child.stdin.on("error", () => undefined);
     child.stdout.pipe(process.stdout);
     child.stderr.pipe(process.stderr);
     child.stdin.end(input);

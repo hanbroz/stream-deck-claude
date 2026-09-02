@@ -36,6 +36,9 @@ export function openWindowsTerminalFolder(folder: string, command?: string): Chi
     stdio: "ignore"
   });
   child.once("spawn", () => child.unref());
+  // Without a listener a missing wt.exe would surface as an uncaught 'error'
+  // event and take the main process down; callers attach their own handler.
+  child.once("error", () => undefined);
   return child;
 }
 

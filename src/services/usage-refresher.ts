@@ -117,7 +117,20 @@ async function resolveAccessToken(): Promise<string | undefined> {
 
 type FetchOutcome =
   | { ok: true; response: UsageApiResponse }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; retryAfterMs?: number };
+
+function parseRetryAfterMs(header: string | string[] | undefined): number | undefined {
+  const raw = Array.isArray(header) ? header[0] : header;
+  if (!raw) {
+    return undefined;
+  }
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
+}
 
 function fetchUsageFromApi(accessToken: string): Promise<FetchOutcome> {
   return new Promise((resolve) => {
@@ -134,12 +147,20 @@ function fetchUsageFromApi(accessToken: string): Promise<FetchOutcome> {
       },
       (res) => {
         let body = "";
+        // The request's 'error' does not cover the response stream: a
+        // connection dropped mid-body emits here, and unhandled it would
+        // take the plugin process down.
+        res.on("error", (error) => resolve({ ok: false, reason: `network:${error.message}` }));
         res.on("data", (chunk) => {
           body += chunk;
         });
         res.on("end", () => {
           if (res.statusCode !== 200) {
-            resolve({ ok: false, reason: `http_${res.statusCode}` });
+            resolve({
+              ok: false,
+              reason: `http_${res.statusCode}`,
+              retryAfterMs: parseRetryAfterMs(res.headers["retry-after"])
+            });
             return;
           }
           try {
@@ -160,24 +181,61 @@ function fetchUsageFromApi(accessToken: string): Promise<FetchOutcome> {
 }
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+// The endpoint buckets its rate limit by User-Agent and a bare Node request
+// lands in a bucket that allows roughly one call per hour; with the bucket
+// exhausted it answers 429 (with a retry-after), and it has also been seen
+// answering 403 outright. Neither is worth re-asking every five minutes.
+const RATE_LIMITED_COOLDOWN_MS = 60 * 60 * 1000;
+const FORBIDDEN_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+// A usage.json this young (from our bridge, OMC's snapshot, or a previous
+// API success) means the keys already have live data and the API call would
+// only spend the hourly budget.
+const LOCAL_CACHE_FRESH_MS = 15 * 60 * 1000;
+
+export function cooldownAfterFailure(reason: string, retryAfterMs?: number): number {
+  if (reason === "http_429") {
+    return Math.max(REFRESH_COOLDOWN_MS, retryAfterMs ?? RATE_LIMITED_COOLDOWN_MS);
+  }
+  if (reason === "http_403" || reason === "http_401") {
+    return FORBIDDEN_COOLDOWN_MS;
+  }
+  return REFRESH_COOLDOWN_MS;
+}
 
 // Shared across the five-hour and weekly actions: one refresh serves both.
-let lastAttemptAtMs = 0;
+let nextAttemptAtMs = 0;
+let lastLoggedReason: string | undefined;
 let inFlight: Promise<void> | undefined;
+
+export type RefreshOptions = {
+  /** Capture time of the current usage.json, if any. */
+  localCapturedAt?: number;
+};
 
 /**
  * Refresh usage.json from Anthropic's usage API directly, at most once per
- * cooldown window across all usage keys. Fire-and-forget: the next 1s render
- * tick picks up the result.
+ * cooldown window across all usage keys, and not at all while usage.json is
+ * fresh. Fire-and-forget: the next 1s render tick picks up the
+ * result.
  */
-export function maybeRefreshUsageViaApi(dataDir: string, nowMs = Date.now()): Promise<void> {
+export function maybeRefreshUsageViaApi(
+  dataDir: string,
+  nowMs = Date.now(),
+  options: RefreshOptions = {}
+): Promise<void> {
   if (inFlight) {
     return inFlight;
   }
-  if (nowMs - lastAttemptAtMs < REFRESH_COOLDOWN_MS) {
+  if (nowMs < nextAttemptAtMs) {
     return Promise.resolve();
   }
-  lastAttemptAtMs = nowMs;
+  if (
+    options.localCapturedAt !== undefined &&
+    nowMs - options.localCapturedAt <= LOCAL_CACHE_FRESH_MS
+  ) {
+    return Promise.resolve();
+  }
+  nextAttemptAtMs = nowMs + REFRESH_COOLDOWN_MS;
   inFlight = (async () => {
     const accessToken = await resolveAccessToken();
     if (!accessToken) {
@@ -186,9 +244,17 @@ export function maybeRefreshUsageViaApi(dataDir: string, nowMs = Date.now()): Pr
     }
     const outcome = await fetchUsageFromApi(accessToken);
     if (!outcome.ok) {
-      streamDeck.logger.info(`Usage API refresh failed: ${outcome.reason}.`);
+      const cooldownMs = cooldownAfterFailure(outcome.reason, outcome.retryAfterMs);
+      nextAttemptAtMs = Date.now() + cooldownMs;
+      if (outcome.reason !== lastLoggedReason) {
+        lastLoggedReason = outcome.reason;
+        streamDeck.logger.info(
+          `Usage API refresh failed: ${outcome.reason}; next attempt in ${Math.round(cooldownMs / 60_000)} min.`
+        );
+      }
       return;
     }
+    lastLoggedReason = undefined;
     const cache = parseUsageApiResponse(outcome.response);
     if (cache) {
       // Replace, never merge: this is a complete snapshot of the account

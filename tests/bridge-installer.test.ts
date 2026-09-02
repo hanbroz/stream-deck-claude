@@ -139,6 +139,33 @@ describe("ensureBridgeInstalled", () => {
     expect(unchanged.changed).toBe(false);
   });
 
+  it("installs the managed bridge once the recorded original command has left the slot", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-deck-"));
+    const claudeDir = path.join(root, ".claude");
+    const dataDir = path.join(root, "data");
+    const settingsPath = path.join(claudeDir, "settings.json");
+    const bridgeSourcePath = path.join(root, "statusline-bridge.js");
+    await writeFile(bridgeSourcePath, "console.log('bridge');\n", "utf8");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(claudeDir, { recursive: true }));
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(dataDir, { recursive: true }));
+    // An earlier install recorded OMC as the original command…
+    await writeFile(
+      path.join(dataDir, "bridge-config.json"),
+      JSON.stringify({ schemaVersion: 1, originalCommand: "node C:/omc/hud.mjs", installedAt: 1 }),
+      "utf8"
+    );
+    // …but the user has since removed their status line entirely.
+    await writeFile(settingsPath, JSON.stringify({ permissions: {} }), "utf8");
+
+    const result = await ensureBridgeInstalled({ settingsPath, dataDir, bridgeSourcePath });
+    const settings = JSON.parse(await readFile(settingsPath, "utf8"));
+    expect(result.changed).toBe(true);
+    expect(settings.statusLine.command).toBe(result.managedCommand);
+    expect(await isBridgeInstalled(settingsPath, dataDir)).toBe(true);
+    // The bridge runs as an ES module under whatever node is on PATH.
+    expect(JSON.parse(await readFile(path.join(dataDir, "package.json"), "utf8"))).toEqual({ type: "module" });
+  });
+
   it("handles malformed status-line settings without crashing", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-deck-"));
     const claudeDir = path.join(root, ".claude");

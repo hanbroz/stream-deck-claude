@@ -4,7 +4,7 @@ setlocal
 set "PLUGIN=%~dp0com.hanbroz.claude-usage.streamDeckPlugin"
 set "COMPANION_INSTALLER="
 
-for %%F in ("%~dp0Claude Deck Companion Setup *.exe") do (
+for %%F in ("%~dp0Code Deck Companion Setup *.exe") do (
   if exist "%%~fF" set "COMPANION_INSTALLER=%%~fF"
 )
 
@@ -34,6 +34,6 @@ if defined COMPANION_INSTALLER (
 )
 
 echo [ERROR] Claude Deck Companion installer was not found in this folder.
-echo The release bundle must include "Claude Deck Companion Setup *.exe" so Windows Terminal can be enforced.
+echo The release bundle must include "Code Deck Companion Setup *.exe" so Windows Terminal can be enforced.
 pause
 exit /b 1

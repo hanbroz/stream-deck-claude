@@ -7,6 +7,11 @@ import { WeeklyUsageAction } from "./actions/weekly-usage";
 import { pluginBuildLabel } from "./build-version";
 
 streamDeck.logger.setLevel("info");
+// A rejection that escapes a handler would otherwise end the process and
+// blank every key; log it and keep serving.
+process.on("unhandledRejection", (reason) => {
+  streamDeck.logger.error("Unhandled rejection in plugin.", reason);
+});
 streamDeck.actions.registerAction(new FiveHourUsageAction());
 streamDeck.actions.registerAction(new WeeklyUsageAction());
 streamDeck.actions.registerAction(new CodeStartAction());

@@ -46,13 +46,13 @@ The Code Start model text changes color according to session activity:
 
 Claude Code provides `rate_limits.five_hour` and `rate_limits.seven_day` through its status-line JSON. When no other status-line command is configured, the included bridge requests a one-second status-line refresh, prevents a stale session from lowering a newer value within the same reset window, stores only those fields in `%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`, and forwards the original input to any pre-existing status-line command recorded from earlier installs. When another command already owns Claude Code's single status-line slot, the installer leaves that command in place and only installs the lifecycle hooks used by Code Start.
 
-The plugin never reads `.claude/.credentials.json`.
+The bridge and the status-line mirror never touch credentials. Only the last-resort usage-API fallback reads an OAuth access token (`CLAUDE_CODE_OAUTH_TOKEN`, else `~/.claude/.credentials.json`) to call Anthropic's usage endpoint; the token is never logged or written anywhere.
 
-If OMC HUD or another status-line command already owns Claude Code's single status-line slot, ClaudeUsageDeck preserves it. Code Start lifecycle hooks continue to work. Usage keys first read OMC's fresh Anthropic usage cache (when present), so the 5-hour and weekly values stay aligned without replacing OMC's command; if no fresh cache is available they show `STATUSLINE BUSY` rather than claiming stale data is live.
+If OMC HUD or another status-line command already owns Claude Code's single status-line slot, ClaudeUsageDeck preserves it. Code Start lifecycle hooks continue to work. Usage keys then read the status-line snapshot OMC persists after every render (`~/.omc/state/hud-stdin-cache.json`, the same `rate_limits` payload OMC HUD displays) and mirror it into `usage.json`, so the 5-hour and weekly values match OMC without replacing OMC's command. OMC's Anthropic usage cache is a secondary source, and the direct usage API is only asked when no status line has rendered recently (it is heavily throttled and backs off for an hour or more after a 429/403). If nothing usable is available the keys show `STATUSLINE BUSY` rather than claiming stale data is live.
 
 ### Install and use
 
-Requirements: Windows 10 or later, Stream Deck 7.1 or later, Claude Code, and Windows Terminal. The Companion installer checks for `wt.exe`; if it is missing, it runs `winget install --id Microsoft.WindowsTerminal -e --source winget --silent --accept-package-agreements --accept-source-agreements`, rechecks, and aborts with a manual Microsoft install link if Windows Terminal still cannot be confirmed.
+Requirements: Windows 10 or later, Stream Deck 7.1 or later, Claude Code, Node.js on `PATH` (the status-line bridge and lifecycle hooks run as `node …/statusline-bridge.js`), and Windows Terminal. The Companion installer checks for `wt.exe`; if it is missing, it runs `winget install --id Microsoft.WindowsTerminal -e --source winget --silent --accept-package-agreements --accept-source-agreements`, rechecks, and aborts with a manual Microsoft install link if Windows Terminal still cannot be confirmed.
 
 1. Download the Windows release ZIP from the [latest GitHub release](https://github.com/hanbroz/stream-deck-claude/releases/latest), extract it, and run `Install.cmd`.
 2. In Stream Deck, drag a usage action or `Code Start` onto a key.
@@ -85,7 +85,7 @@ npm exec -- streamdeck restart com.hanbroz.claude-usage
 
 For the current Claude Console input/output investigation, see [`docs/CLAUDE_COMPANION_HANDOFF_20260722.md`](docs/CLAUDE_COMPANION_HANDOFF_20260722.md). It records the verified commits, test evidence, runtime boundaries, and the exact prompt for a fresh Claude Code session.
 
-Usage keys check the local cache every second and skip unchanged images. These refreshes do not send Claude requests or consume usage. The value can still trail the web dashboard until Claude Code publishes a newer `rate_limits` payload; if a reset time passes first, the key displays `REFRESH` instead of a stale percentage.
+Usage keys check the local cache every second and skip unchanged images. These refreshes never consume usage; the only network traffic is the usage-API fallback, an authenticated HTTPS request made at most every 5 minutes and only while no fresher local data exists (hourly or longer after a 429/403). The value can still trail the web dashboard until Claude Code publishes a newer `rate_limits` payload; if a reset time passes first, the key shows a `RESET DUE` card instead of a stale percentage.
 
 The composer starts on **Sonnet** at **medium** effort. Companion runs one `claude --print --resume` process per message, so the default is paid on every turn rather than once, and Opus costs roughly five times as much against the plan's rate limit. Pick a different model or effort in the composer whenever a task needs it — the choice applies from the next message and is remembered for that folder. The conversation is compacted automatically once it passes 45% of the context window, because every later turn re-sends the whole prefix; Esc stops a reply without triggering a compaction, and releases anything queued behind it.
 
@@ -139,7 +139,7 @@ stamps should match after a full `release:windows`.
 
 ### Privacy and local data
 
-- The plugin does not read Claude credentials.
+- Claude credentials are read only by the usage-API fallback, only to call Anthropic's usage endpoint, and are never stored or logged.
 - Prompts and assistant responses are never persisted by the bridge.
 - Usage and context caches are stored locally under `%LOCALAPPDATA%\ClaudeUsageDeck`.
 - Project folders and button settings remain in the local Stream Deck profile.
@@ -177,15 +177,15 @@ Code Start의 모델 텍스트 색상은 세션 상태에 따라 변경됩니다
 
 ### 데이터 출처
 
-Claude Code는 상태 표시줄 JSON을 통해 `rate_limits.five_hour`와 `rate_limits.seven_day`를 제공합니다. 다른 상태 표시줄 명령이 없을 때 포함된 브리지는 상태 표시줄을 1초마다 갱신하도록 요청하고, 같은 초기화 구간에서 오래된 세션의 낮은 값이 최신 높은 값을 덮어쓰지 못하게 병합합니다. 이 필드만 `%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`에 저장하며, 이전 설치에서 기록한 원본 명령이 있는 경우에만 원본 입력을 그대로 전달합니다. OMC HUD처럼 다른 명령이 현재 슬롯을 사용 중이면 해당 명령을 바꾸거나 감싸지 않습니다. OMC가 제공하는 최신 Anthropic 사용량 캐시가 있으면 5시간·주간 값에 사용하고, 없거나 오래되었으면 `STATUSLINE BUSY`를 표시합니다.
+Claude Code는 상태 표시줄 JSON을 통해 `rate_limits.five_hour`와 `rate_limits.seven_day`를 제공합니다. 다른 상태 표시줄 명령이 없을 때 포함된 브리지는 상태 표시줄을 1초마다 갱신하도록 요청하고, 같은 초기화 구간에서 오래된 세션의 낮은 값이 최신 높은 값을 덮어쓰지 못하게 병합합니다. 이 필드만 `%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`에 저장하며, 이전 설치에서 기록한 원본 명령이 있는 경우에만 원본 입력을 그대로 전달합니다. OMC HUD처럼 다른 명령이 현재 슬롯을 사용 중이면 해당 명령을 바꾸거나 감싸지 않습니다. 대신 OMC가 매 렌더마다 저장하는 상태 표시줄 스냅샷(`~/.omc/state/hud-stdin-cache.json`, OMC HUD가 표시하는 것과 동일한 `rate_limits` 페이로드)을 읽어 `usage.json`에 반영하므로 5시간·주간 값이 OMC와 같게 유지됩니다. OMC의 Anthropic 사용량 캐시는 보조 소스이며, 사용량 API 직접 호출은 최근에 상태 표시줄이 렌더된 적이 없을 때만 시도합니다(강하게 제한되는 API라 429/403 이후에는 1시간 이상 재시도하지 않음). 사용할 수 있는 값이 전혀 없으면 `STATUSLINE BUSY`를 표시합니다.
 
-플러그인은 `.claude/.credentials.json`을 읽지 않습니다.
+브리지와 상태 표시줄 미러링은 자격 증명을 전혀 건드리지 않습니다. 최후 수단인 사용량 API 폴백만 OAuth 액세스 토큰(`CLAUDE_CODE_OAUTH_TOKEN`, 없으면 `~/.claude/.credentials.json`)을 읽어 Anthropic 사용량 엔드포인트를 호출하며, 토큰은 어디에도 기록·저장하지 않습니다.
 
 ### 설치 및 사용
 
-요구 사항: Windows 10 이상, Stream Deck 7.1 이상
+요구 사항: Windows 10 이상, Stream Deck 7.1 이상, Claude Code, `PATH`에 등록된 Node.js(상태 표시줄 브리지와 훅이 `node …/statusline-bridge.js`로 실행됨), Windows Terminal
 
-1. [최신 GitHub 릴리스](https://github.com/hanbroz/stream-deck-claude/releases/latest)에서 `com.hanbroz.claude-usage.streamDeckPlugin`을 내려받아 더블클릭하여 설치합니다.
+1. [최신 GitHub 릴리스](https://github.com/hanbroz/stream-deck-claude/releases/latest)에서 Windows 릴리스 ZIP을 내려받아 압축을 풀고 `Install.cmd`를 실행합니다.
 2. Stream Deck에서 원하는 사용량 기능 또는 `Code Start`를 버튼에 배치합니다.
 3. Code Start의 경우 프로젝트명을 입력하고 Claude Code를 실행할 폴더를 선택한 다음 설정을 저장합니다.
 4. 버튼을 한 번 누릅니다. 플러그인은 `~/.claude/settings.json`을 백업하고 상태 표시줄 브리지와 수명 주기 훅을 설치하며, 기존 상태 표시줄 명령과 훅은 보존합니다.
@@ -193,7 +193,7 @@ Claude Code는 상태 표시줄 JSON을 통해 `rate_limits.five_hour`와 `rate_
 
 Companion 타이틀바의 설정 버튼에서 컬러 테마를 고를 수 있습니다. 다크 7종(`Claude Dark`, Catppuccin Mocha, Tokyo Night, Nord, Dracula, One Dark Pro, Gruvbox Dark)과 라이트 5종(Catppuccin Latte, Solarized Light, GitHub Light, One Light, Gruvbox Light)이 있으며, 기본값인 `Claude Dark`는 기존 화면 그대로입니다. 선택은 즉시 적용되고 내장 터미널 색까지 함께 바뀌며 다음 실행에도 유지됩니다.
 
-Usage 버튼은 로컬 캐시를 1초마다 확인하고 값이 같으면 이미지를 다시 전송하지 않습니다. 이 갱신은 Claude 요청을 보내거나 사용량을 소비하지 않습니다. 다만 Claude Code가 새 `rate_limits` 값을 제공하기 전까지 웹 화면보다 늦을 수 있으며, 새 데이터보다 초기화 시각이 먼저 지나면 오래된 백분율 대신 `REFRESH`가 표시됩니다.
+Usage 버튼은 로컬 캐시를 1초마다 확인하고 값이 같으면 이미지를 다시 전송하지 않습니다. 이 갱신은 사용량을 소비하지 않습니다. 유일한 네트워크 통신은 사용량 API 폴백으로, 더 새로운 로컬 데이터가 없을 때만 최대 5분에 한 번(429/403 이후에는 1시간 이상 간격) 인증된 HTTPS 요청을 보냅니다. 다만 Claude Code가 새 `rate_limits` 값을 제공하기 전까지 웹 화면보다 늦을 수 있으며, 새 데이터보다 초기화 시각이 먼저 지나면 오래된 백분율 대신 `RESET DUE` 카드가 표시됩니다.
 
 컴포저의 기본값은 **Sonnet · medium**입니다. Companion은 메시지 한 건마다 `claude --print --resume` 프로세스를 새로 띄우므로 기본값이 한 번이 아니라 매 턴 지불되며, Opus는 요금제 한도 대비 약 5배를 소모합니다. 필요한 작업에서는 컴포저에서 모델과 effort를 바꾸면 됩니다 — 다음 메시지부터 적용되고 해당 폴더에 기억됩니다. 대화는 컨텍스트 창의 45%를 넘으면 자동으로 압축됩니다. 이후의 모든 턴이 프리픽스 전체를 다시 보내기 때문입니다. Esc로 응답을 중단하면 압축이 발생하지 않으며, 뒤에 예약된 메시지도 함께 취소됩니다.
 
@@ -277,21 +277,21 @@ Code Start 的模型文字颜色会根据会话状态变化：
 
 ### 数据来源
 
-Claude Code 通过状态栏 JSON 提供 `rate_limits.five_hour` 和 `rate_limits.seven_day`。没有其他状态栏命令时，内置桥接程序请求每秒刷新状态栏，并防止同一重置窗口中旧会话的较低值覆盖较新的较高值；它只把这些字段保存到 `%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`，并仅在旧安装记录过原始命令时转发原始输入。如果 OMC HUD 等其他命令占用当前槽位，安装程序不会替换或包装该命令；存在新鲜的 OMC Anthropic 用量缓存时优先显示其数据，否则显示 `STATUSLINE BUSY`。
+Claude Code 通过状态栏 JSON 提供 `rate_limits.five_hour` 和 `rate_limits.seven_day`。没有其他状态栏命令时，内置桥接程序请求每秒刷新状态栏，并防止同一重置窗口中旧会话的较低值覆盖较新的较高值；它只把这些字段保存到 `%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`，并仅在旧安装记录过原始命令时转发原始输入。如果 OMC HUD 等其他命令占用当前槽位，安装程序不会替换或包装该命令；用量键会读取 OMC 每次渲染后保存的状态栏快照（`~/.omc/state/hud-stdin-cache.json`，与 OMC HUD 显示的 `rate_limits` 相同）并同步到 `usage.json`；OMC 的 Anthropic 用量缓存为辅助来源，直接调用用量 API 仅在近期没有状态栏渲染时进行（429/403 后至少退避一小时）。没有任何可用数据时显示 `STATUSLINE BUSY`。
 
-本插件不会读取 `.claude/.credentials.json`。
+桥接程序和状态栏镜像不会触碰任何凭据。只有作为最后手段的用量 API 回退会读取 OAuth 访问令牌（`CLAUDE_CODE_OAUTH_TOKEN`，否则为 `~/.claude/.credentials.json`）来调用 Anthropic 用量端点；令牌不会被记录或写入任何地方。
 
 ### 安装与使用
 
-系统要求：Windows 10 或更高版本，以及 Stream Deck 7.1 或更高版本。
+系统要求：Windows 10 或更高版本、Stream Deck 7.1 或更高版本、Claude Code、`PATH` 中的 Node.js（状态栏桥接和钩子以 `node …/statusline-bridge.js` 运行）以及 Windows Terminal。
 
-1. 从 [GitHub 最新版本](https://github.com/hanbroz/stream-deck-claude/releases/latest)下载 `com.hanbroz.claude-usage.streamDeckPlugin`，然后双击安装。
+1. 从 [GitHub 最新版本](https://github.com/hanbroz/stream-deck-claude/releases/latest)下载 Windows 发布 ZIP，解压后运行 `Install.cmd`。
 2. 在 Stream Deck 中，将需要的用量功能或 `Code Start` 拖放到按键上。
 3. 使用 Code Start 时，输入项目名称，选择要运行 Claude Code 的文件夹，然后保存设置。
 4. 按一次按键。插件会备份 `~/.claude/settings.json`，安装状态栏桥接程序和生命周期钩子，并保留已有的状态栏命令和钩子。
 5. 在 Claude Code 中发送一条消息。用量按键会显示当前百分比和重置倒计时，Code Start 则会显示已启动会话的当前模型和上下文用量进度条。
 
-用量按键每秒检查一次本地缓存，并跳过未变化的图像。这不会发送 Claude 请求，也不会消耗用量。在 Claude Code 发布新的 `rate_limits` 数据前，该值仍可能落后于网页；如果重置时间先到，按键会显示 `REFRESH`，而不是过期的百分比。
+用量按键每秒检查一次本地缓存，并跳过未变化的图像。这不会消耗用量；唯一的网络流量是用量 API 回退：仅在没有更新的本地数据时，最多每 5 分钟发送一次带身份验证的 HTTPS 请求（429/403 之后间隔一小时以上）。在 Claude Code 发布新的 `rate_limits` 数据前，该值仍可能落后于网页；如果重置时间先到，按键会显示 `RESET DUE` 卡片，而不是过期的百分比。
 
 输入框默认使用 **Sonnet · medium**。Companion 每条消息都会新建一个 `claude --print --resume` 进程，因此默认值是每轮支付而非只付一次，而 Opus 对套餐额度的消耗约为五倍。需要时可在输入框中更换模型或 effort — 从下一条消息起生效，并会为该文件夹记住选择。对话超过上下文窗口的 45% 时会自动压缩，因为之后的每一轮都会重新发送整个前缀。按 Esc 中断回复不会触发压缩，并会一并取消排队中的消息。
 
@@ -325,7 +325,7 @@ npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin
 
 ### 隐私与本地数据
 
-- 插件不会读取 Claude 凭据。
+- 只有用量 API 回退会读取 Claude 凭据，仅用于调用 Anthropic 用量端点，绝不保存或记录。
 - 桥接程序不会保存提示词或 Claude 的回答。
 - 用量和上下文缓存仅存储在本机的 `%LOCALAPPDATA%\ClaudeUsageDeck` 目录下。
 - 项目文件夹和按键设置保留在本地 Stream Deck 配置文件中。
@@ -362,21 +362,21 @@ Code Startのモデルテキストは、セッションの状態に応じて色�
 
 ### データソース
 
-Claude CodeはステータスラインJSONを通じて`rate_limits.five_hour`と`rate_limits.seven_day`を提供します。他のステータスラインコマンドがない場合、同梱のブリッジはステータスラインを1秒ごとに更新するよう要求し、同じリセット期間で古いセッションの低い値が新しい高い値を上書きしないようにします。これらのフィールドだけを`%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`に保存し、以前のインストールで記録した元のコマンドがある場合だけ入力を転送します。OMC HUDなど別のコマンドがスロットを使用中の場合は置き換えません。新鮮なOMC Anthropic用量キャッシュがあればその値を優先し、なければ`STATUSLINE BUSY`を表示します。
+Claude CodeはステータスラインJSONを通じて`rate_limits.five_hour`と`rate_limits.seven_day`を提供します。他のステータスラインコマンドがない場合、同梱のブリッジはステータスラインを1秒ごとに更新するよう要求し、同じリセット期間で古いセッションの低い値が新しい高い値を上書きしないようにします。これらのフィールドだけを`%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`に保存し、以前のインストールで記録した元のコマンドがある場合だけ入力を転送します。OMC HUDなど別のコマンドがスロットを使用中の場合は置き換えません。使用量キーはOMCがレンダリングごとに保存するステータスラインのスナップショット（`~/.omc/state/hud-stdin-cache.json`、OMC HUDが表示するのと同じ`rate_limits`）を読み取り`usage.json`へ同期します。OMCのAnthropic使用量キャッシュは補助的なソースで、使用量APIの直接呼び出しは最近ステータスラインが描画されていない場合のみ行います（429/403の後は1時間以上再試行しません）。利用できる値がなければ`STATUSLINE BUSY`を表示します。
 
-このプラグインは`.claude/.credentials.json`を読み取りません。
+ブリッジとステータスラインのミラーは認証情報に一切触れません。最終手段である使用量APIフォールバックだけがOAuthアクセストークン（`CLAUDE_CODE_OAUTH_TOKEN`、なければ`~/.claude/.credentials.json`）を読み取ってAnthropicの使用量エンドポイントを呼び出します。トークンはどこにも記録・保存されません。
 
 ### インストールと使用方法
 
-必要環境：Windows 10以降、Stream Deck 7.1以降
+必要環境：Windows 10以降、Stream Deck 7.1以降、Claude Code、`PATH`上のNode.js（ステータスラインブリッジとフックは`node …/statusline-bridge.js`として実行）、Windows Terminal
 
-1. [最新のGitHubリリース](https://github.com/hanbroz/stream-deck-claude/releases/latest)から`com.hanbroz.claude-usage.streamDeckPlugin`をダウンロードし、ダブルクリックしてインストールします。
+1. [最新のGitHubリリース](https://github.com/hanbroz/stream-deck-claude/releases/latest)からWindowsリリースZIPをダウンロードして展開し、`Install.cmd`を実行します。
 2. Stream Deckで、使用量機能または`Code Start`をキーに配置します。
 3. Code Startでは、プロジェクト名を入力し、Claude Codeを実行するフォルダーを選択して設定を保存します。
 4. キーを一度押します。プラグインは`~/.claude/settings.json`をバックアップし、ステータスラインブリッジとライフサイクルフックをインストールします。既存のステータスラインコマンドとフックは保持されます。
 5. Claude Codeでメッセージを1件送信します。使用量キーには現在の割合とリセットまでの残り時間が、Code Startには起動したセッションの現在のモデルとコンテキスト使用量バーが表示されます。
 
-使用量キーはローカルキャッシュを1秒ごとに確認し、画像が変わらない場合は再送しません。この更新はClaudeへのリクエストを送信せず、使用量も消費しません。Claude Codeが新しい`rate_limits`データを公開するまではWeb画面より遅れる場合があり、先にリセット時刻を過ぎた場合は古い割合の代わりに`REFRESH`が表示されます。
+使用量キーはローカルキャッシュを1秒ごとに確認し、画像が変わらない場合は再送しません。この更新は使用量を消費しません。唯一のネットワーク通信は使用量APIフォールバックで、より新しいローカルデータがない場合に限り最大5分に1回（429/403の後は1時間以上の間隔で）認証付きHTTPSリクエストを送ります。Claude Codeが新しい`rate_limits`データを公開するまではWeb画面より遅れる場合があり、先にリセット時刻を過ぎた場合は古い割合の代わりに`RESET DUE`カードが表示されます。
 
 コンポーザーの既定は **Sonnet · medium** です。Companionはメッセージごとに `claude --print --resume` プロセスを新しく起動するため、既定値は一度ではなく毎ターン支払われ、Opusはプランのレート制限に対しておよそ5倍を消費します。必要な作業ではコンポーザーでモデルやeffortを変更してください — 次のメッセージから適用され、そのフォルダーに記憶されます。会話はコンテキストウィンドウの45%を超えると自動的に圧縮されます。以降のすべてのターンがプレフィックス全体を再送するためです。Escで応答を中断しても圧縮は起こらず、後ろに予約されたメッセージも取り消されます。
 
@@ -410,7 +410,7 @@ npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin
 
 ### プライバシーとローカルデータ
 
-- プラグインはClaudeの認証情報を読み取りません。
+- Claudeの認証情報を読み取るのは使用量APIフォールバックのみで、Anthropicの使用量エンドポイント呼び出しにだけ使い、保存やログ出力はしません。
 - プロンプトとClaudeの応答はブリッジに保存されません。
 - 使用量とコンテキストのキャッシュは`%LOCALAPPDATA%\ClaudeUsageDeck`配下にローカル保存されます。
 - プロジェクトフォルダーとキーの設定は、ローカルのStream Deckプロファイル内に保持されます。

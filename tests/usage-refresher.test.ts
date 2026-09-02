@@ -49,3 +49,20 @@ describe("parseUsageApiResponse", () => {
     expect(parseUsageApiResponse({ five_hour: { utilization: 5 } }, nowMs)).toBeUndefined();
   });
 });
+
+describe("cooldownAfterFailure", () => {
+  it("honours retry-after on 429 and never retries sooner than the base cooldown", async () => {
+    const { cooldownAfterFailure } = await import("../src/services/usage-refresher");
+    expect(cooldownAfterFailure("http_429", 348_000)).toBe(348_000);
+    expect(cooldownAfterFailure("http_429", 1_000)).toBe(5 * 60 * 1000);
+    expect(cooldownAfterFailure("http_429")).toBe(60 * 60 * 1000);
+  });
+
+  it("backs off for hours on 403/401 and keeps the base cooldown for transient errors", async () => {
+    const { cooldownAfterFailure } = await import("../src/services/usage-refresher");
+    expect(cooldownAfterFailure("http_403")).toBe(6 * 60 * 60 * 1000);
+    expect(cooldownAfterFailure("http_401")).toBe(6 * 60 * 60 * 1000);
+    expect(cooldownAfterFailure("timeout")).toBe(5 * 60 * 1000);
+    expect(cooldownAfterFailure("network:ECONNRESET")).toBe(5 * 60 * 1000);
+  });
+});

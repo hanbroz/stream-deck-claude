@@ -13,3 +13,19 @@ export function defaultOmcUsageCachePath(): string {
 export function defaultUsageDataDir(): string {
   return path.join(process.env.LOCALAPPDATA ?? os.homedir(), "ClaudeUsageDeck");
 }
+
+/**
+ * Roots under which OMC keeps its per-render status-line snapshot
+ * (`state/hud-stdin-cache.json`, or `state/sessions/<id>/hud-stdin-cache.json`).
+ * OMC resolves its state root from the status-line process's cwd, which
+ * Claude Code runs from the user's home, so `~/.omc` is where the snapshot
+ * lands in practice; `OMC_STATE_DIR/<project-id>` covers centralized setups.
+ */
+export function defaultOmcStdinCacheRoots(): string[] {
+  const roots = [path.join(os.homedir(), ".omc")];
+  const centralized = process.env.OMC_STATE_DIR?.trim();
+  if (centralized) {
+    roots.push(centralized);
+  }
+  return roots;
+}

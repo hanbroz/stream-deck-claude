@@ -212,8 +212,10 @@ async function writeUsageCacheLocked(
   const lockPath = `${cachePath}.lock`;
   const lock = await acquireUsageCacheLock(lockPath);
   try {
+    // A corrupt usage.json must not wedge every merge write until something
+    // happens to replace it; treat it as absent.
     const cache = merge
-      ? mergeUsageCaches(await readUsageCache(cachePath), incoming)
+      ? mergeUsageCaches(await readUsageCache(cachePath).catch(() => undefined), incoming)
       : incoming;
     const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
     try {

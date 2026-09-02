@@ -17,15 +17,18 @@ import {
 } from "../bridge/installer";
 import {
   defaultClaudeSettingsPath,
+  defaultOmcStdinCacheRoots,
   defaultOmcUsageCachePath,
   defaultUsageDataDir
 } from "../bridge/paths";
 import type { RateLimitKind } from "../domain/rate-limits";
+import { readUsageCache } from "../io/usage-cache";
 import {
   loadUsageDisplayState,
   withLastGoodHold,
   type LastGoodUsage
 } from "../services/display-loader";
+import { OmcStdinSync } from "../services/omc-stdin-sync";
 import { maybeRefreshUsageViaApi } from "../services/usage-refresher";
 import { renderUsageKeyImage } from "../ui/key-renderer";
 import { UsageImageCache } from "./usage-image-cache";
@@ -33,6 +36,8 @@ import { UsageImageCache } from "./usage-image-cache";
 const REFRESH_INTERVAL_MS = 1_000;
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bridgeSourcePath = path.join(pluginRoot, "bridge", "statusline-bridge.js");
+// Shared across the five-hour and weekly actions: one copy serves both.
+const omcStdinSync = new OmcStdinSync(defaultOmcStdinCacheRoots());
 
 export abstract class UsageAction extends SingletonAction {
   private readonly visibleActions = new Map<string, KeyAction>();
@@ -41,6 +46,7 @@ export abstract class UsageAction extends SingletonAction {
   private refreshInFlight?: Promise<void>;
   private refreshQueued = false;
   private lastGood?: LastGoodUsage;
+  private lastSyncFailure?: string;
 
   protected constructor(private readonly kind: RateLimitKind) {
     super();
@@ -85,6 +91,16 @@ export abstract class UsageAction extends SingletonAction {
     }
   }
 
+  /** The sync runs every second; log a failure once per distinct message. */
+  private logSyncFailure(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === this.lastSyncFailure) {
+      return;
+    }
+    this.lastSyncFailure = message;
+    streamDeck.logger.error(`OMC status-line snapshot sync failed: ${this.kind}.`, error);
+  }
+
   private ensureRefreshTimer(): void {
     if (this.refreshTimer) {
       return;
@@ -100,17 +116,34 @@ export abstract class UsageAction extends SingletonAction {
   private async refreshAll(): Promise<void> {
     const settingsPath = defaultClaudeSettingsPath();
     const dataDir = defaultUsageDataDir();
+    const bridgeInstalled = await isBridgeInstalled(settingsPath, dataDir);
+    const statusLineConflict = await isStatusLineConflict(settingsPath, dataDir);
+    // OMC persists the status-line payload Claude Code hands it (the same
+    // rate_limits OMC HUD displays) after every render. Mirroring that into
+    // usage.json is what keeps the keys live while OMC owns the status-line
+    // slot and the usage API is unreachable. Only while another command
+    // actually owns the slot: otherwise a lingering snapshot would hide the
+    // SETUP prompt from a user who still needs the bridge installed.
+    const synced = statusLineConflict
+      ? await omcStdinSync.sync(dataDir).catch((error: unknown) => {
+          this.logSyncFailure(error);
+          return undefined;
+        })
+      : undefined;
     const loaded = await loadUsageDisplayState(this.kind, {
       cachePath: path.join(dataDir, "usage.json"),
-      bridgeInstalled: await isBridgeInstalled(settingsPath, dataDir),
-      statusLineConflict: await isStatusLineConflict(settingsPath, dataDir),
+      bridgeInstalled,
+      statusLineConflict,
       externalUsageCachePath: defaultOmcUsageCachePath()
     });
-    // Keep our own usage.json current (the refresher's cooldown makes this
-    // one cheap API call every ~10 minutes). It is the primary source: the
-    // OMC cache both goes stale (it only updates while a TUI session is
-    // open) and has served poisoned 0% data after an OMC update.
-    void maybeRefreshUsageViaApi(dataDir).catch((error: unknown) => {
+    // Fallback for when no status line has rendered recently: ask the usage
+    // API directly. It is throttled hard (and lately answers 403), so the
+    // refresher stays quiet while the status-line snapshot is fresh and backs
+    // off for a long time after a failure.
+    const localCapturedAt =
+      synced?.localCapturedAt ??
+      (await readUsageCache(path.join(dataDir, "usage.json")).catch(() => undefined))?.capturedAt;
+    void maybeRefreshUsageViaApi(dataDir, Date.now(), { localCapturedAt }).catch((error: unknown) => {
       streamDeck.logger.error(`Usage API refresh failed: ${this.kind}.`, error);
     });
     const held = withLastGoodHold(loaded, this.lastGood);

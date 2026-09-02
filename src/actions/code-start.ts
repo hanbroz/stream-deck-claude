@@ -157,7 +157,11 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
     if (this.refreshTimer) {
       return;
     }
-    this.refreshTimer = setInterval(() => void this.refreshAll(), REFRESH_INTERVAL_MS);
+    this.refreshTimer = setInterval(() => {
+      void this.refreshAll().catch((error: unknown) => {
+        streamDeck.logger.error("Code Start refresh failed.", error);
+      });
+    }, REFRESH_INTERVAL_MS);
     this.refreshTimer.unref();
   }
 

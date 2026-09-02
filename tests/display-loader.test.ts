@@ -170,6 +170,44 @@ describe("loadUsageDisplayState", () => {
     ).resolves.toEqual({ kind: "ready", percentage: 71, remaining: "2h 0m" });
   });
 
+  it("keeps an aged usage.json over an even older poisoned OMC cache (conflict path)", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
+    const cachePath = path.join(root, "usage.json");
+    const externalPath = path.join(root, ".usage-cache-anthropic.json");
+    const nowMs = 1_700_000_000_000;
+    // usage.json (from the status-line mirror) is 40 minutes old — past the
+    // freshness window — but still newer than the OMC API cache, whose
+    // inflated reset time would otherwise win the resetsAt merge.
+    await writeFile(
+      externalPath,
+      JSON.stringify({
+        timestamp: nowMs - 60 * 60 * 1000,
+        source: "anthropic",
+        data: { fiveHourPercent: 0, fiveHourResetsAt: (nowMs / 1000 + 5 * 3600) * 1000 }
+      }),
+      "utf8"
+    );
+    await writeFile(
+      cachePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        capturedAt: nowMs - 40 * 60 * 1000,
+        rateLimits: { fiveHour: { usedPercentage: 71, resetsAt: nowMs / 1000 + 7_200 } }
+      }),
+      "utf8"
+    );
+
+    await expect(
+      loadUsageDisplayState("fiveHour", {
+        cachePath,
+        bridgeInstalled: false,
+        statusLineConflict: true,
+        externalUsageCachePath: externalPath,
+        nowMs
+      })
+    ).resolves.toEqual({ kind: "ready", percentage: 71, remaining: "2h 0m" });
+  });
+
   it("uses a fresh OMC Anthropic cache when OMC owns the status-line slot", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claude-usage-display-"));
     const cachePath = path.join(root, "usage.json");

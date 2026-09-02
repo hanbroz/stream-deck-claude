@@ -55,7 +55,10 @@ function toolConfig(input, file) {
 
 export default [
   config("src/plugin.ts", "bin/plugin.js", true),
-  config("src/bridge/statusline-bridge.ts", "bridge/statusline-bridge.js"),
+  // The bridge dir gets its own { "type": "module" } package.json: the
+  // installer copies it next to the bridge so any `node` on PATH runs the
+  // ES-module file (see installer.ts).
+  config("src/bridge/statusline-bridge.ts", "bridge/statusline-bridge.js", true),
   config("src/bridge/install-cli.ts", "bridge/install-bridge.js"),
   toolConfig("scripts/render-previews.ts", "dist/tools/render-previews.js")
 ];

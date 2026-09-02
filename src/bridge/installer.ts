@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 type StatusLineSettings = {
@@ -55,6 +55,24 @@ export type BridgeInstallResult = {
   managedCommand: string;
   cachePath: string;
 };
+
+/**
+ * settings.json is the user's Claude Code configuration; write it through a
+ * temp file + rename so a plugin restart mid-write can never truncate it.
+ */
+async function writeFileAtomic(filePath: string, content: string): Promise<void> {
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await writeFile(temporaryPath, content, "utf8");
+    await rename(temporaryPath, filePath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
+}
+
+// Key presses on several keys can call the installer at once; serialise the
+// read-modify-write so one press cannot drop another's edit.
+let installChain: Promise<unknown> = Promise.resolve();
 
 async function exists(filePath: string): Promise<boolean> {
   try {
@@ -173,9 +191,15 @@ export async function isStatusLineConflict(settingsPath: string, dataDir: string
   }
 }
 
-export async function ensureBridgeInstalled(
+export function ensureBridgeInstalled(
   options: BridgeInstallOptions
 ): Promise<BridgeInstallResult> {
+  const run = installChain.then(() => installBridge(options));
+  installChain = run.catch(() => undefined);
+  return run;
+}
+
+async function installBridge(options: BridgeInstallOptions): Promise<BridgeInstallResult> {
   const { settingsPath, dataDir, bridgeSourcePath } = options;
   await mkdir(path.dirname(settingsPath), { recursive: true });
   await mkdir(dataDir, { recursive: true });
@@ -185,6 +209,15 @@ export async function ensureBridgeInstalled(
   const cachePath = path.join(dataDir, "usage.json");
   const managedCommand = managedBridgeCommand(dataDir);
   await copyFile(bridgeSourcePath, bridgeDestination);
+  // The bridge is an ES module; the package.json beside the source marks it
+  // as such for whichever `node` is on PATH (Node 20 and 22.0–22.6 do not
+  // detect module syntax on their own, and would refuse the bare .js file).
+  const modulePackagePath = path.join(path.dirname(bridgeSourcePath), "package.json");
+  if (await exists(modulePackagePath)) {
+    await copyFile(modulePackagePath, path.join(dataDir, "package.json"));
+  } else {
+    await writeFile(path.join(dataDir, "package.json"), '{ "type": "module" }\n', "utf8");
+  }
 
   const rawSettings = (await exists(settingsPath))
     ? await readFile(settingsPath, "utf8")
@@ -195,10 +228,16 @@ export async function ensureBridgeInstalled(
   const existingConfig = await readBridgeConfig(configPath);
   const configuredOriginalCommand = originalCommandFromConfig(existingConfig);
   let changed = false;
+  // A recorded original command only matters while the slot still holds a
+  // command: once the user has removed their old status line (or it was ours
+  // and got cleared), the record is spent, otherwise the managed bridge
+  // could never be installed again.
   const originalCommand =
     existingCommand && existingCommand !== managedCommand
       ? existingCommand
-      : configuredOriginalCommand && configuredOriginalCommand !== managedCommand
+      : existingCommand === managedCommand &&
+          configuredOriginalCommand &&
+          configuredOriginalCommand !== managedCommand
         ? configuredOriginalCommand
         : null;
   const needsManagedStatusLine = !originalCommand;
@@ -253,7 +292,7 @@ export async function ensureBridgeInstalled(
 
   changed = ensureManagedHooks(settings, managedCommand) || changed;
   if (changed) {
-    await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+    await writeFileAtomic(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
   }
 
   return { changed, managedCommand, cachePath };

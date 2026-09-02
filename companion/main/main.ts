@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { registerCompanionIpc } from "./ipc";
+import { ProjectTerminalManager } from "./terminal-session";
 import { newestClaudeConversationId, resolveCompanionRuntimeEnv } from "./paths";
 import { createCompanionWindow } from "./window";
 import os from "node:os";
@@ -261,6 +262,7 @@ async function start(): Promise<void> {
         createdWindow.once?.("closed", () => clearInterval(contextTimer));
       }
 
+      const terminalManager = new ProjectTerminalManager();
       const ptyManager = new ClaudePtyManager({
           command: runtimeEnv.claudePath,
           onContext: (info) => {
@@ -348,6 +350,9 @@ async function start(): Promise<void> {
         // it, stranding a `claude --print` subtree that runs with
         // --dangerously-skip-permissions and has nobody left to supervise it.
         ptyManager.killAll();
+        // The embedded project terminal (powershell / interactive claude)
+        // has no other owner once the window is gone.
+        terminalManager.killAll();
         if (!runtimeEnv.bindingId || !runtimeEnv.launchId) {
           return;
         }
@@ -377,6 +382,7 @@ async function start(): Promise<void> {
         rootPath: runtimeEnv.rootPath,
         claudePath: runtimeEnv.claudePath,
         ptyManager,
+        terminalManager,
         sessionStatus: () => readCompanionSessionStatus({
           dataDir: runtimeEnv.usageDataDir,
           bindingId: runtimeEnv.bindingId,

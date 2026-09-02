@@ -123,6 +123,18 @@ export class ProjectTerminalManager extends EventEmitter<ProjectTerminalEvents> 
     this.sessions.delete(sessionId);
   }
 
+  /** Tear down every embedded terminal; used on app quit. */
+  killAll(): void {
+    for (const [sessionId, session] of this.sessions) {
+      try {
+        session.terminal.kill();
+      } catch {
+        // Already gone; nothing left to reclaim.
+      }
+      this.sessions.delete(sessionId);
+    }
+  }
+
   private session(sessionId: string): StoredTerminal {
     const session = this.sessions.get(sessionId);
     if (!session) {

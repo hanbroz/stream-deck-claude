@@ -463,19 +463,38 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
       return deps.historyReader.page(requireString(sessionId, "sessionId"), safeOffset, safeLimit);
     }
   );
-  deps.ipcMain.on(COMPANION_IPC.claudeKill, (_event: SenderEvent, sessionId) => {
+  // Unlike `handle`, a throw inside an `on` listener is not marshalled back
+  // to the renderer — it is an uncaught exception in the main process. These
+  // fire-and-forget messages routinely race the PTY's own exit (keystrokes
+  // and resizes still in flight when the session is gone), so drop and log.
+  const fireAndForget = (channel: string, handler: (...args: unknown[]) => void) => {
+    deps.ipcMain.on(channel, (_event: SenderEvent, ...args: unknown[]) => {
+      try {
+        handler(...args);
+      } catch (error) {
+        diag("main.ipc.dropped", {
+          channel,
+          reason: error instanceof Error ? error.message : "unknown"
+        });
+      }
+    });
+  };
+  fireAndForget(COMPANION_IPC.claudeKill, (sessionId) => {
     ptyManager.kill(requireString(sessionId, "sessionId"));
   });
-  deps.ipcMain.on(COMPANION_IPC.terminalWrite, (_event: SenderEvent, sessionId, data) => {
+  fireAndForget(COMPANION_IPC.terminalWrite, (sessionId, data) => {
     terminalManager.write(requireString(sessionId, "sessionId"), requireString(data, "data"));
   });
-  deps.ipcMain.on(COMPANION_IPC.terminalResize, (_event: SenderEvent, sessionId, cols, rows) => {
-    if (typeof cols !== "number" || typeof rows !== "number") {
-      throw new Error("PTY dimensions must be numbers");
+  fireAndForget(COMPANION_IPC.terminalResize, (sessionId, cols, rows) => {
+    if (
+      typeof cols !== "number" || typeof rows !== "number" ||
+      !Number.isInteger(cols) || !Number.isInteger(rows) || cols <= 0 || rows <= 0
+    ) {
+      throw new Error("PTY dimensions must be positive integers");
     }
     terminalManager.resize(requireString(sessionId, "sessionId"), cols, rows);
   });
-  deps.ipcMain.on(COMPANION_IPC.terminalKill, (_event: SenderEvent, sessionId) => {
+  fireAndForget(COMPANION_IPC.terminalKill, (sessionId) => {
     terminalManager.kill(requireString(sessionId, "sessionId"));
   });
 
