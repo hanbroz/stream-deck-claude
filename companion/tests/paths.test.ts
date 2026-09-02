@@ -304,10 +304,27 @@ describe("contained path operations", () => {
     );
   });
 
+  it("reveals executables instead of running them", async () => {
+    const shell = fakeShell();
+    const exe = path.join(root, "payload.EXE");
+    await writeFile(exe, "", "utf8");
+    const cmd = path.join(root, "run.cmd");
+    await writeFile(cmd, "", "utf8");
+
+    await expect(openContainedPath(root, "payload.EXE", shell)).resolves.toEqual({ action: "revealed" });
+    await expect(openContainedPath(root, "run.cmd", shell)).resolves.toEqual({ action: "revealed" });
+    expect(shell.openPath).not.toHaveBeenCalled();
+    expect(shell.showItemInFolder).toHaveBeenCalledWith(exe);
+
+    // A folder that merely looks like an executable is still opened.
+    await mkdir(path.join(root, "build.cmd"), { recursive: true });
+    await expect(openContainedPath(root, "build.cmd", shell)).resolves.toEqual({ action: "opened" });
+  });
+
   it("opens and reveals only contained targets", async () => {
     const shell = fakeShell();
 
-    await openContainedPath(root, ".", shell);
+    await expect(openContainedPath(root, ".", shell)).resolves.toEqual({ action: "opened" });
 
     expect(shell.openPath).toHaveBeenCalledWith(root);
     await expect(openContainedPath(root, "..", shell)).rejects.toThrow(

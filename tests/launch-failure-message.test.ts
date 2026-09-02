@@ -20,6 +20,16 @@ describe("describeLaunchFailure", () => {
     );
   });
 
+  it("does not blame the project folder for a different missing file", () => {
+    const error: NodeJS.ErrnoException = new Error("ENOENT: no such file or directory, copyfile");
+    error.code = "ENOENT";
+    error.path = "D:\\Plugin\\bridge\\statusline-bridge.js";
+
+    const message = describeLaunchFailure(error, FOLDER, LOG_DIR);
+    expect(message).toContain("statusline-bridge.js");
+    expect(message).not.toContain(FOLDER);
+  });
+
   it("separates a path that exists but is a file from one that is absent", () => {
     const error = new Error("Configured Code Start path is not a directory");
 

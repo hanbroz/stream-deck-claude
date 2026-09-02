@@ -51,6 +51,27 @@ describe("ProjectTerminalManager", () => {
   });
 
 
+  it("refuses to open more than the terminal limit", () => {
+    const ptyFactory = vi.fn(() => fakePty());
+    const manager = new ProjectTerminalManager({ ptyFactory, env: {} });
+    for (let i = 0; i < 8; i += 1) {
+      manager.start({ cwd: "D:\\repo" });
+    }
+    expect(() => manager.start({ cwd: "D:\\repo" })).toThrow("Too many project terminals");
+    manager.killAll();
+    expect(() => manager.start({ cwd: "D:\\repo" })).not.toThrow();
+
+    // A kill that throws still frees its slot.
+    const throwing = fakePty();
+    throwing.kill.mockImplementation(() => {
+      throw new Error("conpty gone");
+    });
+    const flaky = new ProjectTerminalManager({ ptyFactory: vi.fn(() => throwing), env: {} });
+    const { sessionId } = flaky.start({ cwd: "D:\\repo" });
+    expect(() => flaky.kill(sessionId)).toThrow("conpty gone");
+    expect(() => flaky.kill(sessionId)).toThrow("was not found");
+  });
+
   it("starts a real interactive PowerShell PTY in the project folder", () => {
     const terminal = fakePty();
     const ptyFactory = vi.fn(() => terminal);

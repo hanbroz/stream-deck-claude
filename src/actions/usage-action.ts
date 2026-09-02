@@ -13,7 +13,8 @@ import {
 import {
   ensureBridgeInstalled,
   isBridgeInstalled,
-  isStatusLineConflict
+  isStatusLineConflict,
+  NODE_MISSING_MESSAGE
 } from "../bridge/installer";
 import {
   defaultClaudeSettingsPath,
@@ -28,6 +29,7 @@ import {
   withLastGoodHold,
   type LastGoodUsage
 } from "../services/display-loader";
+import { showErrorDialog } from "../services/error-dialog";
 import { OmcStdinSync } from "../services/omc-stdin-sync";
 import { maybeRefreshUsageViaApi } from "../services/usage-refresher";
 import { renderUsageKeyImage } from "../ui/key-renderer";
@@ -38,6 +40,8 @@ const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const bridgeSourcePath = path.join(pluginRoot, "bridge", "statusline-bridge.js");
 // Shared across the five-hour and weekly actions: one copy serves both.
 const omcStdinSync = new OmcStdinSync(defaultOmcStdinCacheRoots());
+// A prerequisite dialog is shown once per plugin lifetime, not on every press.
+let prerequisiteDialogShown = false;
 
 export abstract class UsageAction extends SingletonAction {
   private readonly visibleActions = new Map<string, KeyAction>();
@@ -81,8 +85,22 @@ export abstract class UsageAction extends SingletonAction {
       streamDeck.logger.info(`Usage action pressed: ${this.kind}.`);
       const settingsPath = defaultClaudeSettingsPath();
       const dataDir = defaultUsageDataDir();
-      await ensureBridgeInstalled({ settingsPath, dataDir, bridgeSourcePath });
+      const installed = await ensureBridgeInstalled({ settingsPath, dataDir, bridgeSourcePath });
+      const problems = [
+        ...(installed.nodeMissing ? [NODE_MISSING_MESSAGE] : []),
+        ...installed.warnings.map((warning) => `Bridge install: ${warning}`)
+      ];
+      for (const problem of problems) {
+        streamDeck.logger.warn(problem);
+      }
       await this.refreshCoalesced();
+      if (problems.length > 0 && !prerequisiteDialogShown) {
+        // The key alone cannot explain a missing prerequisite.
+        prerequisiteDialogShown = true;
+        await ev.action.showAlert();
+        void showErrorDialog(problems.join("\n\n"));
+        return;
+      }
       await ev.action.showOk();
     } catch (error) {
       streamDeck.logger.error(`Usage action press failed: ${this.kind}.`, error);

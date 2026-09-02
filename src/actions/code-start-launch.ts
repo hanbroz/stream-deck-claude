@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { ensureBridgeInstalled } from "../bridge/installer";
+import { NODE_MISSING_MESSAGE, type ensureBridgeInstalled } from "../bridge/installer";
 import { defaultClaudeSettingsPath, defaultUsageDataDir } from "../bridge/paths";
 import type {
   claudeConversationExists,
@@ -30,6 +30,8 @@ import { describeLaunchFailure } from "./launch-failure-message";
 export type CodeStartLaunchMode = "companion" | "terminal";
 
 export const DEFAULT_LAUNCH_MODE: CodeStartLaunchMode = "companion";
+// Reported once per plugin lifetime, not on every launch.
+let nodeMissingReported = false;
 
 export type CodeStartLaunchSettings = {
   bindingId?: string;
@@ -199,11 +201,18 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
       dependencies.renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
     );
     await dependencies.validateLaunchFolder(folder);
-    await dependencies.ensureBridgeInstalled({
+    const installed = await dependencies.ensureBridgeInstalled({
       settingsPath: dependencies.defaultClaudeSettingsPath(),
       dataDir: dependencies.defaultUsageDataDir(),
       bridgeSourcePath
     });
+    if (installed.nodeMissing && !nodeMissingReported) {
+      // Claude itself does not need Node; the launch goes ahead and the
+      // user learns once why the usage keys and session state stay dark.
+      nodeMissingReported = true;
+      dependencies.logger.info(NODE_MISSING_MESSAGE);
+      void dependencies.showErrorDialog(NODE_MISSING_MESSAGE);
+    }
 
     const launchId = dependencies.createLaunchId();
     const resumePointer = await dependencies.readContextSessionResumePointer(

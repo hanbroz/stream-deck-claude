@@ -30,7 +30,13 @@ export function describeLaunchFailure(
 ): string {
   const code = errorCode(error);
   if (code === "ENOENT") {
-    return `프로젝트에 지정된 경로 "${folder}"를 찾을 수 없습니다.`;
+    // Only the project folder's own stat is about the project folder; a
+    // missing bridge source or powershell.exe is a different problem.
+    const missingPath = (error as NodeJS.ErrnoException).path;
+    if (missingPath === undefined || path.resolve(missingPath) === path.resolve(folder)) {
+      return `프로젝트에 지정된 경로 "${folder}"를 찾을 수 없습니다.`;
+    }
+    return `필요한 파일을 찾을 수 없습니다: "${missingPath}". 플러그인 로그(${pluginLogDirectory})를 확인해 주세요.`;
   }
 
   const message = errorMessage(error);

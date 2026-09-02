@@ -63,19 +63,21 @@ async function candidatesUnderStateRoot(omcRoot: string): Promise<string[]> {
   ];
 }
 
-/**
- * Every file OMC might have written the snapshot to under the given roots.
- * A root is either an OMC root (`~/.omc`, `<project>/.omc`) or an
- * `OMC_STATE_DIR`, whose immediate children are per-project OMC roots.
- */
-export async function listOmcStdinCacheCandidates(roots: string[]): Promise<string[]> {
+export type OmcStdinCacheRoots = {
+  /** OMC roots (`~/.omc`, `<project>/.omc`): each holds `state/…` directly. */
+  omcRoots: string[];
+  /** `OMC_STATE_DIR` values: each immediate child is a per-project OMC root. */
+  stateDirs: string[];
+};
+
+/** Every file OMC might have written the snapshot to under the given roots. */
+export async function listOmcStdinCacheCandidates(roots: OmcStdinCacheRoots): Promise<string[]> {
   const candidates: string[] = [];
-  for (const root of roots) {
+  for (const root of roots.omcRoots) {
     candidates.push(...(await candidatesUnderStateRoot(root)));
-    for (const projectRoot of await listDirectories(root)) {
-      if (path.basename(projectRoot) === "state") {
-        continue;
-      }
+  }
+  for (const stateDir of roots.stateDirs) {
+    for (const projectRoot of await listDirectories(stateDir)) {
       candidates.push(...(await candidatesUnderStateRoot(projectRoot)));
     }
   }

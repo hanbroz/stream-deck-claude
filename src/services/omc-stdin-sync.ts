@@ -4,9 +4,10 @@ import path from "node:path";
 import {
   listOmcStdinCacheCandidates,
   readNewestOmcStdinCache,
+  type OmcStdinCacheRoots,
   type OmcStdinSnapshot
 } from "../io/omc-stdin-cache";
-import { readUsageCache, writeMergedUsageCache, writeUsageCache } from "../io/usage-cache";
+import { readUsageCache, writeUsageCacheIfNewer } from "../io/usage-cache";
 
 /**
  * Mirror OMC's status-line snapshot into usage.json.
@@ -33,7 +34,7 @@ export class OmcStdinSync {
   private lastSnapshot?: OmcStdinSnapshot;
   private inFlight?: Promise<OmcStdinSyncResult>;
 
-  constructor(private readonly roots: string[]) {}
+  constructor(private readonly roots: OmcStdinCacheRoots) {}
 
   private async listCandidates(nowMs: number): Promise<string[]> {
     if (nowMs - this.candidatesListedAt >= CANDIDATE_LIST_TTL_MS) {
@@ -91,23 +92,18 @@ export class OmcStdinSync {
     }
     this.lastSnapshot = snapshot;
 
-    // Never regress usage.json: with our own bridge installed it can be
-    // newer than anything OMC wrote (OMC snapshots stop when OMC is not the
-    // status line, but the file can linger for a day).
-    const existing = await readUsageCache(cachePath).catch(() => undefined);
-    if (existing && existing.capturedAt >= snapshot.capturedAt) {
-      return { snapshot, localCapturedAt: existing.capturedAt };
-    }
     // Nothing on the read path creates the data dir; without it the lock
     // file cannot be opened and every tick would fail.
     await mkdir(dataDir, { recursive: true });
+    // Never regress usage.json: with our own bridge installed it can be
+    // newer than anything OMC wrote (OMC snapshots stop when OMC is not the
+    // status line, but the file can linger for a day). The comparison runs
+    // under the cache lock so a bridge write cannot slip in between.
     const { fiveHour, sevenDay } = snapshot.cache.rateLimits;
-    if (fiveHour && sevenDay) {
-      await writeUsageCache(cachePath, snapshot.cache);
-    } else {
-      await writeMergedUsageCache(cachePath, snapshot.cache);
-    }
-    return { snapshot, localCapturedAt: snapshot.capturedAt };
+    const written = await writeUsageCacheIfNewer(cachePath, snapshot.cache, {
+      merge: !(fiveHour && sevenDay)
+    });
+    return { snapshot, localCapturedAt: written.capturedAt };
   }
 
   private async unchanged(cachePath: string): Promise<OmcStdinSyncResult> {

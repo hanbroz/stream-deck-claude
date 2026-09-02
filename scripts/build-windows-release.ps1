@@ -18,6 +18,7 @@ function Invoke-NpmScript([string]$name) {
 
 Push-Location $projectRoot
 try {
+  Invoke-NpmScript "verify:version"
   Invoke-NpmScript "test"
   Invoke-NpmScript "typecheck"
   Invoke-NpmScript "build"

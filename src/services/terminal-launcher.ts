@@ -42,7 +42,9 @@ export function createTerminalLaunchPlan(
   return {
     command: windowsTerminalAvailable ? "wt.exe" : "cmd.exe",
     args: windowsTerminalAvailable
-      ? ["-d", folder, "powershell.exe", ...powershellArgs]
+      // wt.exe splits its own command list on ';' — a folder path containing
+      // one must have it escaped, the same way the command itself is encoded.
+      ? ["-d", folder.replaceAll(";", "\\;"), "powershell.exe", ...powershellArgs]
       : ["/d", "/s", "/c", VISIBLE_POWERSHELL_COMMAND],
     cwd: folder,
     env: {

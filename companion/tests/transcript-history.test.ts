@@ -115,6 +115,31 @@ describe("ConversationHistoryReader paging", () => {
     expect(oldest.hasMore).toBe(false);
   });
 
+  it("re-reads a transcript that grew since it was cached", async () => {
+    const configDir = await writeTranscript(folder, "grow", body);
+    const reader = new ConversationHistoryReader({ configDir, folder });
+    expect((await reader.page("grow", 0, 10)).total).toBe(5);
+
+    const file = path.join(configDir, "projects", folder.replace(/[^a-zA-Z0-9]/g, "-"), "grow.jsonl");
+    await writeFile(file, body + jsonl({ type: "user", message: { role: "user", content: "m5" } }), "utf8");
+    expect((await reader.page("grow", 0, 10)).total).toBe(6);
+  });
+
+  it("sees a transcript that appears after a first miss and bounds the cache", async () => {
+    const configDir = await writeTranscript(folder, "seed", body);
+    const reader = new ConversationHistoryReader({ configDir, folder });
+    expect((await reader.page("later", 0, 10)).total).toBe(0);
+    await writeTranscript(folder, "later", body);
+    expect((await reader.page("later", 0, 10)).total).toBe(5);
+
+    for (let i = 0; i < 20; i += 1) {
+      await writeTranscript(folder, `many-${i}`, body);
+      expect((await reader.page(`many-${i}`, 0, 1)).total).toBe(5);
+    }
+    // Still correct after eviction: the evicted entry is simply re-read.
+    expect((await reader.page("seed", 0, 10)).total).toBe(5);
+  });
+
   it("returns an empty page for an unknown session", async () => {
     const configDir = await writeTranscript(folder, "sess", body);
     const reader = new ConversationHistoryReader({ configDir, folder });

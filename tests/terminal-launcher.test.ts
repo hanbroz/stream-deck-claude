@@ -93,6 +93,12 @@ describe("createTerminalLaunchPlan", () => {
     expect(plan.env.CLAUDE_STREAM_DECK_PID_FILE).toMatch(/\.pid$/u);
   });
 
+  it("escapes semicolons in the folder for wt.exe -d, which would otherwise split the command", () => {
+    const plan = createTerminalLaunchPlan("D:\\Projects\\a;b", "action-1", "launch-1", true);
+    expect(plan.args[1]).toBe("D:\\Projects\\a\\;b");
+    expect(plan.cwd).toBe("D:\\Projects\\a;b");
+  });
+
   it("uses cmd start to create a separate visible PowerShell window and report its PID", () => {
     const plan = createTerminalLaunchPlan(
       "D:\\Projects\\Folder & Name",

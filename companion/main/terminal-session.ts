@@ -70,6 +70,10 @@ function commandForShell(
   return { file: "powershell.exe", args };
 }
 
+// The renderer opens one embedded terminal at a time; a bound protects the
+// main process from a misbehaving caller spawning shells without limit.
+const MAX_PROJECT_TERMINALS = 8;
+
 export class ProjectTerminalManager extends EventEmitter<ProjectTerminalEvents> {
   private readonly sessions = new Map<string, StoredTerminal>();
   private readonly ptyFactory: PtyFactory;
@@ -84,6 +88,9 @@ export class ProjectTerminalManager extends EventEmitter<ProjectTerminalEvents> 
   start(
     request: TerminalSessionStartRequest & { cwd: string; promptRoot?: string }
   ): TerminalSessionStarted {
+    if (this.sessions.size >= MAX_PROJECT_TERMINALS) {
+      throw new Error(`Too many project terminals open (limit ${MAX_PROJECT_TERMINALS})`);
+    }
     const shell = request.shell ?? "powershell";
     const promptRoot = request.promptRoot;
     const command = commandForShell(shell, promptRoot !== undefined);
@@ -119,8 +126,10 @@ export class ProjectTerminalManager extends EventEmitter<ProjectTerminalEvents> 
 
   kill(sessionId: string): void {
     const session = this.session(sessionId);
-    session.terminal.kill();
+    // Drop the entry first: a PTY that throws on kill (a conpty already torn
+    // down) must not keep holding one of the terminal slots.
     this.sessions.delete(sessionId);
+    session.terminal.kill();
   }
 
   /** Tear down every embedded terminal; used on app quit. */

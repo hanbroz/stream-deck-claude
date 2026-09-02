@@ -62,7 +62,10 @@ describe("listOmcStdinCacheCandidates", () => {
     await mkdir(path.join(home, "state", "sessions", "abc-123"), { recursive: true });
     await mkdir(path.join(central, "proj-1", "state", "sessions", "s1"), { recursive: true });
 
-    const candidates = await listOmcStdinCacheCandidates([home, central]);
+    // `logs`, `plans`… under ~/.omc are not project roots and must not be probed.
+    await mkdir(path.join(home, "logs"), { recursive: true });
+    const candidates = await listOmcStdinCacheCandidates({ omcRoots: [home], stateDirs: [central] });
+    expect(candidates.some((candidate) => candidate.includes(path.join(home, "logs")))).toBe(false);
     expect(candidates).toEqual(
       expect.arrayContaining([
         path.join(home, "state", "hud-stdin-cache.json"),
@@ -130,7 +133,7 @@ describe("OmcStdinSync", () => {
       }
     });
 
-    const sync = new OmcStdinSync([omcRoot]);
+    const sync = new OmcStdinSync({ omcRoots: [omcRoot], stateDirs: [] });
     const synced = await sync.sync(dataDir, nowMs);
     expect(synced.snapshot?.path).toBe(snapshotPath);
     expect(synced.localCapturedAt).toBe(nowMs - 5_000);
@@ -150,7 +153,7 @@ describe("OmcStdinSync", () => {
       capturedAt: nowMs,
       rateLimits: { fiveHour: { usedPercentage: 44, resetsAt: 1_788_324_600 } }
     });
-    await new OmcStdinSync([omcRoot]).sync(dataDir, nowMs + 1_000);
+    await new OmcStdinSync({ omcRoots: [omcRoot], stateDirs: [] }).sync(dataDir, nowMs + 1_000);
     expect((await readUsageCache(path.join(dataDir, "usage.json")))?.rateLimits.fiveHour?.usedPercentage).toBe(44);
   });
 
@@ -171,7 +174,7 @@ describe("OmcStdinSync", () => {
       nowMs - 1_000
     );
 
-    await new OmcStdinSync([omcRoot]).sync(dataDir, nowMs);
+    await new OmcStdinSync({ omcRoots: [omcRoot], stateDirs: [] }).sync(dataDir, nowMs);
     expect((await readUsageCache(path.join(dataDir, "usage.json")))?.rateLimits).toEqual({
       fiveHour: { usedPercentage: 41, resetsAt: 1_788_324_600 },
       sevenDay: { usedPercentage: 6, resetsAt: 1_788_865_200 }
@@ -182,7 +185,7 @@ describe("OmcStdinSync", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "omc-stdin-sync-"));
     const dataDir = path.join(root, "data");
     await mkdir(dataDir, { recursive: true });
-    await expect(new OmcStdinSync([path.join(root, ".omc")]).sync(dataDir)).resolves.toEqual({
+    await expect(new OmcStdinSync({ omcRoots: [path.join(root, ".omc")], stateDirs: [] }).sync(dataDir)).resolves.toEqual({
       snapshot: undefined,
       localCapturedAt: undefined
     });
@@ -196,7 +199,7 @@ describe("OmcStdinSync", () => {
     const nowMs = 1_788_319_000_000;
     await writeSnapshot(path.join(omcRoot, "state", "hud-stdin-cache.json"), SNAPSHOT, nowMs - 5_000);
 
-    await new OmcStdinSync([omcRoot]).sync(dataDir, nowMs);
+    await new OmcStdinSync({ omcRoots: [omcRoot], stateDirs: [] }).sync(dataDir, nowMs);
     expect((await readUsageCache(path.join(dataDir, "usage.json")))?.capturedAt).toBe(nowMs - 5_000);
   });
 
@@ -208,7 +211,7 @@ describe("OmcStdinSync", () => {
     const snapshotPath = path.join(omcRoot, "state", "hud-stdin-cache.json");
     await writeSnapshot(snapshotPath, SNAPSHOT, nowMs - 5_000);
 
-    const sync = new OmcStdinSync([omcRoot]);
+    const sync = new OmcStdinSync({ omcRoots: [omcRoot], stateDirs: [] });
     const [a, b] = await Promise.all([sync.sync(dataDir, nowMs), sync.sync(dataDir, nowMs)]);
     expect(a).toBe(b);
 

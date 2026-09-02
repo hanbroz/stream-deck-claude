@@ -16,7 +16,9 @@ describe("Code Start property inspector", () => {
     expect(html).toContain("folder: folder.value.trim()");
     expect(html).toContain("const collectSettings = () => ({");
     expect(html).toContain("settings = collectSettings();");
-    expect(html).toContain('payload: { event: "browseFolder", projectName: settings.projectName }');
+    expect(html).toContain('event: "browseFolder"');
+    expect(html).toContain("projectName: settings.projectName");
+    expect(html).toContain("launchMode: settings.launchMode");
   });
 
   it("persists the draft project name returned with a folder selection", async () => {
@@ -24,7 +26,7 @@ describe("Code Start property inspector", () => {
 
     expect(source).toContain("projectName?: JsonValue;");
     expect(source).toContain('typeof payload.projectName === "string"');
-    expect(source).toContain("{ ...current, projectName, folder }");
+    expect(source).toContain("{ ...current, projectName, folder, launchMode }");
     expect(source).toContain("sendToPropertyInspector({ folder, projectName })");
   });
 

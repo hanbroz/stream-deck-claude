@@ -71,7 +71,7 @@ export type ClaudeCompanionApi = {
     rename(path: string, name: string): Promise<string>;
     delete(path: string): Promise<void>;
     files(): Promise<string[]>;
-    open(path: string): Promise<void>;
+    open(path: string): Promise<{ action: "opened" | "revealed" }>;
     reveal(path: string): Promise<void>;
     filePath(file: File): string;
     measureCopy(sourcePaths: string[]): Promise<CopyMeasurement>;

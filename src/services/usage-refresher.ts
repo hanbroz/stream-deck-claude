@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import https from "node:https";
-import os from "node:os";
 import path from "node:path";
 
 import { streamDeck } from "@elgato/streamdeck";
 
+import { defaultClaudeCredentialsPath } from "../bridge/paths";
 import type { UsageCache } from "../domain/rate-limits";
 import { writeUsageCache } from "../io/usage-cache";
 
@@ -97,8 +97,7 @@ async function resolveAccessToken(): Promise<string | undefined> {
     return envToken;
   }
   try {
-    const credentialsPath = path.join(os.homedir(), ".claude", ".credentials.json");
-    const raw = await readFile(credentialsPath, "utf8");
+    const raw = await readFile(defaultClaudeCredentialsPath(), "utf8");
     const parsed = JSON.parse(raw) as {
       claudeAiOauth?: { accessToken?: string; expiresAt?: number };
     };

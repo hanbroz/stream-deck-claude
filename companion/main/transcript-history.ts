@@ -173,14 +173,19 @@ export type ConversationHistoryReaderOptions = {
 };
 
 /**
- * Loads a conversation once and serves it to the renderer newest-page-first.
- * The parsed text is cached per session id so scrolling up does not re-read the
- * file.
+ * Serves a conversation to the renderer newest-page-first. The parsed text is
+ * cached per session id (keyed by the transcript's mtime and size) so scrolling
+ * up does not re-read the file, while a conversation that grew is re-parsed.
  */
 export class ConversationHistoryReader {
   private readonly configDir: string;
   private readonly folder: string;
-  private cache = new Map<string, HistoryMessage[]>();
+  // Keyed by transcript identity (mtime + size) so a conversation that grew
+  // since the last read is re-parsed instead of served stale, and an entry
+  // is replaced rather than accumulated. Bounded so a long-lived window
+  // browsing many conversations does not hold every transcript in memory.
+  private cache = new Map<string, { mtimeMs: number; size: number; messages: HistoryMessage[] }>();
+  private static readonly MAX_CACHED_TRANSCRIPTS = 16;
 
   constructor(options: ConversationHistoryReaderOptions) {
     this.configDir = options.configDir;
@@ -214,24 +219,34 @@ export class ConversationHistoryReader {
   }
 
   private async load(sessionId: string): Promise<HistoryMessage[]> {
-    const cached = this.cache.get(sessionId);
-    if (cached) {
-      return cached;
-    }
     // Strict allowlist: the id becomes a filename segment, so anything outside
     // a UUID-like token (including `/`, `\`, `..`, `:`) is rejected outright.
     if (!isSafeClaudeSessionId(sessionId)) {
       return [];
     }
     const file = transcriptPath(this.configDir, this.folder, sessionId);
+    let identity: { mtimeMs: number; size: number };
     try {
-      await stat(file);
+      const info = await stat(file);
+      identity = { mtimeMs: info.mtimeMs, size: info.size };
     } catch {
-      this.cache.set(sessionId, []);
+      this.cache.delete(sessionId);
       return [];
     }
+    const cached = this.cache.get(sessionId);
+    if (cached && cached.mtimeMs === identity.mtimeMs && cached.size === identity.size) {
+      return cached.messages;
+    }
     const messages = await readConversationMessages(file);
-    this.cache.set(sessionId, messages);
+    this.cache.delete(sessionId);
+    this.cache.set(sessionId, { ...identity, messages });
+    while (this.cache.size > ConversationHistoryReader.MAX_CACHED_TRANSCRIPTS) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      this.cache.delete(oldest);
+    }
     return messages;
   }
 }

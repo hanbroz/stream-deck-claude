@@ -207,16 +207,19 @@ async function acquireUsageCacheLock(lockPath: string) {
 async function writeUsageCacheLocked(
   cachePath: string,
   incoming: UsageCache,
-  merge: boolean
-): Promise<void> {
+  merge: boolean,
+  onlyIfNewer = false
+): Promise<UsageCache> {
   const lockPath = `${cachePath}.lock`;
   const lock = await acquireUsageCacheLock(lockPath);
   try {
     // A corrupt usage.json must not wedge every merge write until something
     // happens to replace it; treat it as absent.
-    const cache = merge
-      ? mergeUsageCaches(await readUsageCache(cachePath).catch(() => undefined), incoming)
-      : incoming;
+    const current = await readUsageCache(cachePath).catch(() => undefined);
+    if (onlyIfNewer && current && current.capturedAt >= incoming.capturedAt) {
+      return current;
+    }
+    const cache = merge ? mergeUsageCaches(current, incoming) : incoming;
     const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
     try {
       await writeFile(temporaryPath, `${JSON.stringify(cache, null, 2)}\n`, "utf8");
@@ -224,6 +227,7 @@ async function writeUsageCacheLocked(
     } finally {
       await rm(temporaryPath, { force: true });
     }
+    return cache;
   } finally {
     try {
       await lock.close();
@@ -231,6 +235,19 @@ async function writeUsageCacheLocked(
       await rm(lockPath, { force: true });
     }
   }
+}
+
+/**
+ * Write only when `incoming` was captured after the current file; the check
+ * happens under the lock so a concurrent writer cannot be clobbered. Returns
+ * whatever usage.json holds afterwards.
+ */
+export async function writeUsageCacheIfNewer(
+  cachePath: string,
+  incoming: UsageCache,
+  options: { merge: boolean }
+): Promise<UsageCache> {
+  return writeUsageCacheLocked(cachePath, incoming, options.merge, true);
 }
 
 /** Merge-write: for same-account partial updates (the statusline bridge). */

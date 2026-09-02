@@ -1,13 +1,26 @@
 import os from "node:os";
 import path from "node:path";
 
+/** Claude Code's config directory: `CLAUDE_CONFIG_DIR` when set, else `~/.claude`. */
+export function defaultClaudeConfigDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), ".claude");
+}
+
 export function defaultClaudeSettingsPath(): string {
-  return path.join(os.homedir(), ".claude", "settings.json");
+  return path.join(defaultClaudeConfigDir(), "settings.json");
+}
+
+export function defaultClaudeCredentialsPath(): string {
+  return path.join(defaultClaudeConfigDir(), ".credentials.json");
 }
 
 export function defaultOmcUsageCachePath(): string {
-  const configDir = process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), ".claude");
-  return path.join(configDir, "plugins", "oh-my-claudecode", ".usage-cache-anthropic.json");
+  return path.join(
+    defaultClaudeConfigDir(),
+    "plugins",
+    "oh-my-claudecode",
+    ".usage-cache-anthropic.json"
+  );
 }
 
 export function defaultUsageDataDir(): string {
@@ -21,11 +34,17 @@ export function defaultUsageDataDir(): string {
  * Claude Code runs from the user's home, so `~/.omc` is where the snapshot
  * lands in practice; `OMC_STATE_DIR/<project-id>` covers centralized setups.
  */
-export function defaultOmcStdinCacheRoots(): string[] {
-  const roots = [path.join(os.homedir(), ".omc")];
+export type OmcStdinCacheRoots = {
+  /** OMC roots (each holds `state/…` directly). */
+  omcRoots: string[];
+  /** `OMC_STATE_DIR` values, whose children are per-project OMC roots. */
+  stateDirs: string[];
+};
+
+export function defaultOmcStdinCacheRoots(): OmcStdinCacheRoots {
   const centralized = process.env.OMC_STATE_DIR?.trim();
-  if (centralized) {
-    roots.push(centralized);
-  }
-  return roots;
+  return {
+    omcRoots: [path.join(os.homedir(), ".omc")],
+    stateDirs: centralized ? [centralized] : []
+  };
 }

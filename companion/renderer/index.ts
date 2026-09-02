@@ -1305,7 +1305,10 @@ async function activateSearchRow(openExternally: boolean): Promise<void> {
 
   if (openExternally) {
     try {
-      await api?.paths.open(row.path);
+      const result = await api?.paths.open(row.path);
+      if (result?.action === "revealed") {
+        showToast("실행 파일은 열지 않고 탐색기에서 표시했습니다.");
+      }
     } catch {
       showToast("파일을 열지 못했습니다.");
     }
@@ -2222,7 +2225,11 @@ function renderTree(): void {
       if (row.node.kind === "directory") {
         void toggleDirectory(row.node);
       } else {
-        void api?.paths.open(row.node.path);
+        void api?.paths.open(row.node.path).then((result) => {
+          if (result?.action === "revealed") {
+            showToast("실행 파일은 열지 않고 탐색기에서 표시했습니다.");
+          }
+        });
       }
     });
     item.addEventListener("contextmenu", (event) => {

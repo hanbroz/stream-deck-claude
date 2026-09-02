@@ -143,6 +143,9 @@ stamps should match after a full `release:windows`.
 - Prompts and assistant responses are never persisted by the bridge.
 - Usage and context caches are stored locally under `%LOCALAPPDATA%\ClaudeUsageDeck`.
 - Project folders and button settings remain in the local Stream Deck profile.
+- `CLAUDE_CONFIG_DIR` is honoured for `settings.json`, `.credentials.json` and the OMC caches.
+- To remove everything the plugin put into `settings.json` (status-line bridge and lifecycle hooks, restoring any recorded original status-line command), run `npm run bridge:uninstall` from a source checkout, or `node "%APPDATA%\Elgato\StreamDeck\Plugins\com.hanbroz.claude-usage.sdPlugin\bridge\install-bridge.js" --uninstall`. Cache files under `%LOCALAPPDATA%\ClaudeUsageDeck` are left for you to delete.
+- In the Companion file tree, executables (`.exe`, `.cmd`, `.ps1`, `.lnk`, …) are revealed in Explorer instead of being launched.
 
 [Back to language selection](#claude-for-stream-deck)
 
@@ -240,10 +243,13 @@ npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin
 
 ### 개인정보 및 로컬 데이터
 
-- 플러그인은 Claude 인증 정보를 읽지 않습니다.
+- Claude 인증 정보는 사용량 API 폴백만 읽으며, Anthropic 사용량 엔드포인트 호출에만 사용하고 저장·기록하지 않습니다.
 - 프롬프트와 Claude의 답변은 브리지에 저장되지 않습니다.
 - 사용량 및 컨텍스트 캐시는 `%LOCALAPPDATA%\ClaudeUsageDeck` 아래에 로컬로 저장됩니다.
 - 프로젝트 폴더와 버튼 설정은 로컬 Stream Deck 프로필에 유지됩니다.
+- `CLAUDE_CONFIG_DIR`을 `settings.json`, `.credentials.json`, OMC 캐시 경로에 모두 반영합니다.
+- 플러그인이 `settings.json`에 넣은 항목(상태 표시줄 브리지·라이프사이클 훅)을 모두 제거하려면 소스 체크아웃에서 `npm run bridge:uninstall`을 실행하거나 `node "%APPDATA%\Elgato\StreamDeck\Plugins\com.hanbroz.claude-usage.sdPlugin\bridge\install-bridge.js" --uninstall`을 실행합니다. 기록된 원본 상태 표시줄 명령은 복원되며, `%LOCALAPPDATA%\ClaudeUsageDeck`의 캐시 파일은 직접 삭제하시면 됩니다.
+- Companion 파일 트리에서 실행 파일(`.exe`, `.cmd`, `.ps1`, `.lnk` 등)은 실행되지 않고 탐색기에서 표시만 됩니다.
 
 [언어 선택으로 돌아가기](#claude-for-stream-deck)
 
@@ -329,6 +335,9 @@ npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin
 - 桥接程序不会保存提示词或 Claude 的回答。
 - 用量和上下文缓存仅存储在本机的 `%LOCALAPPDATA%\ClaudeUsageDeck` 目录下。
 - 项目文件夹和按键设置保留在本地 Stream Deck 配置文件中。
+- `settings.json`、`.credentials.json` 和 OMC 缓存路径均遵循 `CLAUDE_CONFIG_DIR`。
+- 要移除插件写入 `settings.json` 的全部内容（状态栏桥接与生命周期钩子，并恢复记录的原始状态栏命令），在源码目录运行 `npm run bridge:uninstall`，或运行 `node "%APPDATA%\Elgato\StreamDeck\Plugins\com.hanbroz.claude-usage.sdPlugin\bridge\install-bridge.js" --uninstall`。`%LOCALAPPDATA%\ClaudeUsageDeck` 下的缓存文件留给你自行删除。
+- 在 Companion 文件树中，可执行文件（`.exe`、`.cmd`、`.ps1`、`.lnk` 等）只会在资源管理器中定位，不会被启动。
 
 [返回语言选择](#claude-for-stream-deck)
 
@@ -414,5 +423,8 @@ npm exec -- streamdeck link com.hanbroz.claude-usage.sdPlugin
 - プロンプトとClaudeの応答はブリッジに保存されません。
 - 使用量とコンテキストのキャッシュは`%LOCALAPPDATA%\ClaudeUsageDeck`配下にローカル保存されます。
 - プロジェクトフォルダーとキーの設定は、ローカルのStream Deckプロファイル内に保持されます。
+- `settings.json`、`.credentials.json`、OMCキャッシュのパスはいずれも`CLAUDE_CONFIG_DIR`を尊重します。
+- プラグインが`settings.json`に書き込んだ内容（ステータスラインブリッジとライフサイクルフック）をすべて取り除くには、ソースのチェックアウトで`npm run bridge:uninstall`を実行するか、`node "%APPDATA%\Elgato\StreamDeck\Plugins\com.hanbroz.claude-usage.sdPlugin\bridge\install-bridge.js" --uninstall`を実行します。記録された元のステータスラインコマンドは復元され、`%LOCALAPPDATA%\ClaudeUsageDeck`のキャッシュファイルは手動で削除できます。
+- Companionのファイルツリーでは、実行ファイル（`.exe`、`.cmd`、`.ps1`、`.lnk`など）は起動されず、エクスプローラーで表示されるだけです。
 
 [言語選択に戻る](#claude-for-stream-deck)

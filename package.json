@@ -15,6 +15,8 @@
     "pack": "streamdeck pack com.hanbroz.claude-usage.sdPlugin -o dist --force",
     "release:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-release.ps1",
     "bridge:install": "node com.hanbroz.claude-usage.sdPlugin/bridge/install-bridge.js",
+    "bridge:uninstall": "node com.hanbroz.claude-usage.sdPlugin/bridge/install-bridge.js --uninstall",
+    "verify:version": "node scripts/verify-version.mjs",
     "companion:test": "vitest run companion/tests",
     "companion:build": "node scripts/build-companion.mjs",
     "companion:dir": "npm run companion:build && npm run pack && electron-builder --config companion/electron-builder.yml --win dir --x64",

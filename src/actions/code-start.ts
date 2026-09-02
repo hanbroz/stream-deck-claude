@@ -59,6 +59,7 @@ type CodeStartSettings = JsonObject & {
 type PropertyInspectorMessage = JsonObject & {
   event?: JsonValue;
   projectName?: JsonValue;
+  launchMode?: JsonValue;
 };
 
 @action({ UUID: "com.hanbroz.claude-usage.code-start" })
@@ -143,7 +144,13 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
           : typeof current.projectName === "string"
             ? current.projectName
             : "";
-      const settings: CodeStartSettings = { ...current, projectName, folder };
+      // The inspector's own setSettings races this handler; whatever it sent
+      // in the payload is the freshest view of the form.
+      const launchMode =
+        payload.launchMode === "terminal" || payload.launchMode === "companion"
+          ? payload.launchMode
+          : current.launchMode;
+      const settings: CodeStartSettings = { ...current, projectName, folder, launchMode };
       await ev.action.setSettings(settings);
       await streamDeck.ui.sendToPropertyInspector({ folder, projectName });
     } catch (error) {

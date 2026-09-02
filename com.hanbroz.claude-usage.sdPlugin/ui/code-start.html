@@ -144,7 +144,14 @@
             event: "sendToPlugin",
             action,
             context,
-            payload: { event: "browseFolder", projectName: settings.projectName }
+            // The plugin merges the picked folder onto THESE values: the
+            // setSettings just sent may not have landed yet, and re-reading
+            // would revert an unsaved mode change while the form still shows it.
+            payload: {
+              event: "browseFolder",
+              projectName: settings.projectName,
+              launchMode: settings.launchMode
+            }
           });
         });
         save.addEventListener("click", () => {

@@ -321,9 +321,9 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   deps.ipcMain.handle(COMPANION_IPC.pathDelete, async (_event: SenderEvent, path: unknown) => {
     await deleteContainedPath(deps.rootPath, requireString(path, "path"), deps.shell);
   });
-  deps.ipcMain.handle(COMPANION_IPC.pathOpen, async (_event: SenderEvent, path: unknown) => {
-    await openContainedPath(deps.rootPath, requireString(path, "path"), deps.shell);
-  });
+  deps.ipcMain.handle(COMPANION_IPC.pathOpen, async (_event: SenderEvent, path: unknown) =>
+    openContainedPath(deps.rootPath, requireString(path, "path"), deps.shell)
+  );
   deps.ipcMain.handle(COMPANION_IPC.pathReveal, async (_event: SenderEvent, path: unknown) => {
     await revealContainedPath(deps.rootPath, requireString(path, "path"), deps.shell);
   });

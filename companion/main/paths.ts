@@ -425,16 +425,38 @@ export async function deleteContainedPath(
   await shell.trashItem(target);
 }
 
+// Opening these with the shell RUNS them. A `claude --print` run with
+// permissions skipped can write anything into the project, so a click in the
+// tree must never be the thing that executes it; such files are revealed in
+// Explorer instead, where launching is the user's explicit choice.
+const EXECUTABLE_EXTENSIONS = new Set([
+  ".exe", ".com", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe", ".vb", ".js", ".jse",
+  ".ws", ".wsf", ".wsh", ".wsc", ".sct", ".msi", ".msp", ".msc", ".scr", ".pif", ".lnk",
+  ".url", ".reg", ".hta", ".cpl", ".inf", ".jar", ".appx", ".msix", ".application",
+  ".appref-ms", ".xll", ".chm", ".diagcab", ".settingcontent-ms", ".pyw"
+]);
+
+export function isExecutableLikePath(target: string): boolean {
+  return EXECUTABLE_EXTENSIONS.has(path.extname(target).toLowerCase());
+}
+
+/** Opens a contained path with its default app; executables are revealed instead. */
 export async function openContainedPath(
   root: string,
   requestedPath: string,
   shell: PathShell
-): Promise<void> {
+): Promise<{ action: "opened" | "revealed" }> {
   const target = await resolveExistingContainedPath(root, requestedPath);
+  // A folder named like an executable (`build.cmd/`) is still a folder.
+  if (isExecutableLikePath(target) && !(await stat(target)).isDirectory()) {
+    shell.showItemInFolder(target);
+    return { action: "revealed" };
+  }
   const error = await shell.openPath(target);
   if (error) {
     throw new Error(error);
   }
+  return { action: "opened" };
 }
 
 /**

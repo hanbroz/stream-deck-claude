@@ -40,7 +40,9 @@ function createDependencies() {
   const ensureBridgeInstalled = vi.fn(async () => ({
     changed: false,
     managedCommand: "node bridge.js",
-    cachePath: "D:\\Data\\usage.json"
+    cachePath: "D:\\Data\\usage.json",
+    warnings: [] as string[],
+    nodeMissing: false
   }));
   const validateLaunchFolder = vi.fn(async () => undefined);
   const launchClaudeCompanion = vi.fn<CodeStartLaunchDependencies["launchClaudeCompanion"]>(async () => ({
