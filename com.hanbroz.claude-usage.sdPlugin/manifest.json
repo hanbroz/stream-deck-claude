@@ -1,4 +1,4 @@
-{
+﻿{
   "Name": "Code Deck for Claude Code",
   "Version": "0.17.0.0",
   "Author": "hanbroz",
@@ -70,7 +70,7 @@
   ],
   "Nodejs": {
     "Version": "24",
-    "Debug": "disabled"
+    "Debug": "enabled"
   },
   "UUID": "com.hanbroz.claude-usage"
 }
