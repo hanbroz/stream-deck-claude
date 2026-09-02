@@ -48,7 +48,7 @@ Claude Code provides `rate_limits.five_hour` and `rate_limits.seven_day` through
 
 The bridge and the status-line mirror never touch credentials. Only the last-resort usage-API fallback reads an OAuth access token (`CLAUDE_CODE_OAUTH_TOKEN`, else `~/.claude/.credentials.json`) to call Anthropic's usage endpoint; the token is never logged or written anywhere.
 
-If OMC HUD or another status-line command already owns Claude Code's single status-line slot, ClaudeUsageDeck preserves it. Code Start lifecycle hooks continue to work. Usage keys then read the status-line snapshot OMC persists after every render (`~/.omc/state/hud-stdin-cache.json`, the same `rate_limits` payload OMC HUD displays) and mirror it into `usage.json`, so the 5-hour and weekly values match OMC without replacing OMC's command. OMC's Anthropic usage cache is a secondary source, and the direct usage API is only asked when no status line has rendered recently (it is heavily throttled and backs off for an hour or more after a 429/403). If nothing usable is available the keys show `STATUSLINE BUSY` rather than claiming stale data is live.
+If OMC HUD or another status-line command already owns Claude Code's single status-line slot, ClaudeUsageDeck preserves it. Code Start lifecycle hooks continue to work. Usage keys then read the status-line snapshot OMC persists after every render (`~/.omc/state/hud-stdin-cache.json`, the same `rate_limits` payload OMC HUD displays) and mirror it into `usage.json`, so the 5-hour and weekly values match OMC without replacing OMC's command. OMC's Anthropic usage cache is a secondary source, and the direct usage API is only asked when no status line has rendered recently (it is heavily throttled and backs off for an hour or more after a 429/403). If nothing usable is available the keys show `STATUSLINE BUSY` rather than claiming stale data is live. Companion sessions run `claude --print`, which never renders a status line; the Companion instead mirrors the `rate_limit_event` windows the CLI streams (the same `anthropic-ratelimit-unified-*` data) into `usage.json`, so the keys stay current while you work in the app.
 
 ### Install and use
 
@@ -180,7 +180,7 @@ Code Start의 모델 텍스트 색상은 세션 상태에 따라 변경됩니다
 
 ### 데이터 출처
 
-Claude Code는 상태 표시줄 JSON을 통해 `rate_limits.five_hour`와 `rate_limits.seven_day`를 제공합니다. 다른 상태 표시줄 명령이 없을 때 포함된 브리지는 상태 표시줄을 1초마다 갱신하도록 요청하고, 같은 초기화 구간에서 오래된 세션의 낮은 값이 최신 높은 값을 덮어쓰지 못하게 병합합니다. 이 필드만 `%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`에 저장하며, 이전 설치에서 기록한 원본 명령이 있는 경우에만 원본 입력을 그대로 전달합니다. OMC HUD처럼 다른 명령이 현재 슬롯을 사용 중이면 해당 명령을 바꾸거나 감싸지 않습니다. 대신 OMC가 매 렌더마다 저장하는 상태 표시줄 스냅샷(`~/.omc/state/hud-stdin-cache.json`, OMC HUD가 표시하는 것과 동일한 `rate_limits` 페이로드)을 읽어 `usage.json`에 반영하므로 5시간·주간 값이 OMC와 같게 유지됩니다. OMC의 Anthropic 사용량 캐시는 보조 소스이며, 사용량 API 직접 호출은 최근에 상태 표시줄이 렌더된 적이 없을 때만 시도합니다(강하게 제한되는 API라 429/403 이후에는 1시간 이상 재시도하지 않음). 사용할 수 있는 값이 전혀 없으면 `STATUSLINE BUSY`를 표시합니다.
+Claude Code는 상태 표시줄 JSON을 통해 `rate_limits.five_hour`와 `rate_limits.seven_day`를 제공합니다. 다른 상태 표시줄 명령이 없을 때 포함된 브리지는 상태 표시줄을 1초마다 갱신하도록 요청하고, 같은 초기화 구간에서 오래된 세션의 낮은 값이 최신 높은 값을 덮어쓰지 못하게 병합합니다. 이 필드만 `%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`에 저장하며, 이전 설치에서 기록한 원본 명령이 있는 경우에만 원본 입력을 그대로 전달합니다. OMC HUD처럼 다른 명령이 현재 슬롯을 사용 중이면 해당 명령을 바꾸거나 감싸지 않습니다. 대신 OMC가 매 렌더마다 저장하는 상태 표시줄 스냅샷(`~/.omc/state/hud-stdin-cache.json`, OMC HUD가 표시하는 것과 동일한 `rate_limits` 페이로드)을 읽어 `usage.json`에 반영하므로 5시간·주간 값이 OMC와 같게 유지됩니다. OMC의 Anthropic 사용량 캐시는 보조 소스이며, 사용량 API 직접 호출은 최근에 상태 표시줄이 렌더된 적이 없을 때만 시도합니다(강하게 제한되는 API라 429/403 이후에는 1시간 이상 재시도하지 않음). 사용할 수 있는 값이 전혀 없으면 `STATUSLINE BUSY`를 표시합니다. Companion 세션은 `claude --print`로 실행되어 상태 표시줄을 렌더하지 않으므로, Companion이 CLI가 스트리밍하는 `rate_limit_event`의 창 값(같은 `anthropic-ratelimit-unified-*` 데이터)을 `usage.json`에 반영해 앱에서 작업하는 동안에도 키가 최신으로 유지됩니다.
 
 브리지와 상태 표시줄 미러링은 자격 증명을 전혀 건드리지 않습니다. 최후 수단인 사용량 API 폴백만 OAuth 액세스 토큰(`CLAUDE_CODE_OAUTH_TOKEN`, 없으면 `~/.claude/.credentials.json`)을 읽어 Anthropic 사용량 엔드포인트를 호출하며, 토큰은 어디에도 기록·저장하지 않습니다.
 
@@ -283,7 +283,7 @@ Code Start 的模型文字颜色会根据会话状态变化：
 
 ### 数据来源
 
-Claude Code 通过状态栏 JSON 提供 `rate_limits.five_hour` 和 `rate_limits.seven_day`。没有其他状态栏命令时，内置桥接程序请求每秒刷新状态栏，并防止同一重置窗口中旧会话的较低值覆盖较新的较高值；它只把这些字段保存到 `%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`，并仅在旧安装记录过原始命令时转发原始输入。如果 OMC HUD 等其他命令占用当前槽位，安装程序不会替换或包装该命令；用量键会读取 OMC 每次渲染后保存的状态栏快照（`~/.omc/state/hud-stdin-cache.json`，与 OMC HUD 显示的 `rate_limits` 相同）并同步到 `usage.json`；OMC 的 Anthropic 用量缓存为辅助来源，直接调用用量 API 仅在近期没有状态栏渲染时进行（429/403 后至少退避一小时）。没有任何可用数据时显示 `STATUSLINE BUSY`。
+Claude Code 通过状态栏 JSON 提供 `rate_limits.five_hour` 和 `rate_limits.seven_day`。没有其他状态栏命令时，内置桥接程序请求每秒刷新状态栏，并防止同一重置窗口中旧会话的较低值覆盖较新的较高值；它只把这些字段保存到 `%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`，并仅在旧安装记录过原始命令时转发原始输入。如果 OMC HUD 等其他命令占用当前槽位，安装程序不会替换或包装该命令；用量键会读取 OMC 每次渲染后保存的状态栏快照（`~/.omc/state/hud-stdin-cache.json`，与 OMC HUD 显示的 `rate_limits` 相同）并同步到 `usage.json`；OMC 的 Anthropic 用量缓存为辅助来源，直接调用用量 API 仅在近期没有状态栏渲染时进行（429/403 后至少退避一小时）。没有任何可用数据时显示 `STATUSLINE BUSY`。Companion 会话以 `claude --print` 运行，不渲染状态栏；Companion 会把 CLI 流式输出的 `rate_limit_event` 窗口数据（同样来自 `anthropic-ratelimit-unified-*`）写入 `usage.json`，因此在应用中工作时按键也保持最新。
 
 桥接程序和状态栏镜像不会触碰任何凭据。只有作为最后手段的用量 API 回退会读取 OAuth 访问令牌（`CLAUDE_CODE_OAUTH_TOKEN`，否则为 `~/.claude/.credentials.json`）来调用 Anthropic 用量端点；令牌不会被记录或写入任何地方。
 
@@ -371,7 +371,7 @@ Code Startのモデルテキストは、セッションの状態に応じて色�
 
 ### データソース
 
-Claude CodeはステータスラインJSONを通じて`rate_limits.five_hour`と`rate_limits.seven_day`を提供します。他のステータスラインコマンドがない場合、同梱のブリッジはステータスラインを1秒ごとに更新するよう要求し、同じリセット期間で古いセッションの低い値が新しい高い値を上書きしないようにします。これらのフィールドだけを`%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`に保存し、以前のインストールで記録した元のコマンドがある場合だけ入力を転送します。OMC HUDなど別のコマンドがスロットを使用中の場合は置き換えません。使用量キーはOMCがレンダリングごとに保存するステータスラインのスナップショット（`~/.omc/state/hud-stdin-cache.json`、OMC HUDが表示するのと同じ`rate_limits`）を読み取り`usage.json`へ同期します。OMCのAnthropic使用量キャッシュは補助的なソースで、使用量APIの直接呼び出しは最近ステータスラインが描画されていない場合のみ行います（429/403の後は1時間以上再試行しません）。利用できる値がなければ`STATUSLINE BUSY`を表示します。
+Claude CodeはステータスラインJSONを通じて`rate_limits.five_hour`と`rate_limits.seven_day`を提供します。他のステータスラインコマンドがない場合、同梱のブリッジはステータスラインを1秒ごとに更新するよう要求し、同じリセット期間で古いセッションの低い値が新しい高い値を上書きしないようにします。これらのフィールドだけを`%LOCALAPPDATA%\ClaudeUsageDeck\usage.json`に保存し、以前のインストールで記録した元のコマンドがある場合だけ入力を転送します。OMC HUDなど別のコマンドがスロットを使用中の場合は置き換えません。使用量キーはOMCがレンダリングごとに保存するステータスラインのスナップショット（`~/.omc/state/hud-stdin-cache.json`、OMC HUDが表示するのと同じ`rate_limits`）を読み取り`usage.json`へ同期します。OMCのAnthropic使用量キャッシュは補助的なソースで、使用量APIの直接呼び出しは最近ステータスラインが描画されていない場合のみ行います（429/403の後は1時間以上再試行しません）。利用できる値がなければ`STATUSLINE BUSY`を表示します。Companionセッションは`claude --print`で動作しステータスラインを描画しないため、CLIがストリーミングする`rate_limit_event`のウィンドウ値（同じ`anthropic-ratelimit-unified-*`データ）をCompanionが`usage.json`へ反映し、アプリで作業中もキーが最新に保たれます。
 
 ブリッジとステータスラインのミラーは認証情報に一切触れません。最終手段である使用量APIフォールバックだけがOAuthアクセストークン（`CLAUDE_CODE_OAUTH_TOKEN`、なければ`~/.claude/.credentials.json`）を読み取ってAnthropicの使用量エンドポイントを呼び出します。トークンはどこにも記録・保存されません。
 

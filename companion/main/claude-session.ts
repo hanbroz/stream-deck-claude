@@ -16,7 +16,8 @@ import {
   isClaudeLoginRequiredLine,
   isHookFailureNoise,
   isMissingClaudeConversationError,
-  type ClaudeEvent
+  type ClaudeEvent,
+  type ClaudeRateLimitWindows
 } from "../shared/claude-stream";
 import { diag } from "../shared/diag";
 
@@ -138,6 +139,8 @@ export type ClaudePtyManagerOptions = {
    * belonged to the fresh one.
    */
   onCleared?: () => void;
+  /** Notified with the subscription windows a run reports (rate_limit_event). */
+  onRateLimits?: (windows: ClaudeRateLimitWindows) => void;
 };
 
 export type ClaudePtyEvents = {
@@ -170,6 +173,7 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
   private readonly agentIdleTimeoutMs: number;
   private readonly onContext?: (info: ClaudeContextInfo) => void;
   private readonly onCleared?: () => void;
+  private readonly onRateLimits?: (windows: ClaudeRateLimitWindows) => void;
 
   constructor(options: ClaudePtyManagerOptions = {}) {
     super();
@@ -188,6 +192,7 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
     this.agentIdleTimeoutMs = options.agentIdleTimeoutMs ?? 10 * 60 * 1000;
     this.onContext = options.onContext;
     this.onCleared = options.onCleared;
+    this.onRateLimits = options.onRateLimits;
   }
 
   /**
@@ -425,6 +430,13 @@ export class ClaudePtyManager extends EventEmitter<ClaudePtyEvents> {
               windowTokens: event.windowTokens,
               model: event.model
             });
+          }
+        }
+      }
+      if (this.onRateLimits) {
+        for (const event of events) {
+          if (event.kind === "rateLimits") {
+            this.onRateLimits(event.windows);
           }
         }
       }

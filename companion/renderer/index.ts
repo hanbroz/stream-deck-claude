@@ -3648,6 +3648,8 @@ function applyClaudeEvents(events: readonly ClaudeEvent[]): void {
       renderClaudeStatus("ready");
       releasePendingSends("로그인이 만료되어");
       void offerRelogin();
+    } else if (event.kind === "rateLimits") {
+      // Main mirrors these into the Stream Deck usage cache; nothing to draw here.
     } else {
       // A failed turn never reaches the phase boundary that resolves this, and
       // the error turn below explains the outcome better than the placeholder.

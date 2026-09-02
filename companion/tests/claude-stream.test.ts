@@ -484,3 +484,44 @@ describe("agent tracking", () => {
     }))).toEqual([]);
   });
 });
+
+describe("rate_limit_event", () => {
+  it("lifts the unified windows into percentages the usage keys understand", () => {
+    const parser = new ClaudeStreamParser();
+    parser.push(line({ type: "system", subtype: "init", session_id: "s" }));
+    const events = parser.push(line({
+      type: "rate_limit_event",
+      rate_limit_info: {
+        status: "allowed",
+        rateLimitType: "five_hour",
+        utilization: 0.5,
+        unifiedWindows: {
+          five_hour: { utilization: 0.5, resetsAt: 1_788_342_600 },
+          seven_day: { utilization: 0.22, resetsAt: 1_788_865_200 }
+        }
+      },
+      uuid: "u",
+      session_id: "s"
+    }));
+    expect(events).toEqual([{
+      kind: "rateLimits",
+      windows: {
+        fiveHour: { usedPercentage: 50, resetsAt: 1_788_342_600 },
+        sevenDay: { usedPercentage: 22, resetsAt: 1_788_865_200 }
+      }
+    }]);
+  });
+
+  it("ignores events without windows and clamps overage above 100%", () => {
+    const parser = new ClaudeStreamParser();
+    expect(parser.push(line({ type: "rate_limit_event", rate_limit_info: { status: "allowed" } }))).toEqual([]);
+    const [event] = parser.push(line({
+      type: "rate_limit_event",
+      rate_limit_info: { status: "rejected", unifiedWindows: { five_hour: { utilization: 1.3, resetsAt: 1_788_342_600_000 } } }
+    }));
+    expect(event).toEqual({
+      kind: "rateLimits",
+      windows: { fiveHour: { usedPercentage: 100, resetsAt: 1_788_342_600 } }
+    });
+  });
+});

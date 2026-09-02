@@ -36,7 +36,58 @@ export type ClaudeEvent =
   | { kind: "agent"; op: "end"; toolUseId: string; outcome: AgentOutcome }
   | { kind: "error"; message: string; missingConversation: boolean }
   // Not a failure of the conversation: the account simply has to log in again.
-  | { kind: "login"; message: string };
+  | { kind: "login"; message: string }
+  | { kind: "rateLimits"; windows: ClaudeRateLimitWindows };
+
+export type ClaudeRateLimitWindow = { usedPercentage: number; resetsAt: number };
+export type ClaudeRateLimitWindows = {
+  fiveHour?: ClaudeRateLimitWindow;
+  sevenDay?: ClaudeRateLimitWindow;
+};
+
+function parseUnifiedWindow(value: unknown): ClaudeRateLimitWindow | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const utilization = value.utilization;
+  const resetsAt = value.resetsAt;
+  if (
+    typeof utilization !== "number" || !Number.isFinite(utilization) ||
+    typeof resetsAt !== "number" || !Number.isFinite(resetsAt) || resetsAt <= 0
+  ) {
+    return undefined;
+  }
+  // `utilization` is the fraction of the window used (0-1, above 1 in
+  // overage); the status line reports the same number as a percentage.
+  return {
+    usedPercentage: Math.min(100, Math.max(0, utilization * 100)),
+    // Epoch seconds, like the status line's resets_at; tolerate milliseconds.
+    resetsAt: resetsAt > 10_000_000_000 ? Math.floor(resetsAt / 1000) : resetsAt
+  };
+}
+
+/**
+ * The subscription windows carried by a stream-json `rate_limit_event`
+ * (`rate_limit_info.unifiedWindows`, read by the CLI from the
+ * anthropic-ratelimit-unified-* response headers). A `--print` run never
+ * renders a status line, so this is the only place a Companion session
+ * learns the five-hour / weekly usage the Stream Deck keys show.
+ */
+export function parseRateLimitEvent(message: unknown): ClaudeRateLimitWindows | undefined {
+  if (!isRecord(message) || message.type !== "rate_limit_event" || !isRecord(message.rate_limit_info)) {
+    return undefined;
+  }
+  const unified = message.rate_limit_info.unifiedWindows;
+  if (!isRecord(unified)) {
+    return undefined;
+  }
+  const fiveHour = parseUnifiedWindow(unified.five_hour);
+  const sevenDay = parseUnifiedWindow(unified.seven_day);
+  if (!fiveHour && !sevenDay) {
+    return undefined;
+  }
+  return { ...(fiveHour ? { fiveHour } : {}), ...(sevenDay ? { sevenDay } : {}) };
+}
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const LONG_CONTEXT_WINDOW = 1_000_000;
@@ -303,6 +354,10 @@ export class ClaudeStreamParser {
         return this.parseAssistant(message);
       case "user":
         return this.parseUser(message);
+      case "rate_limit_event": {
+        const windows = parseRateLimitEvent(message);
+        return windows ? [{ kind: "rateLimits", windows }] : [];
+      }
       case "result":
         // `result` can arrive minutes late from async hooks, so it must never be
         // treated as the end of a turn. Only surface genuine failures.

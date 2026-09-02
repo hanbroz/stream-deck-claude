@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { registerCompanionIpc } from "./ipc";
 import { ProjectTerminalManager } from "./terminal-session";
+import { writeUsageRateLimits } from "./usage-mirror";
 import { newestClaudeConversationId, resolveCompanionRuntimeEnv } from "./paths";
 import { createCompanionWindow } from "./window";
 import os from "node:os";
@@ -295,7 +296,16 @@ async function start(): Promise<void> {
               // The key simply keeps its last value if the snapshot write fails.
             });
           },
-          onCleared: () => forgetContextUsage(false)
+          onCleared: () => forgetContextUsage(false),
+          // A --print run renders no status line, so the usage keys would
+          // never see this session's five-hour / weekly windows otherwise.
+          onRateLimits: (windows) => {
+            void writeUsageRateLimits(runtimeEnv.usageDataDir, windows).catch((error: unknown) => {
+              diag("main.usageMirror.error", {
+                reason: error instanceof Error ? error.message : "unknown"
+              });
+            });
+          }
       });
 
       // Mirror the conversation phase onto the key's activity dot: without
