@@ -25,6 +25,33 @@ import {
 } from "../shared/composer";
 
 describe("composer", () => {
+  it.each([
+    ["too many images", Array.from({ length: 11 }, () => "data:image/png;base64,AA==")],
+    ["oversized image", ["data:image/png;base64," + "A".repeat(20 * 1024 * 1024)]],
+    ["oversized batch", Array.from({ length: 2 }, () => "data:image/png;base64," + "A".repeat(16 * 1024 * 1024))],
+    ["invalid image", ["data:text/plain;base64,AA=="]]
+  ])("keeps the whole draft when submitting %s", (_label, dataUrls) => {
+    const state = addComposerPaste(
+      addComposerImages(setComposerText(createComposerState(), "keep my draft"), dataUrls.map((dataUrl, index) => ({
+        id: String(index), name: `${index}.png`, mimeType: "image/png", dataUrl
+      }))),
+      { id: "paste", text: "keep my attachment", lineCount: 1 }
+    );
+    const result = submitComposer(state);
+    expect(result.intent?.images.length).toBeUndefined();
+    expect(result.state).toBe(state);
+    expect(result.error).toBeTruthy();
+  });
+
+  it("still submits ten valid images at the batch size boundary", () => {
+    const header = "data:image/png;base64,";
+    const dataUrl = header + "A".repeat(3 * 1024 * 1024 - header.length);
+    const state = addComposerImages(createComposerState(), Array.from({ length: 10 }, (_, index) => ({
+      id: String(index), name: `${index}.png`, mimeType: "image/png", dataUrl
+    })));
+    expect(submitComposer(state).intent?.images).toHaveLength(10);
+  });
+
   it("submits trimmed multiline text and clears the draft", () => {
     const state = setComposerText(createComposerState(), "  첫 줄\n둘째 줄  ");
 

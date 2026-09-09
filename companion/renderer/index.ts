@@ -1718,16 +1718,22 @@ async function copyDroppedFiles(destination: string, files: File[]): Promise<voi
     return;
   }
 
+  const pathFailures: string[] = [];
   const sourcePaths = files
     .map((file) => {
       try {
         // webUtils.getPathForFile throws for a File with no filesystem path
         // (a virtual or cloud-provider item). Treat it like an unreadable
         // entry rather than letting the drop die as an unhandled rejection.
-        return api.paths.filePath(file);
+        const sourcePath = api.paths.filePath(file);
+        if (sourcePath.length > 0) {
+          return sourcePath;
+        }
       } catch {
-        return "";
+        // Include failures before IPC in the final partial-copy summary.
       }
+      pathFailures.push(file.name);
+      return "";
     })
     .filter((entry) => entry.length > 0);
   if (sourcePaths.length === 0) {
@@ -1757,13 +1763,14 @@ async function copyDroppedFiles(destination: string, files: File[]): Promise<voi
     showToast("복사하지 못했습니다.");
     return;
   }
+  result = { ...result, failed: [...result.failed, ...pathFailures] };
 
   try {
     await refreshTree();
   } catch {
     // The copy already landed; only the tree is stale. Saying "복사하지 못했습니다"
     // here would send the user back to drag again and make a (1) duplicate.
-    showToast("복사했지만 탐색기를 새로고침하지 못했습니다.");
+    showToast(`${copyResultMessage(result)} 탐색기를 새로고침하지 못했습니다.`);
     return;
   }
 
@@ -2593,6 +2600,11 @@ function submitPrompt(): void {
   composer = setComposerText(composer, promptInput.value);
   const result = submitComposer(composer);
   composer = result.state;
+
+  if (result.error) {
+    showToast(result.error);
+    return;
+  }
 
   diag("renderer.submitPrompt", {
     inputLength: promptInput.value.length,

@@ -292,6 +292,19 @@ describe("registerCompanionIpc", () => {
     expect(clear).toHaveBeenCalledWith("s");
   });
 
+  it("still rejects invalid image batches at IPC even when composer validation is bypassed", () => {
+    const write = vi.fn();
+    const ipcMain = registerFor({ ptyManager: { on: vi.fn(), write } });
+    const invoke = ipcMain.handlers.get(COMPANION_IPC.claudeWrite)!;
+    const image = "data:image/png;base64,AA==";
+    for (const invalid of [Array(11).fill(image), [undefined], ["data:text/plain;base64,AA=="], "not-an-array"]) {
+      expect(() => invoke({}, "session", "prompt", invalid)).toThrow();
+    }
+    expect(write).not.toHaveBeenCalled();
+    invoke({}, "session", "prompt", [image]);
+    expect(write).toHaveBeenCalledWith("session", "prompt", [image]);
+  });
+
   /**
    * Only the renderer can tell a real compaction from the CLI declining one,
    * and the usage it invalidated is held in the main process — so this hop is

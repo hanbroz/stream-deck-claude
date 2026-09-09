@@ -1,4 +1,5 @@
 import type { WebContents } from "electron";
+import { optionalImageDataUrl, optionalImageDataUrls } from "../shared/image-attachments";
 
 import {
   CLAUDE_EFFORTS,
@@ -108,43 +109,6 @@ function requireStringArray(value: unknown, label: string): string[] {
     throw new Error(`${label} must be an array of strings`);
   }
   return value as string[];
-}
-
-function optionalImageDataUrl(value: unknown): string | undefined {
-  const dataUrl = optionalString(value, "imageDataUrl");
-  if (dataUrl === undefined) {
-    return undefined;
-  }
-  if (dataUrl.length > 20 * 1024 * 1024 || !/^data:image\/[a-z0-9.+-]+;base64,/iu.test(dataUrl)) {
-    throw new Error("imageDataUrl must be a base64 encoded image under 20 MB");
-  }
-  return dataUrl;
-}
-
-function optionalImageDataUrls(value: unknown): string[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (!Array.isArray(value)) {
-    throw new Error("imageDataUrls must be an array");
-  }
-  // The per-image ceiling says nothing about the batch, and images ride in the
-  // prefix of every later turn the same way a paste does.
-  if (value.length > 10) {
-    throw new Error("imageDataUrls must contain at most 10 images");
-  }
-  const dataUrls = value.map((entry) => {
-    const dataUrl = optionalImageDataUrl(entry);
-    if (!dataUrl) {
-      throw new Error("imageDataUrls must contain image data URLs");
-    }
-    return dataUrl;
-  });
-  const total = dataUrls.reduce((sum, dataUrl) => sum + dataUrl.length, 0);
-  if (total > 30 * 1024 * 1024) {
-    throw new Error("imageDataUrls must total under 30 MB");
-  }
-  return dataUrls;
 }
 
 function requireClaudeModel(value: unknown): ClaudeModel {

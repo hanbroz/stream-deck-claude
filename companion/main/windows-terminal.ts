@@ -18,11 +18,12 @@ export function createWindowsTerminalFolderPlan(
   folder: string,
   command?: string
 ): WindowsTerminalPlan {
+  const windowsTerminalFolder = folder.replaceAll(";", "\\;");
   return {
     command: "wt.exe",
     args: command === undefined
-      ? ["-d", folder]
-      : ["-d", folder, "powershell.exe", "-NoLogo", "-NoExit", "-Command", command],
+      ? ["-d", windowsTerminalFolder]
+      : ["-d", windowsTerminalFolder, "powershell.exe", "-NoLogo", "-NoExit", "-Command", command],
     cwd: folder
   };
 }
@@ -41,4 +42,3 @@ export function openWindowsTerminalFolder(folder: string, command?: string): Chi
   child.once("error", () => undefined);
   return child;
 }
-

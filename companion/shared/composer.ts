@@ -1,3 +1,5 @@
+import { imageAttachmentErrorMessage } from "./image-attachments";
+
 export type ComposerImage = {
   id: string;
   name: string;
@@ -155,9 +157,14 @@ export function composeOutgoingText(intent: SubmitIntent): string {
   return [intent.text, ...blocks].filter((part) => part.length > 0).join("\n\n");
 }
 
-export function submitComposer(state: ComposerState): { state: ComposerState; intent?: SubmitIntent } {
+export function submitComposer(state: ComposerState): { state: ComposerState; intent?: SubmitIntent; error?: string } {
   if (state.isComposing) {
     return { state };
+  }
+
+  const error = imageAttachmentErrorMessage(state.images.map((image) => image.dataUrl));
+  if (error) {
+    return { state, error };
   }
 
   const text = state.text.trim();

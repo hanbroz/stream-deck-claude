@@ -10,6 +10,14 @@ describe("createWindowsTerminalFolderPlan", () => {
       cwd: "D:\\Projects\\A & B"
     });
   });
+
+  it("escapes semicolons only in the wt.exe folder argument", () => {
+    expect(createWindowsTerminalFolderPlan("D:\\Projects\\A ; B")).toEqual({
+      command: "wt.exe",
+      args: ["-d", "D:\\Projects\\A \\; B"],
+      cwd: "D:\\Projects\\A ; B"
+    });
+  });
 });
 
 describe("createWindowsTerminalFolderPlan with a command", () => {
@@ -26,6 +34,22 @@ describe("createWindowsTerminalFolderPlan with a command", () => {
         "claude auth login"
       ],
       cwd: "D:\\Projects\\A & B"
+    });
+  });
+
+  it("escapes semicolons only in the wt.exe folder argument before relogin", () => {
+    expect(createWindowsTerminalFolderPlan("D:\\Projects\\A ; B", "claude auth login")).toEqual({
+      command: "wt.exe",
+      args: [
+        "-d",
+        "D:\\Projects\\A \\; B",
+        "powershell.exe",
+        "-NoLogo",
+        "-NoExit",
+        "-Command",
+        "claude auth login"
+      ],
+      cwd: "D:\\Projects\\A ; B"
     });
   });
 });

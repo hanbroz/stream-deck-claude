@@ -72,6 +72,9 @@ export async function writeUsageRateLimits(
   const lock = await acquireLock(lockPath);
   try {
     const existing = await readExisting(cachePath);
+    if (existing && existing.capturedAt > capturedAt) {
+      return;
+    }
     const complete = windows.fiveHour !== undefined && windows.sevenDay !== undefined;
     const rateLimits: ClaudeRateLimitWindows = complete || !existing
       ? windows
