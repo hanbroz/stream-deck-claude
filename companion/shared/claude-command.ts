@@ -143,6 +143,7 @@ export const COMPANION_IPC = {
   gitBranch: "companion:git:branch",
   cliRun: "companion:cli:run",
   pathList: "companion:path:list",
+  pathChanged: "companion:path:changed",
   pathCreateDirectory: "companion:path:create-directory",
   pathCreateFile: "companion:path:create-file",
   pathRename: "companion:path:rename",

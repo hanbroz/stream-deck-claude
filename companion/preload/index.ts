@@ -65,6 +65,7 @@ export type ClaudeCompanionApi = {
   };
   paths: {
     list(path?: string): Promise<DirectoryEntry[]>;
+    onChanged(listener: () => void): () => void;
     createDirectory(parentPath: string, name: string): Promise<string>;
     createFile(parentPath: string, name: string, content?: string): Promise<string>;
     /** Rename an entry in place; resolves with its new absolute path. */
@@ -183,6 +184,7 @@ const api: ClaudeCompanionApi = {
   },
   paths: {
     list: (path) => ipcRenderer.invoke(COMPANION_IPC.pathList, path),
+    onChanged: (listener) => subscribe(COMPANION_IPC.pathChanged, listener),
     createDirectory: (parentPath, name) =>
       ipcRenderer.invoke(COMPANION_IPC.pathCreateDirectory, parentPath, name),
     createFile: (parentPath, name, content = "") =>

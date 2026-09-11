@@ -11,7 +11,7 @@ import {
   type ClaudeSessionStartRequest,
   type TerminalSessionStartRequest
 } from "../shared/claude-command";
-import { ClaudePtyManager, type ClipboardImageReader } from "./claude-session";
+import { ClaudePtyManager, type ClaudePtyEvents, type ClipboardImageReader } from "./claude-session";
 import { diag, emitDiagLine } from "../shared/diag";
 import { readGitBranch } from "./git-branch";
 import { runBridgedCliCommand, type CliCommandResult } from "./cli-command";
@@ -30,11 +30,12 @@ import {
   type PathShell
 } from "./paths";
 import { searchProjectText, type ProjectSearchResult } from "./project-search";
-import { ProjectTerminalManager } from "./terminal-session";
+import { ProjectTerminalManager, type ProjectTerminalEvents } from "./terminal-session";
 import type { ConversationHistoryReader, HistoryPage } from "./transcript-history";
 import type { SlashCommand } from "../shared/slash-commands";
 import type { CompanionSessionStatus } from "./session-status";
 import { openWindowsTerminalFolder } from "./windows-terminal";
+import { ExplorerWatcher } from "./explorer-watcher";
 
 export type CompanionIpcDependencies = {
   ipcMain: {
@@ -48,7 +49,10 @@ export type CompanionIpcDependencies = {
     ): void;
   };
   window: {
+    isDestroyed?(): boolean;
+    once?(event: "closed", handler: () => void): void;
     webContents: {
+      isDestroyed?(): boolean;
       send(channel: string, ...args: unknown[]): void;
     };
     minimize?(): void;
@@ -176,26 +180,51 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
   const terminalManager = deps.terminalManager ?? new ProjectTerminalManager();
   const openTerminal = deps.openTerminalFolder ?? openWindowsTerminalFolder;
 
-  ptyManager.on("data", (sessionId, events) => {
+  // PTY output/exit can arrive after BrowserWindow closes, including output
+  // drained by killAll during before-quit. Never read a destroyed window's
+  // webContents getter or send to webContents that has already been destroyed.
+  const sendToRenderer = (channel: string, payload: unknown): void => {
+    if (deps.window.isDestroyed?.()) return;
+    const contents = deps.window.webContents;
+    if (contents.isDestroyed?.()) return;
+    contents.send(channel, payload);
+  };
+  const explorerWatcher = new ExplorerWatcher(
+    () => sendToRenderer(COMPANION_IPC.pathChanged, undefined),
+    (error) => diag("main.explorer.watch.error", { reason: String(error) })
+  );
+  const onClaudeData = (...[sessionId, events]: ClaudePtyEvents["data"]): void => {
     diag("main.ipc.claudeData.send", { sessionId, eventCount: events.length });
-    deps.window.webContents.send(COMPANION_IPC.claudeData, { sessionId, events });
-  });
-  ptyManager.on("exit", (sessionId, exitCode, signal) => {
-    deps.window.webContents.send(COMPANION_IPC.claudeExit, {
+    sendToRenderer(COMPANION_IPC.claudeData, { sessionId, events });
+  };
+  const onClaudeExit = (...[sessionId, exitCode, signal]: ClaudePtyEvents["exit"]): void => {
+    sendToRenderer(COMPANION_IPC.claudeExit, {
       sessionId,
       exitCode,
       signal
     });
-  });
-  terminalManager.on("data", (sessionId, data) => {
-    deps.window.webContents.send(COMPANION_IPC.terminalData, { sessionId, data });
-  });
-  terminalManager.on("exit", (sessionId, exitCode, signal) => {
-    deps.window.webContents.send(COMPANION_IPC.terminalExit, {
+  };
+  const onTerminalData = (...[sessionId, data]: ProjectTerminalEvents["data"]): void => {
+    sendToRenderer(COMPANION_IPC.terminalData, { sessionId, data });
+  };
+  const onTerminalExit = (...[sessionId, exitCode, signal]: ProjectTerminalEvents["exit"]): void => {
+    sendToRenderer(COMPANION_IPC.terminalExit, {
       sessionId,
       exitCode,
       signal
     });
+  };
+  ptyManager.on("data", onClaudeData);
+  ptyManager.on("exit", onClaudeExit);
+  terminalManager.on("data", onTerminalData);
+  terminalManager.on("exit", onTerminalExit);
+  deps.window.once?.("closed", () => {
+    explorerWatcher.close();
+    // Other subscribers still own session accounting and shutdown cleanup.
+    ptyManager.off("data", onClaudeData);
+    ptyManager.off("exit", onClaudeExit);
+    terminalManager.off("data", onTerminalData);
+    terminalManager.off("exit", onTerminalExit);
   });
 
   deps.ipcMain.handle(
@@ -219,9 +248,16 @@ export function registerCompanionIpc(deps: CompanionIpcDependencies): ClaudePtyM
       return ptyManager.pasteClipboardImage(requireString(sessionId, "sessionId"), deps.clipboard);
     }
   );
-  deps.ipcMain.handle(COMPANION_IPC.pathList, (_event: SenderEvent, path = ".") =>
-    listContainedDirectory(deps.rootPath, requireString(path, "path"))
-  );
+  deps.ipcMain.handle(COMPANION_IPC.pathList, async (_event: SenderEvent, path = ".") => {
+    const directory = await resolveContainedDirectory(deps.rootPath, requireString(path, "path"));
+    // Subscribe before reading so a change during the initial listing is not lost.
+    // Only directories the explorer has loaded need watching; unopened folders
+    // read fresh on expansion, avoiding recursive watches over dependency trees.
+    explorerWatcher.observe(directory);
+    const entries = await listContainedDirectory(deps.rootPath, directory);
+    explorerWatcher.reconcile(directory, entries.filter((entry) => entry.isDirectory).map((entry) => entry.path));
+    return entries;
+  });
   deps.ipcMain.handle(
     COMPANION_IPC.pathCreateDirectory,
     (_event: SenderEvent, parentPath: unknown, name: unknown) =>

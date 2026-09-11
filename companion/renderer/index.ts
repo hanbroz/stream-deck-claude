@@ -205,6 +205,12 @@ const projectRoot = api?.runtime.folder || ".";
 let treeRoots: TreeNode[] = [];
 let selectedPath: string | undefined;
 let contextPath: string | undefined;
+let treeReady = false;
+let treeRefreshChain: Promise<void> = Promise.resolve();
+let automaticTreeRefreshPending = false;
+let automaticTreeRefreshRunning = false;
+let automaticTreeRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+let treeDisposed = false;
 let composer: ComposerState = createComposerState();
 // Shell-style input history: sent messages (oldest first) recalled with Up/Down.
 // historyIndex points into inputHistory; === length means the live draft.
@@ -1777,6 +1783,18 @@ async function copyDroppedFiles(destination: string, files: File[]): Promise<voi
   showToast(copyResultMessage(result));
 }
 
+const unsubscribeTreeChanges = api?.paths.onChanged(() => scheduleAutomaticTreeRefresh());
+// Focus also reconciles events missed while asleep or after a watcher error.
+window.addEventListener("focus", () => scheduleAutomaticTreeRefresh());
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) scheduleAutomaticTreeRefresh();
+});
+window.addEventListener("beforeunload", () => {
+  treeDisposed = true;
+  unsubscribeTreeChanges?.();
+  clearTimeout(automaticTreeRefreshTimer);
+});
+
 void initialize();
 
 function mustElement<T extends HTMLElement>(id: string): T {
@@ -1812,7 +1830,9 @@ async function initialize(): Promise<void> {
   const rootChildren = entriesToNodes((await api?.paths.list(projectRoot)) ?? []);
   treeRoots = replaceRoots(rootChildren);
   selectedPath = projectRoot;
+  treeReady = true;
   renderTree();
+  if (automaticTreeRefreshPending) scheduleAutomaticTreeRefresh();
 
   const resumeCandidateId = api?.runtime.resumeCandidateId;
   if (resumeCandidateId && api.runtime.folder) {
@@ -2276,42 +2296,94 @@ async function toggleDirectory(node: TreeNode): Promise<void> {
   }
 }
 
-/**
- * Re-list the whole project from disk — every folder already opened, not just
- * the one that was clicked — keeping the expanded state of entries that still
- * exist.
- *
- * Refreshing only one level made entries invisible for as long as the app
- * stayed open: files that appear while it is idle (a git checkout or merge, a
- * build) are rarely in the folder the user happens to right-click, and no
- * amount of refreshing elsewhere brought them in.
- *
- * The walk is one `paths.list` per opened folder, so it spans many awaits. It
- * starts from a snapshot of `treeRoots` and returns a whole replacement tree, so
- * a folder expanded while it ran was silently collapsed again by the result.
- * Every tree update replaces the array rather than mutating it, which makes
- * reference identity a reliable "did anything change" test: when it changed, the
- * walk is stale and is redone against the newer tree.
- */
-async function refreshTree(): Promise<void> {
-  // Retries are bounded so a user working the chevrons cannot spin this
-  // forever, and the last attempt commits unconditionally: callers here report
-  // success ("Explorer refreshed.", a completed copy, a created file), so a
-  // silently dropped refresh would leave them lying about what is on screen.
-  // Each attempt re-reads treeRoots, so the committing walk starts from the
-  // freshest tree and can lose at most a toggle made during that last walk.
+// Automatic refresh must not replace an editor, menu target, or drag target.
+function automaticTreeRefreshPaused(): boolean {
+  return !treeReady || document.hidden || !contextMenu.hidden ||
+    Boolean(treeElement.querySelector(".inline-create")) || Boolean(dropTargetRow) || dropTargetIsRoot;
+}
+
+function scheduleAutomaticTreeRefresh(delay = 0): void {
+  if (treeDisposed) return;
+  automaticTreeRefreshPending = true;
+  if (automaticTreeRefreshTimer !== undefined || automaticTreeRefreshRunning) return;
+  automaticTreeRefreshTimer = setTimeout(() => { void flushAutomaticTreeRefresh(); }, delay);
+}
+
+async function flushAutomaticTreeRefresh(): Promise<void> {
+  automaticTreeRefreshTimer = undefined;
+  if (treeDisposed || !automaticTreeRefreshPending) return;
+  // Hidden windows resume on visibility/focus without polling the filesystem.
+  if (!treeReady || document.hidden) return;
+  if (automaticTreeRefreshPaused()) {
+    scheduleAutomaticTreeRefresh(700);
+    return;
+  }
+  automaticTreeRefreshPending = false;
+  automaticTreeRefreshRunning = true;
+  let retryDelay = 700;
+  try {
+    await refreshTree(true);
+  } catch (error) {
+    automaticTreeRefreshPending = true;
+    retryDelay = 5_000;
+    diag("renderer.explorer.refresh.error", { reason: String(error) });
+  } finally {
+    automaticTreeRefreshRunning = false;
+    if (automaticTreeRefreshPending) scheduleAutomaticTreeRefresh(retryDelay);
+  }
+}
+
+function refreshTree(automatic = false): Promise<void> {
+  // Manual actions must await their own read, while automatic notifications
+  // coalesce into at most one pending refresh. Neither can overwrite the other.
+  const refresh = treeRefreshChain.then(() => performTreeRefresh(automatic));
+  treeRefreshChain = refresh.catch(() => {});
+  return refresh;
+}
+
+async function performTreeRefresh(automatic: boolean): Promise<void> {
+  // Re-list every loaded folder, preserving surviving nodes' expanded state.
+  // Each await permits user interaction. Tree updates replace the array, so
+  // identity detects a stale snapshot and retries against the user's new state.
+  // Manual callers need completion; their final attempt commits. Automatic
+  // refresh instead defers if all three attempts race with user interaction.
   const attempts = 3;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (treeDisposed) return;
+    if (automatic && automaticTreeRefreshPaused()) {
+      scheduleAutomaticTreeRefresh(700);
+      return;
+    }
     const snapshot = treeRoots;
     const refreshed = await refreshLoadedTree(projectRoot, snapshot, async (directoryPath) =>
       entriesToNodes((await api?.paths.list(directoryPath)) ?? [])
     );
-    if (treeRoots === snapshot || attempt === attempts - 1) {
+    if (treeDisposed) return;
+    // An inline editor or menu may have opened while IPC was in flight.
+    if (automatic && automaticTreeRefreshPaused()) {
+      scheduleAutomaticTreeRefresh(700);
+      return;
+    }
+    if (treeRoots === snapshot || (!automatic && attempt === attempts - 1)) {
+      // Atomic saves can emit rename events without changing the listing.
+      // Leave the DOM (focus, scroll and double-click targets) intact in that case.
+      if (automatic && JSON.stringify(snapshot) === JSON.stringify(refreshed)) return;
       treeRoots = refreshed;
-      break;
+      if (selectedPath && !nodeAt(selectedPath)) selectedPath = projectRoot;
+      if (contextPath && !nodeAt(contextPath)) contextPath = undefined;
+      const scrollTop = treeElement.scrollTop;
+      const focusedPath = treeElement.contains(document.activeElement)
+        ? (document.activeElement as HTMLElement)?.dataset.path : undefined;
+      renderTree();
+      treeElement.scrollTop = scrollTop;
+      if (focusedPath) {
+        treeElement.querySelector<HTMLElement>(`[data-path="${cssEscape(focusedPath)}"]`)?.focus({ preventScroll: true });
+      }
+      return;
     }
   }
-  renderTree();
+  // User interaction wins over a stale automatic snapshot; retry after it settles.
+  scheduleAutomaticTreeRefresh(700);
 }
 
 async function refreshNode(): Promise<void> {
