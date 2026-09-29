@@ -2145,7 +2145,7 @@ function renderStatus(status: SessionStatus): void {
   // message will use) so the bar never reads a stale bridge value.
   sessionModel.textContent =
     parseModelId(lastStreamModel)?.label ??
-    parseModelId(REPRESENTATIVE_MODEL_ID[claudeModel])?.label ??
+    parseModelId(learnedModelId(claudeModel) ?? REPRESENTATIVE_MODEL_ID[claudeModel])?.label ??
     formatModelName(status.model);
   renderContextMeter(status);
 }
@@ -2164,6 +2164,29 @@ function updateModelOptionLabel(model: string | undefined): void {
   if (option && option.textContent !== display.label) {
     option.textContent = display.label;
   }
+  try {
+    window.localStorage.setItem(`claude-companion:model:${display.family}`, model!.trim());
+  } catch {
+    // Persistence only keeps the label fresh across restarts.
+  }
+}
+
+/**
+ * The last id each alias actually resolved to. The picker sends the alias
+ * (`opus`), so the CLI already runs the newest release; remembering what it
+ * reported keeps the label on that release after a restart instead of the
+ * version baked into index.html.
+ */
+function learnedModelId(family: string): string | null {
+  try {
+    return window.localStorage.getItem(`claude-companion:model:${family}`);
+  } catch {
+    return null;
+  }
+}
+
+for (const option of Array.from(modelSelect.options)) {
+  updateModelOptionLabel(learnedModelId(option.value) ?? undefined);
 }
 
 function renderContextMeter(status: SessionStatus): void {
