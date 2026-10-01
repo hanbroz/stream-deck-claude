@@ -51,6 +51,9 @@ export function describeLaunchFailure(
   if (message.includes("Code Deck Companion executable was not found")) {
     return "Code Deck Companion 실행 파일을 찾을 수 없습니다.";
   }
+  if (message.includes("Visual Studio Code executable was not found")) {
+    return "VS Code 실행 파일을 찾을 수 없습니다. 설치 여부를 확인해 주세요.";
+  }
 
   return [
     "Code Start 실행에 실패했습니다.",

@@ -216,7 +216,7 @@ describe("unreported activity", () => {
 
   // Terminal mode never updates the activity record, so the key blinked for
   // input all day while the session worked. An unreported session gets neither
-  // animation and a neutral colour instead of idle's red.
+  // animation, in the open (running) green — grey read as a closed project.
   it("draws neither the blink nor the sweep, in any frame", () => {
     const backgroundOf = (svg: string): string =>
       /data-role="key-bg"[^>]*fill="([^"]+)"/.exec(svg)?.[1] ?? "";
@@ -227,7 +227,7 @@ describe("unreported activity", () => {
       const svg = renderCodeStartKey("DEMO", { ...base, activity: "unknown" }, frame);
       expect(backgroundOf(svg)).toBe("#17130f");
       expect(svg).not.toContain("context-sweep");
-      expect(modelColorOf(svg)).toBe("#a49a92");
+      expect(modelColorOf(svg)).toBe("#60d3a3");
     }
   });
 });

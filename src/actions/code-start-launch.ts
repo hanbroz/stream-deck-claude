@@ -11,7 +11,8 @@ import type {
 } from "../io/context-session-cache";
 import type {
   focusCompanionWindow,
-  launchClaudeCompanion
+  launchClaudeCompanion,
+  launchVsCode
 } from "../services/companion-launcher";
 import type { showErrorDialog } from "../services/error-dialog";
 import type {
@@ -27,7 +28,7 @@ import { describeLaunchFailure } from "./launch-failure-message";
  * setting is absent, so keys configured before this choice existed keep the
  * behaviour they were set up with.
  */
-export type CodeStartLaunchMode = "companion" | "terminal";
+export type CodeStartLaunchMode = "companion" | "terminal" | "vscode";
 
 export const DEFAULT_LAUNCH_MODE: CodeStartLaunchMode = "companion";
 // Reported once per plugin lifetime, not on every launch.
@@ -57,6 +58,7 @@ export type CodeStartLaunchDependencies = {
   ensureBridgeInstalled: typeof ensureBridgeInstalled;
   launchClaudeCompanion: typeof launchClaudeCompanion;
   launchClaudeTerminal: typeof launchClaudeTerminal;
+  launchVsCode: typeof launchVsCode;
   findRunningCompanionLaunch: typeof findRunningCompanionLaunch;
   focusCompanionWindow: typeof focusCompanionWindow;
   claudeConversationExists: typeof claudeConversationExists;
@@ -94,13 +96,15 @@ export function configuredProjectName(settings: CodeStartLaunchSettings): string
 }
 
 /**
- * Only an explicit "terminal" switches away from the app. Anything else — the
- * setting missing on a key from before this option, or a value a hand-edited
- * profile got wrong — stays on the Companion, which is the mode with the fuller
- * feature set.
+ * Only an explicit "terminal" or "vscode" switches away from the app. Anything
+ * else — the setting missing on a key from before this option, or a value a
+ * hand-edited profile got wrong — stays on the Companion, which is the mode with
+ * the fuller feature set.
  */
 export function configuredLaunchMode(settings: CodeStartLaunchSettings): CodeStartLaunchMode {
-  return settings.launchMode === "terminal" ? "terminal" : DEFAULT_LAUNCH_MODE;
+  return settings.launchMode === "terminal" || settings.launchMode === "vscode"
+    ? settings.launchMode
+    : DEFAULT_LAUNCH_MODE;
 }
 
 export function configuredBindingId(settings: CodeStartLaunchSettings): string | undefined {
@@ -112,7 +116,7 @@ export function configuredBindingId(settings: CodeStartLaunchSettings): string |
 export function defaultCodeStartLaunchDependencies(
   overrides: Pick<
     CodeStartLaunchDependencies,
-    "ensureBridgeInstalled" | "launchClaudeCompanion" | "launchClaudeTerminal" |
+    "ensureBridgeInstalled" | "launchClaudeCompanion" | "launchClaudeTerminal" | "launchVsCode" |
       "findRunningCompanionLaunch" |
       "focusCompanionWindow" | "claudeConversationExists" |
       "clearContextSessionResumePointer" | "readContextSessionResumePointer" |
@@ -164,6 +168,20 @@ export async function launchConfiguredCodeStart(options: CodeStartLaunchOptions)
   }
 
   try {
+    if (launchMode === "vscode") {
+      // VS Code's own extension runs Claude here, so there is no process of
+      // ours to record, focus or resume: the key opens the folder and then
+      // stays idle. A second press is safe — VS Code focuses the window it
+      // already has for the folder. Checked before the running-Companion
+      // lookup, which would otherwise focus an app window for this folder.
+      await action.setImage(
+        dependencies.renderCodeStartKeyImage(projectName, { kind: "starting", activity: "running" })
+      );
+      await dependencies.launchVsCode(folder);
+      dependencies.logger.info("Code Start opened the folder in VS Code.");
+      await action.showOk();
+      return;
+    }
     {
       // A second press for the same folder focuses the app that is already
       // open instead of spawning a twin, which would also rotate the launch id

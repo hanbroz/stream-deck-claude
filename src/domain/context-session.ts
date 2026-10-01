@@ -39,7 +39,8 @@ export type ActiveCodeLaunch = {
  * nobody is reporting at all. That is the truth for terminal mode: the CLI runs
  * in a plain PTY that emits no phase, so the record sits at the opening
  * `waiting` the Companion stamps and blinks the key for input while the session
- * is working. See loadCodeStartDisplayState.
+ * is working. See loadCodeStartDisplayState. VS Code mode uses it too: the key
+ * only knows the folder's window is open. Drawn as "open", without animation.
  */
 export type CodeSessionActivity = "idle" | "running" | "waiting" | "ended" | "unknown";
 

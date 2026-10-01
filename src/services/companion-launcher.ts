@@ -9,6 +9,7 @@ import {
   validateLaunchFolder,
   type TerminalLaunchResult
 } from "./terminal-launcher";
+import { noteVsCodeOpened } from "./vscode-windows";
 
 export type CompanionLaunchResult = TerminalLaunchResult | {
   terminal: "companion";
@@ -67,20 +68,20 @@ export async function resolveCompanionExecutable(
   );
 }
 
-export async function resolveClaudePath(): Promise<string> {
-  const defaultPath = path.join(os.homedir(), ".local", "bin", "claude.exe");
-  if (await fileExists(defaultPath)) {
-    return defaultPath;
-  }
-
-  const fromPath = await new Promise<string | undefined>((resolve) => {
+/**
+ * PATH lookup through PowerShell rather than where.exe: where.exe prints in the
+ * OEM code page, which mangles a non-ASCII profile path such as C:\Users\이도한.
+ * `name` is always a constant from this file, never user input.
+ */
+async function findOnPath(name: string): Promise<string | undefined> {
+  return await new Promise<string | undefined>((resolve) => {
     const child = spawn(
       "powershell.exe",
       [
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::Out.Write((Get-Command claude.exe -ErrorAction Stop).Source)"
+        `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::Out.Write((Get-Command ${name} -ErrorAction Stop).Source)`
       ],
       { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }
     );
@@ -92,10 +93,35 @@ export async function resolveClaudePath(): Promise<string> {
       resolve(code === 0 && commandPath.length > 0 ? commandPath : undefined);
     });
   });
+}
+
+export async function resolveClaudePath(): Promise<string> {
+  const defaultPath = path.join(os.homedir(), ".local", "bin", "claude.exe");
+  if (await fileExists(defaultPath)) {
+    return defaultPath;
+  }
+
+  const fromPath = await findOnPath("claude.exe");
   if (fromPath) {
     return fromPath;
   }
   throw new Error("Claude Code executable was not found");
+}
+
+/** The plugin's environment minus the flags that break an Electron or Claude child. */
+function inheritedLaunchEnv(): NodeJS.ProcessEnv {
+  const inheritedEnv = { ...process.env };
+  // Stream Deck and other Electron hosts may set this flag for their own
+  // Node runtime. Passing it to the Companion makes Electron start as Node,
+  // which leaves `app`/`BrowserWindow` unavailable and produces a blank shell.
+  delete inheritedEnv.ELECTRON_RUN_AS_NODE;
+  delete inheritedEnv.ELECTRON_NO_ATTACH_CONSOLE;
+  // Same class of problem, different victim: a parent Claude session marks its
+  // children with this, and the CLI the Companion hosts would then turn
+  // transcript saving off. The Companion strips it again on its own side for
+  // launches that do not come through here.
+  delete inheritedEnv.CLAUDE_CODE_CHILD_SESSION;
+  return inheritedEnv;
 }
 
 export function createCompanionLaunchPlan(
@@ -108,17 +134,7 @@ export function createCompanionLaunchPlan(
   projectName?: string,
   launchMode: "app" | "terminal" = "app"
 ): CompanionLaunchPlan {
-  const inheritedEnv = { ...process.env };
-  // Stream Deck and other Electron hosts may set this flag for their own
-  // Node runtime. Passing it to the Companion makes Electron start as Node,
-  // which leaves `app`/`BrowserWindow` unavailable and produces a blank shell.
-  delete inheritedEnv.ELECTRON_RUN_AS_NODE;
-  delete inheritedEnv.ELECTRON_NO_ATTACH_CONSOLE;
-  // Same class of problem, different victim: a parent Claude session marks its
-  // children with this, and the CLI the Companion hosts would then turn
-  // transcript saving off. The Companion strips it again on its own side for
-  // launches that do not come through here.
-  delete inheritedEnv.CLAUDE_CODE_CHILD_SESSION;
+  const inheritedEnv = inheritedLaunchEnv();
   return {
     command: companionPath,
     // The packaged Electron runtime rejects unknown top-level CLI flags. The
@@ -226,4 +242,76 @@ export async function launchClaudeCompanion(
     throw new Error("Code Deck Companion did not report a process ID");
   }
   return { terminal: "companion", processId: companion.pid };
+}
+
+/** The Claude Code extension's URI handler; `/open` shows its chat panel. */
+const VSCODE_CLAUDE_PANEL_URL = "vscode://anthropic.claude-code/open";
+// ponytail: fixed wait so the folder window is the active one when the panel
+// URL arrives (VS Code routes URLs to the last active window). On a very slow
+// cold start the panel may land in another window; poll for the window if so.
+const VSCODE_PANEL_DELAY_MS = 1_500;
+
+async function resolveVsCodeExecutable(env: NodeJS.ProcessEnv = process.env): Promise<string> {
+  const candidates = [
+    env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, "Programs", "Microsoft VS Code", "Code.exe"),
+    env.ProgramFiles && path.join(env.ProgramFiles, "Microsoft VS Code", "Code.exe")
+  ];
+  for (const candidate of candidates) {
+    if (candidate && (await fileExists(candidate))) {
+      return candidate;
+    }
+  }
+  // A custom install dir: the `code` on PATH is <install>\bin\code.cmd.
+  const shim = await findOnPath("code.cmd");
+  const fromPath = shim && path.join(path.dirname(path.dirname(shim)), "Code.exe");
+  if (fromPath && (await fileExists(fromPath))) {
+    return fromPath;
+  }
+  throw new Error("Visual Studio Code executable was not found");
+}
+
+/**
+ * Code.exe is started directly, the way Explorer's "Open with Code" does it,
+ * rather than through code.cmd: a .cmd needs a shell, and a shell would have to
+ * quote the folder path.
+ */
+async function spawnVsCode(codePath: string, args: string[], folder: string): Promise<void> {
+  const child = spawn(codePath, args, {
+    // Not the plugin's folder: a cold-started VS Code keeps this cwd for its whole
+    // life, and Windows refuses to replace a directory some process sits in.
+    cwd: folder,
+    env: inheritedLaunchEnv(),
+    detached: true,
+    windowsHide: false,
+    stdio: "ignore"
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+
+/**
+ * Open the folder in VS Code and show the Claude Code panel there. A folder
+ * VS Code already has open is focused rather than opened twice.
+ */
+export async function launchVsCode(folder: string): Promise<void> {
+  // An absolute path also cannot start with "-", which Code.exe would read as a switch.
+  if (!path.win32.isAbsolute(folder)) {
+    throw new Error("Configured Code Start path is not a directory");
+  }
+  await validateLaunchFolder(folder);
+  const codePath = await resolveVsCodeExecutable();
+  await spawnVsCode(codePath, [folder], folder);
+  noteVsCodeOpened(folder);
+  await new Promise<void>((resolve) => setTimeout(resolve, VSCODE_PANEL_DELAY_MS));
+  try {
+    await spawnVsCode(codePath, ["--open-url", VSCODE_CLAUDE_PANEL_URL], folder);
+  } catch {
+    // The folder is already open; a missing panel is one click away and does
+    // not warrant the failure dialog.
+  }
 }

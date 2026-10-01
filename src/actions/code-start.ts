@@ -28,13 +28,19 @@ import {
 } from "../io/context-session-cache";
 import { showErrorDialog } from "../services/error-dialog";
 import { showFolderPicker } from "../services/folder-picker";
-import { focusCompanionWindow, launchClaudeCompanion } from "../services/companion-launcher";
+import {
+  focusCompanionWindow,
+  launchClaudeCompanion,
+  launchVsCode
+} from "../services/companion-launcher";
 import { launchClaudeTerminal, validateLaunchFolder } from "../services/terminal-launcher";
+import { vsCodeHasFolderOpen } from "../services/vscode-windows";
 import { renderCodeStartKeyImage } from "../ui/code-start-renderer";
 import { CodeStartLaunchGuard } from "./code-start-launch-guard";
 import {
   configuredBindingId,
   configuredFolder,
+  configuredLaunchMode,
   configuredProjectName,
   defaultCodeStartLaunchDependencies,
   launchConfiguredCodeStart
@@ -52,7 +58,7 @@ type CodeStartSettings = JsonObject & {
   bindingId?: string;
   folder?: string;
   projectName?: string;
-  /** "companion" | "terminal"; absent means the app, see configuredLaunchMode. */
+  /** "companion" | "terminal" | "vscode"; absent means the app, see configuredLaunchMode. */
   launchMode?: string;
 };
 
@@ -113,6 +119,7 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
         focusCompanionWindow,
         launchClaudeCompanion,
         launchClaudeTerminal,
+        launchVsCode,
         logger: streamDeck.logger,
         pluginLogDirectory,
         readContextSessionResumePointer,
@@ -147,7 +154,9 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
       // The inspector's own setSettings races this handler; whatever it sent
       // in the payload is the freshest view of the form.
       const launchMode =
-        payload.launchMode === "terminal" || payload.launchMode === "companion"
+        payload.launchMode === "terminal" ||
+        payload.launchMode === "companion" ||
+        payload.launchMode === "vscode"
           ? payload.launchMode
           : current.launchMode;
       const settings: CodeStartSettings = { ...current, projectName, folder, launchMode };
@@ -261,11 +270,21 @@ export class CodeStartAction extends SingletonAction<CodeStartSettings> {
       );
       return;
     }
-    const state = await loadCodeStartDisplayState(
+    let state = await loadCodeStartDisplayState(
       defaultUsageDataDir(),
       bindingId,
       folder
     );
+    // A live Companion launch still wins; VS Code only fills in for "closed".
+    // Activity stays "unknown": VS Code tells us the window is open, not
+    // whether Claude is working or waiting, so the key neither blinks nor sweeps.
+    if (
+      state.kind === "closed" &&
+      configuredLaunchMode(settings) === "vscode" &&
+      vsCodeHasFolderOpen(folder)
+    ) {
+      state = { kind: "starting", activity: "unknown", model: { displayName: "VS Code" } };
+    }
     // The 1s refresh advances the frame, animating the sweep while running.
     const frame = Math.floor(Date.now() / 1000);
     await actionInstance.setImage(renderCodeStartKeyImage(projectName, state, frame));

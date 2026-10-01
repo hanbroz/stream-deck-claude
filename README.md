@@ -39,7 +39,7 @@ The Code Start model text changes color according to session activity:
 - Green: Claude Code is running.
 - Red: Claude Code is idle.
 - Blue: Claude Code is waiting for your answer. The key blinks while it waits.
-- Grey: terminal mode, which reports no activity. The CLI runs in the window's own terminal and sends no status, so the key shows neither running nor waiting rather than guessing.
+- Green without animation: terminal mode or VS Code mode, which report no activity. The key shows only that the session is open — it neither blinks for input nor sweeps while working, rather than guessing. In VS Code mode the model line reads `VS Code` while a VS Code window is open on the folder.
 - `Closed`: No app is running for this project — never started, already ended, or stopped reporting. The model line and context bar appear only while an app is actually open.
 
 ### Data source
@@ -93,7 +93,7 @@ The composer starts on **Sonnet** at **medium** effort. Companion runs one `clau
 
 Opening the app starts a **new conversation**. If the folder has an earlier one, the console offers it behind a button with its size on the label — press it to continue, or leave it and the old context costs nothing. Continuing was previously automatic, which read as a convenience and billed like a subscription: every message re-sends the whole conversation, so an inherited prefix is paid on each turn rather than once. Across five measured sessions that came to 53% of all spend.
 
-`Open with` picks which surface the window opens on. **Companion app (chat)** renders the conversation and sends prompts from the composer. **Companion app (terminal)** puts the interactive Claude Code CLI in the window instead, with the same file explorer beside it — and costs less per turn, because one long-lived CLI keeps the prompt cache warm where chat mode respawns the CLI for every message. Both show state and context % on the key. In terminal mode the model and effort are set inside the CLI with `/model`, not by the key.
+`Open with` picks which surface the window opens on. **Companion app (chat)** renders the conversation and sends prompts from the composer. **Companion app (terminal)** puts the interactive Claude Code CLI in the window instead, with the same file explorer beside it — and costs less per turn, because one long-lived CLI keeps the prompt cache warm where chat mode respawns the CLI for every message. Chat mode shows state and context % on the key; terminal mode shows that the session is open and its context %, but not when Claude waits for input. In terminal mode the model and effort are set inside the CLI with `/model`, not by the key. **VS Code** opens the folder in VS Code and shows the Claude Code extension's panel (the extension must be installed); a folder VS Code already has open is focused instead of opened twice. VS Code's extension runs that Claude session, so the key shows only that the folder's window is open — no context % or waiting state.
 
 ### Local development
 
@@ -177,7 +177,7 @@ Code Start의 모델 텍스트 색상은 세션 상태에 따라 변경됩니다
 - 녹색: Claude Code 실행 중
 - 빨간색: Claude Code 대기 중
 - 파란색: Claude Code가 사용자 답변을 기다리는 중 — 기다리는 동안 버튼이 깜빡입니다
-- 회색: 터미널 모드 — CLI가 창 안의 터미널에서 실행되어 상태를 보고하지 않으므로, 실행 중·대기 중을 추측해서 표시하지 않습니다
+- 녹색(애니메이션 없음): 터미널 모드·VS Code 모드 — 상태를 보고하지 않으므로 실행 중이라는 것만 표시하고, 응답 대기 깜빡임이나 작업 중 애니메이션은 추측해서 표시하지 않습니다. VS Code 모드에서는 해당 폴더의 VS Code 창이 열려 있는 동안 모델 자리에 `VS Code`가 표시됩니다
 - `Closed`: 이 프로젝트로 실행 중인 앱이 없음 — 아직 실행하지 않았거나, 종료되었거나, 상태 보고가 끊긴 경우. 모델 텍스트와 컨텍스트 막대는 앱이 실제로 열려 있을 때만 표시됩니다
 
 ### 데이터 출처
@@ -204,7 +204,7 @@ Usage 버튼은 로컬 캐시를 1초마다 확인하고 값이 같으면 이미
 
 앱을 열면 **새 대화로 시작**합니다. 해당 폴더에 이전 대화가 있으면 콘솔에 크기와 함께 버튼으로 제안하니, 이어서 하실 일이면 누르시고 새 작업이면 그냥 두시면 비용이 들지 않습니다. 예전에는 자동으로 이어받았는데, 편해 보이지만 실제로는 구독료처럼 청구됐습니다 — 메시지마다 대화 전체가 다시 전송되므로 물려받은 내용을 한 번이 아니라 매 턴 지불합니다. 실측한 5개 세션에서 이 몫이 **전체 소비의 53%** 였습니다.
 
-`Open with`은 창이 어떤 화면으로 열릴지 고릅니다. **Companion app (chat)** 은 대화를 렌더링하고 컴포저로 프롬프트를 보냅니다. **Companion app (terminal)** 은 같은 파일 탐색기를 왼쪽에 두고 오른쪽에 대화형 Claude Code CLI를 띄웁니다 — 그리고 턴당 비용이 더 쌉니다. CLI 하나가 계속 살아 있어 프롬프트 캐시가 유지되는 반면, chat 모드는 메시지마다 CLI를 새로 띄우기 때문입니다. 두 모드 모두 키에 상태와 컨텍스트 %를 표시합니다. 터미널 모드에서 모델과 effort는 키가 아니라 CLI 안에서 `/model`로 바꿉니다.
+`Open with`은 창이 어떤 화면으로 열릴지 고릅니다. **Companion app (chat)** 은 대화를 렌더링하고 컴포저로 프롬프트를 보냅니다. **Companion app (terminal)** 은 같은 파일 탐색기를 왼쪽에 두고 오른쪽에 대화형 Claude Code CLI를 띄웁니다 — 그리고 턴당 비용이 더 쌉니다. CLI 하나가 계속 살아 있어 프롬프트 캐시가 유지되는 반면, chat 모드는 메시지마다 CLI를 새로 띄우기 때문입니다. chat 모드는 키에 상태와 컨텍스트 %를 표시하고, 터미널 모드는 실행 중이라는 것과 컨텍스트 %만 표시하며 응답 대기 여부는 표시하지 않습니다. 터미널 모드에서 모델과 effort는 키가 아니라 CLI 안에서 `/model`로 바꿉니다. **VS Code** 는 폴더를 VS Code로 열고 Claude Code 확장 패널을 띄웁니다(확장이 설치되어 있어야 합니다). 이미 열린 폴더면 새로 열지 않고 그 창으로 전환합니다. 이 세션은 VS Code 확장이 실행하므로, 키는 해당 폴더 창이 열려 있다는 것만 표시하고 컨텍스트 %와 응답 대기 여부는 표시하지 않습니다.
 
 ### 로컬 개발
 
@@ -281,6 +281,7 @@ Code Start 的模型文字颜色会根据会话状态变化：
 - 绿色：Claude Code 正在运行。
 - 红色：Claude Code 处于空闲状态。
 - 蓝色：Claude Code 正在等待您的回答。
+- 绿色（无动画）：终端模式或 VS Code 模式，不上报状态。按键只表示会话已打开，不会猜测性地闪烁等待输入或显示运行动画。VS Code 模式下，只要该文件夹的 VS Code 窗口处于打开状态，模型行显示 `VS Code`。
 - `Closed`：该项目没有正在运行的应用 —— 尚未启动、已经结束，或状态上报已中断。模型文字与上下文进度条仅在应用实际打开时显示。
 
 ### 数据来源
@@ -305,7 +306,7 @@ Claude Code 通过状态栏 JSON 提供 `rate_limits.five_hour` 和 `rate_limits
 
 打开应用会**开始新对话**。如果该文件夹存在此前的对话，控制台会以按钮形式提示并标注其大小 —— 需要接续时点击，开始新任务则无需理会，不会产生费用。此前是自动接续的，看似方便实则按订阅计费：每条消息都会重新发送整个对话，因此继承的前缀不是付一次，而是每轮都付。在实测的五个会话中，这部分占到全部消耗的 53%。
 
-`Open with` 决定窗口以哪个界面打开。**Companion app (chat)** 渲染对话，并从输入框发送提示。**Companion app (terminal)** 则在窗口内运行交互式 Claude Code CLI，左侧仍是同一个文件浏览器 —— 且每轮成本更低：一个长期运行的 CLI 能保持提示缓存，而 chat 模式每条消息都会重启 CLI。两种模式都会在按键上显示状态与上下文百分比。终端模式下，模型与 effort 在 CLI 内用 `/model` 调整，而非通过按键。
+`Open with` 决定窗口以哪个界面打开。**Companion app (chat)** 渲染对话，并从输入框发送提示。**Companion app (terminal)** 则在窗口内运行交互式 Claude Code CLI，左侧仍是同一个文件浏览器 —— 且每轮成本更低：一个长期运行的 CLI 能保持提示缓存，而 chat 模式每条消息都会重启 CLI。chat 模式在按键上显示状态与上下文百分比；终端模式只显示会话已打开及上下文百分比，不显示是否在等待输入。终端模式下，模型与 effort 在 CLI 内用 `/model` 调整，而非通过按键。**VS Code** 会用 VS Code 打开该文件夹并显示 Claude Code 扩展面板（需已安装该扩展）；VS Code 已打开的文件夹会切换到现有窗口而不会重复打开。该会话由 VS Code 扩展运行，因此按键只表示该文件夹的窗口已打开，不显示上下文百分比或等待状态。
 
 ### 本地开发
 
@@ -369,6 +370,7 @@ Code Startのモデルテキストは、セッションの状態に応じて色�
 - 緑：Claude Codeが実行中です。
 - 赤：Claude Codeが待機中です。
 - 青：Claude Codeがユーザーの回答を待っています。
+- 緑（アニメーションなし）：ターミナルモードまたはVS Codeモード。状態を報告しないため、セッションが開いていることだけを示し、入力待ちの点滅や実行中のアニメーションを推測で表示しません。VS Codeモードでは、そのフォルダーのVS Codeウィンドウが開いている間、モデル行に`VS Code`と表示されます。
 - `Closed`：このプロジェクトで実行中のアプリがありません（未起動、終了済み、または状態報告が途絶えた場合）。モデルテキストとコンテキストバーは、アプリが実際に開いているときだけ表示されます。
 
 ### データソース
@@ -393,7 +395,7 @@ Claude CodeはステータスラインJSONを通じて`rate_limits.five_hour`と
 
 アプリを開くと**新しい会話で始まります**。そのフォルダーに以前の会話があれば、コンソールがサイズを添えたボタンで提案します。続きの作業なら押し、新しい作業ならそのままにしておけば費用はかかりません。以前は自動的に引き継いでいましたが、便利に見えて実際にはサブスクリプションのように請求されていました — メッセージごとに会話全体が再送されるため、引き継いだ分は一度ではなく毎ターン支払うことになります。実測した5セッションでは、これが全消費の53%を占めていました。
 
-`Open with` はウィンドウがどの画面で開くかを選びます。**Companion app (chat)** は会話を描画し、コンポーザーからプロンプトを送ります。**Companion app (terminal)** は同じファイルエクスプローラーを左に置いたまま、右側で対話型のClaude Code CLIを動かします — そしてターンあたりのコストが安くなります。長く生きたCLIひとつがプロンプトキャッシュを保つのに対し、chatモードはメッセージごとにCLIを起動し直すためです。どちらのモードもキーに状態とコンテキスト%を表示します。ターミナルモードではモデルとeffortはキーではなくCLI内の `/model` で変更します。
+`Open with` はウィンドウがどの画面で開くかを選びます。**Companion app (chat)** は会話を描画し、コンポーザーからプロンプトを送ります。**Companion app (terminal)** は同じファイルエクスプローラーを左に置いたまま、右側で対話型のClaude Code CLIを動かします — そしてターンあたりのコストが安くなります。長く生きたCLIひとつがプロンプトキャッシュを保つのに対し、chatモードはメッセージごとにCLIを起動し直すためです。chatモードはキーに状態とコンテキスト%を表示し、ターミナルモードはセッションが開いていることとコンテキスト%のみを表示して、入力待ちかどうかは表示しません。ターミナルモードではモデルとeffortはキーではなくCLI内の `/model` で変更します。**VS Code** はフォルダーをVS Codeで開き、Claude Code拡張のパネルを表示します（拡張のインストールが必要です）。すでに開いているフォルダーは、もう一度開かずにそのウィンドウへ切り替えます。このセッションはVS Code拡張が実行するため、キーはそのフォルダーのウィンドウが開いていることだけを示し、コンテキスト%や入力待ちは表示しません。
 
 ### ローカル開発
 

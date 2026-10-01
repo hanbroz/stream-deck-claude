@@ -53,6 +53,7 @@ function createDependencies() {
     terminal: "windows-terminal" as const,
     processId: 8765
   }));
+  const launchVsCode = vi.fn<CodeStartLaunchDependencies["launchVsCode"]>(async () => undefined);
   const readContextSessionResumePointer =
     vi.fn<CodeStartLaunchDependencies["readContextSessionResumePointer"]>(
       async () => undefined
@@ -80,6 +81,7 @@ function createDependencies() {
     ensureBridgeInstalled,
     launchClaudeCompanion,
     launchClaudeTerminal,
+    launchVsCode,
     findRunningCompanionLaunch,
     focusCompanionWindow,
     claudeConversationExists,
@@ -101,6 +103,7 @@ function createDependencies() {
     validateLaunchFolder,
     launchClaudeCompanion,
     launchClaudeTerminal,
+    launchVsCode,
     findRunningCompanionLaunch,
     focusCompanionWindow,
     claudeConversationExists,
@@ -206,6 +209,41 @@ describe("Code Start relaunch guard", () => {
 
     expect(harness.launchClaudeCompanion).toHaveBeenCalled();
     expect(harness.launchClaudeTerminal).not.toHaveBeenCalled();
+  });
+
+  it("opens VS Code without touching the Companion, even when one is running for the folder", async () => {
+    const harness = createDependencies();
+    harness.findRunningCompanionLaunch.mockResolvedValue({
+      schemaVersion: 2,
+      actionId: "binding-1",
+      launchId: "launch-old",
+      folder: "D:\\Projects\\Demo",
+      startedAt: 1,
+      terminal: "companion",
+      processId: 7777
+    });
+    const action = createAction();
+
+    await launchConfiguredCodeStart({
+      action,
+      settings: {
+        bindingId: "binding-1",
+        folder: "D:\\Projects\\Demo",
+        projectName: "Demo",
+        launchMode: "vscode"
+      },
+      launchGuard: new CodeStartLaunchGuard(),
+      bridgeSourcePath: "D:\\Plugin\\bridge\\statusline-bridge.js",
+      dependencies: harness.dependencies
+    });
+
+    expect(harness.launchVsCode).toHaveBeenCalledWith("D:\\Projects\\Demo");
+    expect(harness.focusCompanionWindow).not.toHaveBeenCalled();
+    expect(harness.launchClaudeCompanion).not.toHaveBeenCalled();
+    // VS Code's extension owns that Claude process; recording it would make the
+    // key claim a session it cannot see.
+    expect(harness.writeActiveLaunch).not.toHaveBeenCalled();
+    expect(action.showOk).toHaveBeenCalled();
   });
 
   it("opens the window on the terminal surface, not an external console, in terminal mode", async () => {
